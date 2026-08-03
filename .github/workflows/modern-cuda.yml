@@ -46,7 +46,7 @@ jobs:
           & $nvcc --version
       - name: Configure CUDA backend
         working-directory: modern/native
-        run: cmake --preset windows-cuda
+        run: cmake --preset windows-cuda -T "cuda=$env:CUDA_PATH"
       - name: Compile CUDA backend and native tests
         working-directory: modern/native
         run: cmake --build --preset windows-cuda-release --target dslt_core dslt_native_tests --parallel
