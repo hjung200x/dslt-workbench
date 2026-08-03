@@ -53,6 +53,7 @@ jobs:
 
   cuda-parity:
     name: cuda-runtime-parity
+    if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, Windows, X64, NVIDIA]
     steps:
       - uses: actions/checkout@v4

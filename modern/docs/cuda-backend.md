@@ -43,7 +43,10 @@ because the hosted runner has no NVIDIA device.
 
 `cuda-runtime-parity` uses the `windows-cuda` preset on a self-hosted runner
 with the `Windows`, `X64`, and `NVIDIA` labels. It defines `DSLT_TEST_CUDA` and
-requires a usable NVIDIA device. Its native test suite checks:
+requires a usable NVIDIA device. Until such a runner is registered, this job is
+started only by an explicit `workflow_dispatch`; ordinary pushes run the hosted
+build gate without leaving an unserviceable job queued. Its native test suite
+checks:
 
 - CPU/CUDA output parity for every ported operation;
 - `Auto` selecting CUDA for a ported operation;
