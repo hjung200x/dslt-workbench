@@ -101,6 +101,9 @@ foreach ($entry in $distributionFiles.GetEnumerator()) {
 Get-ChildItem -LiteralPath (Join-Path $modernRoot 'docs') -Filter '*.md' -File | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $docsRoot $_.Name) -Force
 }
+Get-ChildItem -LiteralPath (Join-Path $modernRoot 'validation') -Filter '*.example.json' -File | ForEach-Object {
+    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $docsRoot $_.Name) -Force
+}
 
 $buildInfo = [ordered]@{
     schemaVersion = 1

@@ -40,6 +40,8 @@ all succeed.
 A verified preview is not sufficient for v1.0. Approval additionally requires:
 
 - representative real datasets in all five required coverage categories;
+- a passing `Dslt.Validation` report whose manifest, inputs, references,
+  candidates, and provenance sidecars are SHA-256 locked;
 - Dice at least 0.995, equal object count, total segmented-volume difference at
   most 0.5%, and 95% Hausdorff distance at most one voxel;
 - completed CPU/CUDA parity for every exposed operation on a registered NVIDIA
