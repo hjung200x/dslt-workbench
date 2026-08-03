@@ -64,6 +64,7 @@ try {
         'docs\source-and-license.md',
         'docs\provenance.md',
         'docs\compatibility-matrix.md',
+        'docs\adaptive-threshold-spec.md',
         'docs\dslt-algorithm-spec.md',
         'docs\functional-spec.md',
         'docs\real-data-manifest.example.json',

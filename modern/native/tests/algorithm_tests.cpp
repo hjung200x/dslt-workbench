@@ -64,6 +64,60 @@ float oracle_trilinear(
     return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
 }
 
+std::vector<float> oracle_adaptive_threshold(
+    std::span<const float> source,
+    const dslt_volume_descriptor& desc,
+    int radius,
+    bool gaussian,
+    float constant_c,
+    bool include_z) {
+    std::vector<float> weights(static_cast<std::size_t>(radius * 2 + 1));
+    if (gaussian) {
+        const auto sigma = 0.3 * static_cast<double>(radius - 1) + 0.8;
+        const auto denominator = 2.0 * sigma * sigma;
+        double sum = 0.0;
+        for (int k = -radius; k <= radius; ++k) {
+            const auto weight = std::exp(-static_cast<double>(k * k) / denominator);
+            weights[static_cast<std::size_t>(k + radius)] = static_cast<float>(weight);
+            sum += weight;
+        }
+        for (auto& weight : weights) weight = static_cast<float>(weight / sum);
+    } else {
+        std::fill(weights.begin(), weights.end(), 1.0F / static_cast<float>(weights.size()));
+    }
+    const auto convolve = [&](std::span<const float> input, int axis) {
+        std::vector<float> output(input.size());
+        for (std::size_t z = 0; z < desc.depth; ++z) {
+            for (std::size_t y = 0; y < desc.height; ++y) {
+                for (std::size_t x = 0; x < desc.width; ++x) {
+                    double sum = 0.0;
+                    for (int k = -radius; k <= radius; ++k) {
+                        const auto xx = static_cast<std::size_t>(axis == 0
+                            ? std::clamp<long long>(static_cast<long long>(x) + k, 0, desc.width - 1)
+                            : static_cast<long long>(x));
+                        const auto yy = static_cast<std::size_t>(axis == 1
+                            ? std::clamp<long long>(static_cast<long long>(y) + k, 0, desc.height - 1)
+                            : static_cast<long long>(y));
+                        const auto zz = static_cast<std::size_t>(axis == 2
+                            ? std::clamp<long long>(static_cast<long long>(z) + k, 0, desc.depth - 1)
+                            : static_cast<long long>(z));
+                        sum += input[offset(xx, yy, zz, desc)] * weights[static_cast<std::size_t>(k + radius)];
+                    }
+                    output[offset(x, y, z, desc)] = static_cast<float>(sum);
+                }
+            }
+        }
+        return output;
+    };
+    auto local = convolve(source, 0);
+    local = convolve(local, 1);
+    if (include_z) local = convolve(local, 2);
+    for (std::size_t index = 0; index < local.size(); ++index) {
+        local[index] = source[index] > local[index] - constant_c ? 0.8F : 0.0F;
+    }
+    return local;
+}
+
 dslt::ops::DsltResponse oracle_response(
     std::span<const float> source,
     const dslt_volume_descriptor& desc,
@@ -335,6 +389,72 @@ void threshold_sweep_fixture() {
     assert(cancelled);
 }
 
+void adaptive_threshold_fixture() {
+    const auto desc = descriptor(3, 2, 2);
+    const std::vector<float> source{
+        0.0F, 0.2F, 0.4F,
+        0.1F, 0.8F, 0.3F,
+        0.6F, 0.4F, 1.0F,
+        0.2F, 0.5F, 0.7F,
+    };
+    const dslt::Volume volume(desc, source);
+    for (const auto kernel : {0, 1}) {
+        for (const auto include_z : {false, true}) {
+            const auto expected = oracle_adaptive_threshold(
+                source, desc, 1, kernel == 0, -0.04F, include_z);
+            const auto actual = dslt::ops::adaptive_threshold(
+                volume, 1, kernel, -0.04F, include_z, {});
+            assert(actual == expected);
+        }
+    }
+
+    const auto z_desc = descriptor(1, 1, 3);
+    const std::vector<float> z_source{0.0F, 1.0F, 0.0F};
+    const dslt::Volume z_volume(z_desc, z_source);
+    const auto two_d = dslt::ops::adaptive_threshold(z_volume, 1, 1, 0.0F, false, {});
+    const auto three_d = dslt::ops::adaptive_threshold(z_volume, 1, 1, 0.0F, true, {});
+    assert(std::all_of(two_d.begin(), two_d.end(), [](float value) { return value == 0.0F; }));
+    assert(three_d[0] == 0.0F && three_d[1] == 0.8F && three_d[2] == 0.0F);
+
+    const auto tie = dslt::ops::adaptive_threshold(volume, 0, 1, 0.0F, true, {});
+    assert(std::all_of(tie.begin(), tie.end(), [](float value) { return value == 0.0F; }));
+
+    bool rejected = false;
+    try {
+        static_cast<void>(dslt::ops::adaptive_threshold(volume, 101, 1, 0.0F, true, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    rejected = false;
+    try {
+        static_cast<void>(dslt::ops::adaptive_threshold(volume, 1, 2, 0.0F, true, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    rejected = false;
+    try {
+        static_cast<void>(dslt::ops::adaptive_threshold(
+            volume, 1, 1, std::numeric_limits<float>::quiet_NaN(), true, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    bool cancelled = false;
+    try {
+        static_cast<void>(dslt::ops::adaptive_threshold(
+            volume, 1, 1, 0.0F, true,
+            [](float progress) { return progress < 0.5F; }));
+    } catch (const std::runtime_error& error) {
+        cancelled = std::string_view(error.what()) == "cancelled";
+    }
+    assert(cancelled);
+}
+
 } // namespace
 
 int main() {
@@ -347,5 +467,6 @@ int main() {
     closing_and_component_fixture();
     iterative_sweep_fixture();
     threshold_sweep_fixture();
+    adaptive_threshold_fixture();
     return 0;
 }

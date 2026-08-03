@@ -110,6 +110,29 @@ int main() {
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
     assert(result.depth == 6);
 
+    auto adaptive_desc = descriptor(1, 1, 3);
+    const std::vector<float> adaptive_source{0.0F, 1.0F, 0.0F};
+    require(dslt_set_volume_f32(
+        handle, &adaptive_desc, adaptive_source.data(), adaptive_source.size()));
+    request = {};
+    request.operation = DSLT_OP_ADAPTIVE_THRESHOLD_2D;
+    request.backend = DSLT_BACKEND_CPU;
+    request.radius = 1;
+    request.connectivity = 1; // Mean local kernel in the v1 common request.
+    request.constant_c = 0.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    std::vector<float> adaptive(result.element_count);
+    require(dslt_copy_output_f32(handle, adaptive.data(), adaptive.size()));
+    assert(std::all_of(adaptive.begin(), adaptive.end(), [](float value) { return value == 0.0F; }));
+
+    request.operation = DSLT_OP_ADAPTIVE_THRESHOLD_3D;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    require(dslt_copy_output_f32(handle, adaptive.data(), adaptive.size()));
+    assert(adaptive[0] == 0.0F && adaptive[1] == 0.8F && adaptive[2] == 0.0F);
+
+    request.connectivity = 2;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
     request = {};
     request.operation = DSLT_OP_SMOOTH_MEAN;
     request.backend = DSLT_BACKEND_CPU;

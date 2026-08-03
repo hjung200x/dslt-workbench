@@ -75,6 +75,36 @@ if (engine.IsAvailable)
         CancellationToken.None);
     Equal(2, componentResult.ComponentCount, "Native ABI component count");
 
+    var adaptiveVolume = new VolumeData(
+        1, 1, 3, 1, 0, Calibration.Unit, [0.0F, 1.0F, 0.0F]);
+    var adaptive2D = await engine.RunAsync(
+        adaptiveVolume,
+        new OperationParameters(
+            ProcessingOperation.AdaptiveThreshold2D,
+            ProcessingBackend.Cpu,
+            Radius: 1,
+            ConstantC: 0,
+            AdaptiveThresholdKernel: DsltKernelType.Mean),
+        null,
+        CancellationToken.None);
+    Equal(3, adaptive2D.FloatData!.Count(value => value == 0.0F),
+        "Adaptive threshold 2D slice-local tie output");
+    var adaptive3D = await engine.RunAsync(
+        adaptiveVolume,
+        new OperationParameters(
+            ProcessingOperation.AdaptiveThreshold3D,
+            ProcessingBackend.Cpu,
+            Radius: 1,
+            ConstantC: 0,
+            AdaptiveThresholdKernel: DsltKernelType.Mean),
+        null,
+        CancellationToken.None);
+    var adaptive3DData = adaptive3D.FloatData ??
+        throw new InvalidOperationException("Adaptive threshold 3D returned no float output.");
+    Equal(1, adaptive3DData.Count(value => value == 0.8F),
+        "Adaptive threshold 3D Z-local output");
+    Equal(0.8F, adaptive3DData[1], "Adaptive threshold 3D center output");
+
     var constantVolume = new VolumeData(
         3, 3, 3, 1, 0, Calibration.Unit,
         Enumerable.Repeat(0.5f, 27).ToArray());

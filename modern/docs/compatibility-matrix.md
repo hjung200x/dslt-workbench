@@ -16,7 +16,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Brightness/contrast | `WindowLevel` | implemented | Range fixtures |
 | Mean/Gaussian smoothing | `SmoothMean`, `SmoothGaussian` | implemented | Impulse fixture |
 | Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures |
-| Adaptive 2D/3D threshold | Extended operation contract | pending-reference | Legacy block/C/boundary fixtures |
+| Adaptive 2D/3D threshold | `AdaptiveThreshold2D`, `AdaptiveThreshold3D` | scaffolded | CPU mean/Gaussian, clamp boundary, strict tie, 2D/3D distinction, ABI and WPF fixtures implemented; legacy GPU discrepancy and archived-runtime comparison pending |
 | Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures |
 | Simplified height/depth map | `HeightMap`, `DepthMap` | implemented | Sloped-surface fixture |
 | Full height/depth projection controls | Extended operation contract | pending-reference | Legacy projection fixtures |

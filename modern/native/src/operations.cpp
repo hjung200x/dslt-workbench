@@ -403,6 +403,49 @@ Engine::Progress mapped_progress(
     };
 }
 
+enum class ConvolutionAxis {
+    x,
+    y,
+    z,
+};
+
+std::vector<float> convolve_axis_clamp(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    std::span<const float> weights,
+    ConvolutionAxis axis,
+    const Engine::Progress& progress) {
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
+    if (source.size() != expected || weights.empty() || weights.size() % 2 == 0) {
+        throw std::invalid_argument("adaptive convolution dimensions or kernel are invalid");
+    }
+    const auto radius = static_cast<long long>(weights.size() / 2);
+    std::vector<float> result(source.size(), 0.0F);
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t y = 0; y < descriptor.height; ++y) {
+            for (std::size_t x = 0; x < descriptor.width; ++x) {
+                double sum = 0.0;
+                for (long long offset = -radius; offset <= radius; ++offset) {
+                    const auto xx = static_cast<std::size_t>(axis == ConvolutionAxis::x
+                        ? std::clamp<long long>(static_cast<long long>(x) + offset, 0, descriptor.width - 1)
+                        : static_cast<long long>(x));
+                    const auto yy = static_cast<std::size_t>(axis == ConvolutionAxis::y
+                        ? std::clamp<long long>(static_cast<long long>(y) + offset, 0, descriptor.height - 1)
+                        : static_cast<long long>(y));
+                    const auto zz = static_cast<std::size_t>(axis == ConvolutionAxis::z
+                        ? std::clamp<long long>(static_cast<long long>(z) + offset, 0, descriptor.depth - 1)
+                        : static_cast<long long>(z));
+                    sum += static_cast<double>(source[flat(xx, yy, zz, descriptor.width, descriptor.height)]) *
+                        weights[static_cast<std::size_t>(offset + radius)];
+                }
+                result[flat(x, y, z, descriptor.width, descriptor.height)] = static_cast<float>(sum);
+            }
+        }
+        report(progress, z + 1, descriptor.depth);
+    }
+    return result;
+}
+
 std::vector<float> chunked_spherical_morphology(
     std::span<const float> source,
     const dslt_volume_descriptor& descriptor,
@@ -570,6 +613,49 @@ void apply_crop(
 }
 
 } // namespace
+
+std::vector<float> adaptive_threshold(
+    const Volume& volume,
+    int radius,
+    int kernel_type,
+    float constant_c,
+    bool include_z,
+    const Engine::Progress& progress) {
+    if (radius < 0 || radius > 100) {
+        throw std::invalid_argument("adaptive threshold radius must be between 0 and 100");
+    }
+    if (kernel_type != 0 && kernel_type != 1) {
+        throw std::invalid_argument("adaptive threshold kernel must be 0 (Gaussian) or 1 (mean)");
+    }
+    if (!std::isfinite(constant_c)) {
+        throw std::invalid_argument("adaptive threshold C must be finite");
+    }
+    const auto weights = line_weights(radius, kernel_type == 0);
+    const auto& descriptor = volume.descriptor();
+    const auto axis_count = include_z ? 3.0F : 2.0F;
+    const auto source = selected_channel(volume);
+    auto local = convolve_axis_clamp(
+        source, descriptor, weights, ConvolutionAxis::x,
+        mapped_progress(progress, 0.0F, 0.8F / axis_count));
+    local = convolve_axis_clamp(
+        local, descriptor, weights, ConvolutionAxis::y,
+        mapped_progress(progress, 0.8F / axis_count, 0.8F / axis_count));
+    if (include_z) {
+        local = convolve_axis_clamp(
+            local, descriptor, weights, ConvolutionAxis::z,
+            mapped_progress(progress, 1.6F / axis_count, 0.8F / axis_count));
+    }
+    for (std::size_t index = 0; index < local.size(); ++index) {
+        local[index] = source[index] > local[index] - constant_c ? 0.8F : 0.0F;
+        if ((index & 0xffffU) == 0 && progress &&
+            !progress(0.8F + 0.2F * static_cast<float>(index) /
+                static_cast<float>(std::max(local.size(), std::size_t{1})))) {
+            throw std::runtime_error("cancelled");
+        }
+    }
+    report(progress, 1, 1);
+    return local;
+}
 
 DsltWorkEstimate estimate_dslt_work(
     const dslt_volume_descriptor& descriptor,

@@ -187,12 +187,15 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         var isDslt = value.Operation is ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation;
         var isSegmentation = value.Operation == ProcessingOperation.DsltSegmentation;
         var isThresholdSweep = value.Operation == ProcessingOperation.ThresholdSweep;
+        var isAdaptiveThreshold = value.Operation is
+            ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
         return new NativeOperationRequest
         {
             Operation = (int)value.Operation,
             Backend = (int)value.Backend,
             Radius = value.Radius,
-            Connectivity = isDslt ? (int)value.DsltKernel : value.Connectivity,
+            Connectivity = isDslt ? (int)value.DsltKernel :
+                isAdaptiveThreshold ? (int)value.AdaptiveThresholdKernel : value.Connectivity,
             MinimumComponentSize = isThresholdSweep
                 ? value.ThresholdSweepMinimumComponentSize
                 : value.MinimumComponentSize,
