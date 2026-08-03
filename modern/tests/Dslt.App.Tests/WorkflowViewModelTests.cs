@@ -94,6 +94,29 @@ internal static class WorkflowViewModelTests
             }, "Height-map UI parameters were not preserved in the processing request.");
 
         target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.HeightProjection);
+        Assert(target.IsHeightSurfaceOperation && target.IsHeightProjection &&
+               target.ProjectionMode == HeightProjectionMode.Z &&
+               target.ProjectionOffset == 0 && target.ProjectionStartDepth == 0 &&
+               target.ProjectionRange == 0 && target.ProjectionThreshold == 0,
+            "Height-projection legacy defaults were not exposed by the UI.");
+        target.ProjectionMode = HeightProjectionMode.Normal;
+        target.ProjectionOffset = 1.5F;
+        target.ProjectionStartDepth = 2.0F;
+        target.ProjectionRange = 3;
+        target.ProjectionThreshold = 0.6F;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.HeightProjection,
+                ProjectionMode: HeightProjectionMode.Normal,
+                ProjectionOffset: 1.5F,
+                ProjectionStartDepth: 2.0F,
+                ProjectionRange: 3,
+                ProjectionThreshold: 0.6F,
+            }, "Height-projection UI parameters were not preserved in the processing request.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.ThresholdSweep);
         Assert(target.MinimumThreshold == 0 && target.MaximumThreshold == 1 &&
                Math.Abs(target.ThresholdInterval - 0.02F) < 1e-6F &&

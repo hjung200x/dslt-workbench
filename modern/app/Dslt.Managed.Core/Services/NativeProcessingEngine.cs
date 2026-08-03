@@ -204,33 +204,39 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         var isAdaptiveThreshold = value.Operation is
             ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
         var isHMinima = value.Operation == ProcessingOperation.HMinima;
-        var isHeightMap = value.Operation == ProcessingOperation.HeightMap;
+        var isHeightSurface = value.Operation is ProcessingOperation.HeightMap or
+            ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection;
+        var isHeightProjection = value.Operation == ProcessingOperation.HeightProjection;
         return new NativeOperationRequest
         {
             Operation = (int)value.Operation,
             Backend = (int)value.Backend,
             Radius = isHMinima ? value.HMinimaCheckInterval :
-                isHeightMap ? value.HeightMapXyRadius : value.Radius,
+                isHeightSurface ? value.HeightMapXyRadius : value.Radius,
             Connectivity = isDslt ? (int)value.DsltKernel :
                 isAdaptiveThreshold ? (int)value.AdaptiveThresholdKernel :
-                isHeightMap ? (int)value.HeightMapKernel : value.Connectivity,
+                isHeightSurface ? (int)value.HeightMapKernel : value.Connectivity,
             MinimumComponentSize = isThresholdSweep
                 ? value.ThresholdSweepMinimumComponentSize
-                : value.MinimumComponentSize,
+                : isHeightProjection ? value.ProjectionRange : value.MinimumComponentSize,
             SliceIndex = isSegmentation || isThresholdSweep ? value.ClosingRadius :
-                isHeightMap ? value.HeightMapSmoothLevel : value.SliceIndex,
+                isHeightSurface ? value.HeightMapSmoothLevel : value.SliceIndex,
             LanczosOrder = isDslt ? value.DirectionLevel :
-                isHeightMap ? value.HeightMapZRadius : value.LanczosOrder,
+                isHeightSurface ? value.HeightMapZRadius : value.LanczosOrder,
             Threshold = isSegmentation ? value.MinimumInvalidStructureArea :
                 isThresholdSweep ? value.ThresholdSweepMinimumInvalidStructureArea :
                 isHMinima ? value.HMinimaHeight : value.Threshold,
             ConstantC = isSegmentation ? value.MinimumC :
-                isThresholdSweep ? value.MinimumThreshold : value.ConstantC,
+                isThresholdSweep ? value.MinimumThreshold :
+                isHeightProjection ? value.ProjectionOffset : value.ConstantC,
             WindowMinimum = isSegmentation ? value.MaximumC :
-                isThresholdSweep ? value.MaximumThreshold : value.WindowMinimum,
+                isThresholdSweep ? value.MaximumThreshold :
+                isHeightProjection ? value.ProjectionStartDepth : value.WindowMinimum,
             WindowMaximum = isSegmentation ? value.CInterval :
-                isThresholdSweep ? value.ThresholdInterval : value.WindowMaximum,
-            TargetSpacingZ = isDslt ? value.ZCorrectionFactor : value.TargetSpacingZ,
+                isThresholdSweep ? value.ThresholdInterval :
+                isHeightProjection ? value.ProjectionThreshold : value.WindowMaximum,
+            TargetSpacingZ = isDslt ? value.ZCorrectionFactor :
+                isHeightProjection ? (float)value.ProjectionMode : value.TargetSpacingZ,
         };
     }
 

@@ -280,8 +280,8 @@ public static class RealDataValidationRunner
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
             var root = document.RootElement;
             if (!TryGetString(root, "schemaVersion", out var schemaVersion) ||
-                (schemaVersion != "1.5" && schemaVersion != "1.6"))
-                failures.Add("Candidate provenance schemaVersion must be 1.5 or 1.6.");
+                (schemaVersion != "1.5" && schemaVersion != "1.6" && schemaVersion != "1.7"))
+                failures.Add("Candidate provenance schemaVersion must be 1.5, 1.6, or 1.7.");
             if (!TryGetString(root, "validationLevel", out var validationLevel) ||
                 validationLevel != "synthetic-data-validated")
                 failures.Add("Candidate provenance validationLevel is missing or invalid.");

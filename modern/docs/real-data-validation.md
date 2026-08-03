@@ -22,7 +22,7 @@ must confirm `dataClassification: representative-real` and the stated
 6. Set `container` to `tiff` or `lsm`; it must agree with provenance
    `inputContainer`.
 
-Candidate provenance schema 1.5 or 1.6 is required. The validator cross-checks its
+Candidate provenance schema 1.5, 1.6, or 1.7 is required. The validator cross-checks its
 input voxel type, container, channels, Z spacing, DSLT segmentation operation,
 actual CPU/CUDA backend, label output kind, and output dimensions instead of
 trusting the manifest coverage fields alone. It also recomputes the canonical

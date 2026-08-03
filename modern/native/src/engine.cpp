@@ -237,7 +237,39 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
             result_.output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
             break;
         case DSLT_OP_DEPTH_MAP:
-            output_ = ops::depth_map(source_, request.threshold, progress);
+            output_ = ops::depth_map(
+                source_,
+                ops::HeightMapParameters{
+                    request.radius,
+                    request.lanczos_order,
+                    request.connectivity,
+                    request.slice_index,
+                    request.threshold,
+                },
+                progress);
+            break;
+        case DSLT_OP_HEIGHT_PROJECTION:
+            output_ = ops::height_projection(
+                source_,
+                ops::HeightMapParameters{
+                    request.radius,
+                    request.lanczos_order,
+                    request.connectivity,
+                    request.slice_index,
+                    request.threshold,
+                },
+                ops::HeightProjectionParameters{
+                    static_cast<int>(request.target_spacing_z),
+                    request.minimum_component_size,
+                    request.constant_c,
+                    request.window_min,
+                    request.window_max,
+                },
+                progress);
+            result_.width = source_.descriptor().width;
+            result_.height = source_.descriptor().height;
+            result_.depth = 1;
+            result_.output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
             break;
         case DSLT_OP_RESAMPLE_Z_AREA:
             output_ = ops::resample_z(source_, request.target_spacing_z, 0, false, result_.depth, progress);

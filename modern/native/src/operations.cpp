@@ -652,6 +652,93 @@ void apply_crop(
     }
 }
 
+void squared_distance_transform_1d(
+    std::span<const float> input,
+    std::span<float> output) {
+    if (input.size() != output.size() || input.empty()) {
+        throw std::invalid_argument("distance-transform line dimensions are invalid");
+    }
+    const auto count = input.size();
+    std::vector<std::size_t> sites(count);
+    std::vector<float> boundaries(count + 1);
+    std::size_t envelope = 0;
+    sites[0] = 0;
+    boundaries[0] = -std::numeric_limits<float>::infinity();
+    boundaries[1] = std::numeric_limits<float>::infinity();
+    for (std::size_t q = 1; q < count; ++q) {
+        auto intersection = 0.0F;
+        while (true) {
+            const auto site = sites[envelope];
+            const auto qf = static_cast<float>(q);
+            const auto sitef = static_cast<float>(site);
+            const auto numerator =
+                (input[q] + qf * qf) -
+                (input[site] + sitef * sitef);
+            intersection = numerator /
+                (2.0F * static_cast<float>(q - site));
+            if (intersection > boundaries[envelope] || envelope == 0) break;
+            --envelope;
+        }
+        ++envelope;
+        sites[envelope] = q;
+        boundaries[envelope] = intersection;
+        boundaries[envelope + 1] = std::numeric_limits<float>::infinity();
+    }
+    envelope = 0;
+    for (std::size_t q = 0; q < count; ++q) {
+        while (boundaries[envelope + 1] < static_cast<float>(q)) ++envelope;
+        const auto delta = static_cast<float>(q) - static_cast<float>(sites[envelope]);
+        output[q] = delta * delta + input[sites[envelope]];
+    }
+}
+
+std::vector<Vec3> surface_normals(
+    std::span<const float> height,
+    const dslt_volume_descriptor& descriptor) {
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height;
+    if (height.size() != expected) throw std::invalid_argument("height surface dimensions do not match");
+    std::vector<Vec3> normals(expected, Vec3{0.0F, 0.0F, 0.0F});
+    const auto add = [](Vec3& target, float x, float y) {
+        target.x += x;
+        target.y += y;
+        target.z += 1.0F;
+    };
+    for (std::size_t y = 0; y < descriptor.height; ++y) {
+        for (std::size_t x = 0; x < descriptor.width; ++x) {
+            const auto index = y * descriptor.width + x;
+            const auto center = height[index];
+            if (x + 1 < descriptor.width && y + 1 < descriptor.height) {
+                add(normals[index], -(height[index + 1] - center),
+                    -(height[index + descriptor.width] - center));
+            }
+            if (x > 0 && y + 1 < descriptor.height) {
+                add(normals[index], height[index - 1] - center,
+                    -(height[index + descriptor.width] - center));
+            }
+            if (x > 0 && y > 0) {
+                add(normals[index], height[index - 1] - center,
+                    height[index - descriptor.width] - center);
+            }
+            if (x + 1 < descriptor.width && y > 0) {
+                add(normals[index], height[index + 1] - center,
+                    height[index - descriptor.width] - center);
+            }
+            const auto length = std::sqrt(
+                normals[index].x * normals[index].x +
+                normals[index].y * normals[index].y +
+                normals[index].z * normals[index].z);
+            if (length > 0.0F) {
+                normals[index].x /= length;
+                normals[index].y /= length;
+                normals[index].z /= length;
+            } else {
+                normals[index] = {0.0F, 0.0F, 1.0F};
+            }
+        }
+    }
+    return normals;
+}
+
 } // namespace
 
 std::vector<float> adaptive_threshold(
@@ -1411,27 +1498,130 @@ std::vector<float> height_map(
     return result;
 }
 
-std::vector<float> depth_map(const Volume& volume, float threshold_value, const Engine::Progress& progress) {
-    const auto source = selected_channel(volume);
-    const auto& d = volume.descriptor();
-    std::vector<float> result(source.size(), 0.0F);
-    for (std::size_t y = 0; y < d.height; ++y) {
-        for (std::size_t x = 0; x < d.width; ++x) {
-            int surface = -1;
-            for (std::size_t z = 0; z < d.depth; ++z) {
-                if (source[flat(x, y, z, d.width, d.height)] >= threshold_value) {
-                    surface = static_cast<int>(z);
-                    break;
-                }
+std::vector<float> depth_map(
+    const Volume& volume,
+    const HeightMapParameters& parameters,
+    const Engine::Progress& progress) {
+    const auto height = height_map(
+        volume, parameters, mapped_progress(progress, 0.0F, 0.45F));
+    const auto& descriptor = volume.descriptor();
+    const auto width = static_cast<std::size_t>(descriptor.width);
+    const auto height_count = static_cast<std::size_t>(descriptor.height);
+    const auto plane = width * height_count;
+    std::vector<float> result(volume.voxel_count(), 0.0F);
+    std::vector<float> costs(plane);
+    std::vector<float> row_pass(plane);
+    std::vector<float> distance_squared(plane);
+    std::vector<float> input_line(std::max(width, height_count));
+    std::vector<float> output_line(input_line.size());
+
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t index = 0; index < plane; ++index) {
+            const auto delta = static_cast<float>(z) - height[index];
+            costs[index] = delta * delta;
+        }
+        for (std::size_t y = 0; y < height_count; ++y) {
+            const auto row = std::span<const float>(costs).subspan(y * width, width);
+            auto transformed = std::span<float>(row_pass).subspan(y * width, width);
+            squared_distance_transform_1d(row, transformed);
+        }
+        for (std::size_t x = 0; x < width; ++x) {
+            for (std::size_t y = 0; y < height_count; ++y) {
+                input_line[y] = row_pass[y * width + x];
             }
-            if (surface >= 0) {
-                for (std::size_t z = surface; z < d.depth; ++z) {
-                    result[flat(x, y, z, d.width, d.height)] = static_cast<float>(static_cast<int>(z) - surface) * static_cast<float>(d.calibration.spacing_z);
-                }
+            squared_distance_transform_1d(
+                std::span<const float>(input_line).first(height_count),
+                std::span<float>(output_line).first(height_count));
+            for (std::size_t y = 0; y < height_count; ++y) {
+                distance_squared[y * width + x] = output_line[y];
             }
         }
-        report(progress, y + 1, d.height);
+        for (std::size_t index = 0; index < plane; ++index) {
+            if (static_cast<float>(z) > height[index]) {
+                result[z * plane + index] = std::sqrt(std::max(distance_squared[index], 0.0F));
+            }
+        }
+        if (progress && !progress(0.45F + 0.55F * static_cast<float>(z + 1) /
+            static_cast<float>(descriptor.depth))) {
+            throw std::runtime_error("cancelled");
+        }
     }
+    report(progress, 1, 1);
+    return result;
+}
+
+std::vector<float> height_projection(
+    const Volume& volume,
+    const HeightMapParameters& height_parameters,
+    const HeightProjectionParameters& projection_parameters,
+    const Engine::Progress& progress) {
+    if (projection_parameters.mode != 0 && projection_parameters.mode != 1) {
+        throw std::invalid_argument("height projection mode must be 0 (normal) or 1 (Z)");
+    }
+    if (projection_parameters.range < 0) {
+        throw std::invalid_argument("height projection range must be non-negative");
+    }
+    if (!std::isfinite(projection_parameters.offset) ||
+        !std::isfinite(projection_parameters.start_depth) ||
+        !std::isfinite(projection_parameters.projection_threshold)) {
+        throw std::invalid_argument("height projection parameters must be finite");
+    }
+    const auto surface = height_map(
+        volume, height_parameters, mapped_progress(progress, 0.0F, 0.45F));
+    const auto& descriptor = volume.descriptor();
+    const auto source = selected_channel(volume);
+    const auto normals = projection_parameters.mode == 0
+        ? surface_normals(surface, descriptor)
+        : std::vector<Vec3>{};
+    std::vector<float> result(surface.size(), 0.0F);
+    for (std::size_t y = 0; y < descriptor.height; ++y) {
+        for (std::size_t x = 0; x < descriptor.width; ++x) {
+            const auto surface_index = y * descriptor.width + x;
+            auto maximum = -1.0F;
+            for (int step = 0; step <= projection_parameters.range; ++step) {
+                const auto distance = projection_parameters.start_depth + static_cast<float>(step);
+                const auto px = projection_parameters.mode == 0
+                    ? static_cast<float>(x) + normals[surface_index].x * distance
+                    : static_cast<float>(x);
+                const auto py = projection_parameters.mode == 0
+                    ? static_cast<float>(y) + normals[surface_index].y * distance
+                    : static_cast<float>(y);
+                const auto pz = surface[surface_index] +
+                    (projection_parameters.mode == 0
+                        ? normals[surface_index].z * distance
+                        : distance) +
+                    projection_parameters.offset;
+                const auto outside = px < 0.0F || py < 0.0F || pz < 0.0F ||
+                    px > static_cast<float>(descriptor.width - 1) ||
+                    py > static_cast<float>(descriptor.height - 1) ||
+                    pz > static_cast<float>(descriptor.depth - 1);
+                if (outside) {
+                    if (projection_parameters.mode == 1 && pz < 0.0F) continue;
+                    if (maximum < 0.0F) maximum = 0.0F;
+                    break;
+                }
+                const auto value = trilinear_clamp(source, descriptor, px, py, pz);
+                if (projection_parameters.mode == 0 &&
+                    projection_parameters.projection_threshold > 0.0F) {
+                    maximum = value > projection_parameters.projection_threshold ? 1.0F : 0.0F;
+                    if (maximum == 1.0F) break;
+                } else if (value > maximum) {
+                    maximum = value;
+                }
+            }
+            if (maximum < 0.0F ||
+                (projection_parameters.mode == 1 &&
+                 maximum < projection_parameters.projection_threshold)) {
+                maximum = 0.0F;
+            }
+            result[surface_index] = maximum;
+        }
+        if (progress && !progress(0.45F + 0.55F * static_cast<float>(y + 1) /
+            static_cast<float>(descriptor.height))) {
+            throw std::runtime_error("cancelled");
+        }
+    }
+    report(progress, 1, 1);
     return result;
 }
 

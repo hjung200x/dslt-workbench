@@ -194,6 +194,56 @@ int main() {
     require(dslt_copy_output_f32(handle, height_result.data(), height_result.size()));
     assert(height_result.size() == 1 && std::abs(height_result[0] - 2.5F) < 1.0e-6F);
 
+    auto projection_desc = descriptor(1, 1, 4);
+    const std::vector<float> projection_source{1.0F, 0.2F, 0.8F, 0.4F};
+    require(dslt_set_volume_f32(
+        handle, &projection_desc, projection_source.data(), projection_source.size()));
+    request = {};
+    request.operation = DSLT_OP_HEIGHT_PROJECTION;
+    request.backend = DSLT_BACKEND_CPU;
+    request.radius = 0;              // XY smoothing radius.
+    request.lanczos_order = 0;       // Z filter radius.
+    request.connectivity = 0;        // Gaussian kernel.
+    request.slice_index = 0;         // XY smoothing passes.
+    request.threshold = 0.5F;        // Surface threshold.
+    request.target_spacing_z = 1.0F; // Z projection mode.
+    request.minimum_component_size = 2; // Inclusive projection range.
+    request.constant_c = 0.0F;       // Surface offset.
+    request.window_min = 1.0F;       // Start depth.
+    request.window_max = 0.0F;       // Projection threshold.
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.output_kind == DSLT_OUTPUT_IMAGE_FLOAT32);
+    assert(result.width == 1 && result.height == 1 && result.depth == 1);
+    std::vector<float> projection_result(result.element_count);
+    require(dslt_copy_output_f32(handle, projection_result.data(), projection_result.size()));
+    assert(projection_result.size() == 1 && std::abs(projection_result[0] - 0.8F) < 1.0e-6F);
+
+    request.target_spacing_z = 2.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    auto depth_desc = descriptor(3, 1, 3);
+    const std::vector<float> depth_source{
+        1.0F, 0.0F, 1.0F,
+        0.0F, 0.0F, 0.0F,
+        0.0F, 0.0F, 0.0F,
+    };
+    require(dslt_set_volume_f32(
+        handle, &depth_desc, depth_source.data(), depth_source.size()));
+    request = {};
+    request.operation = DSLT_OP_DEPTH_MAP;
+    request.backend = DSLT_BACKEND_CPU;
+    request.radius = 0;
+    request.lanczos_order = 0;
+    request.connectivity = 0;
+    request.slice_index = 0;
+    request.threshold = 0.5F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.output_kind == DSLT_OUTPUT_VOLUME_FLOAT32);
+    std::vector<float> depth_result(result.element_count);
+    require(dslt_copy_output_f32(handle, depth_result.data(), depth_result.size()));
+    assert(depth_result.size() == depth_source.size());
+    assert(std::abs(depth_result[6] - 1.0F) < 1.0e-6F);
+
     request = {};
     request.operation = DSLT_OP_SMOOTH_MEAN;
     request.backend = DSLT_BACKEND_CPU;

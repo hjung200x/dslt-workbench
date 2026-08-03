@@ -91,6 +91,10 @@ The source-derived height-map Z filter, crossing interpolation, XY smoothing,
 defaults, and legacy CPU/GPU path distinction are defined in
 `docs/height-map-spec.md`.
 
+The exact 3D Euclidean depth map, scalar Z/normal projection, range and offset
+semantics, threshold behavior, and display-layer boundary are defined in
+`docs/height-projection-spec.md`.
+
 The current WPF workflow, state-preservation guarantees, and the remaining
 orthogonal-view and label-editing UI work are tracked in
 `docs/ui-workflow.md`.
