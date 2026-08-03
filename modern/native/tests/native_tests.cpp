@@ -256,6 +256,108 @@ void cuda_pointwise_parity_test() {
     assert(automatic_view.result.width == 4);
     assert(automatic_view.result.height == 2);
 
+    auto projection_desc = descriptor(4, 3, 5);
+    std::vector<float> projection_source(projection_desc.element_count);
+    for (std::size_t z = 0; z < projection_desc.depth; ++z) {
+        for (std::size_t y = 0; y < projection_desc.height; ++y) {
+            for (std::size_t x = 0; x < projection_desc.width; ++x) {
+                const auto surface = 1.0F + static_cast<float>((x + 2 * y) % 3);
+                const auto value = 0.2F + 0.35F * (static_cast<float>(z) - surface) +
+                    0.03F * static_cast<float>(x);
+                const auto index = z * projection_desc.width * projection_desc.height +
+                    y * projection_desc.width + x;
+                projection_source[index] = std::clamp(value, 0.0F, 1.0F);
+            }
+        }
+    }
+    require(dslt_set_volume_f32(
+        handle, &projection_desc, projection_source.data(), projection_source.size()));
+
+    const auto assert_float_parity = [](const auto& cpu, const auto& cuda) {
+        assert(cpu.values.size() == cuda.values.size());
+        for (std::size_t index = 0; index < cpu.values.size(); ++index) {
+            const auto difference = std::abs(cpu.values[index] - cuda.values[index]);
+            assert(difference <= 1.0e-5F ||
+                difference <= std::abs(cpu.values[index]) * 1.0e-4F);
+        }
+    };
+
+    for (const auto kernel_type : {0, 1}) {
+        dslt_operation_request height_request{};
+        height_request.operation = DSLT_OP_HEIGHT_MAP;
+        height_request.radius = 1;
+        height_request.lanczos_order = 1;
+        height_request.connectivity = kernel_type;
+        height_request.slice_index = 2;
+        height_request.threshold = 0.5F;
+        height_request.backend = DSLT_BACKEND_CPU;
+        const auto cpu = run_float_operation_result(
+            handle, height_request, DSLT_BACKEND_CPU, DSLT_OUTPUT_IMAGE_FLOAT32);
+        height_request.backend = DSLT_BACKEND_CUDA;
+        const auto cuda = run_float_operation_result(
+            handle, height_request, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+        assert(cuda.result.width == projection_desc.width);
+        assert(cuda.result.height == projection_desc.height);
+        assert(cuda.result.depth == 1);
+        assert_float_parity(cpu, cuda);
+    }
+
+    dslt_operation_request depth_request{};
+    depth_request.operation = DSLT_OP_DEPTH_MAP;
+    depth_request.radius = 1;
+    depth_request.lanczos_order = 1;
+    depth_request.connectivity = 0;
+    depth_request.slice_index = 1;
+    depth_request.threshold = 0.5F;
+    depth_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_depth = run_float_operation_result(
+        handle, depth_request, DSLT_BACKEND_CPU);
+    depth_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_depth = run_float_operation_result(
+        handle, depth_request, DSLT_BACKEND_CUDA);
+    assert(cuda_depth.result.width == projection_desc.width);
+    assert(cuda_depth.result.height == projection_desc.height);
+    assert(cuda_depth.result.depth == projection_desc.depth);
+    assert_float_parity(cpu_depth, cuda_depth);
+
+    for (const auto mode : {0, 1}) {
+        dslt_operation_request projection_request{};
+        projection_request.operation = DSLT_OP_HEIGHT_PROJECTION;
+        projection_request.radius = 1;
+        projection_request.lanczos_order = 1;
+        projection_request.connectivity = 0;
+        projection_request.slice_index = 1;
+        projection_request.threshold = 0.5F;
+        projection_request.target_spacing_z = static_cast<float>(mode);
+        projection_request.minimum_component_size = 2;
+        projection_request.constant_c = 0.1F;
+        projection_request.window_min = 0.0F;
+        projection_request.window_max = 0.0F;
+        projection_request.backend = DSLT_BACKEND_CPU;
+        const auto cpu = run_float_operation_result(
+            handle, projection_request, DSLT_BACKEND_CPU, DSLT_OUTPUT_IMAGE_FLOAT32);
+        projection_request.backend = DSLT_BACKEND_CUDA;
+        const auto cuda = run_float_operation_result(
+            handle, projection_request, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+        assert(cuda.result.width == projection_desc.width);
+        assert(cuda.result.height == projection_desc.height);
+        assert(cuda.result.depth == 1);
+        assert_float_parity(cpu, cuda);
+    }
+
+    request = {};
+    request.operation = DSLT_OP_HEIGHT_MAP;
+    request.radius = 1;
+    request.lanczos_order = 1;
+    request.connectivity = 1;
+    request.slice_index = 1;
+    request.threshold = 0.5F;
+    request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic_height = run_float_operation_result(
+        handle, request, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+    assert(automatic_height.result.width == projection_desc.width);
+    assert(automatic_height.result.height == projection_desc.height);
+
     dslt_operation_result result{};
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
@@ -273,7 +375,44 @@ void cuda_pointwise_parity_test() {
     request = {};
     request.operation = DSLT_OP_EXTRACT_YZ;
     request.backend = DSLT_BACKEND_CUDA;
-    request.slice_index = static_cast<std::int32_t>(resample_desc.width);
+    request.slice_index = static_cast<std::int32_t>(projection_desc.width);
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_HEIGHT_MAP;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.radius = 65;
+    request.lanczos_order = 0;
+    request.connectivity = 0;
+    request.slice_index = 0;
+    request.threshold = 0.5F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request.radius = 0;
+    request.connectivity = 2;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request.connectivity = 0;
+    request.slice_index = 11;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request.slice_index = 0;
+    request.threshold = std::numeric_limits<float>::quiet_NaN();
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_HEIGHT_PROJECTION;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.connectivity = 0;
+    request.target_spacing_z = 2.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request.target_spacing_z = 0.0F;
+    request.minimum_component_size = -1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request.minimum_component_size = 0;
+    request.window_min = std::numeric_limits<float>::infinity();
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
@@ -285,6 +424,14 @@ void cuda_pointwise_parity_test() {
     };
     require(dslt_run_operation(
         handle, &request, cancel_resample, nullptr, &result), DSLT_CANCELLED);
+
+    request = depth_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    const auto cancel_depth = [](float progress, void*) -> std::int32_t {
+        return progress >= 0.6F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_depth, nullptr, &result), DSLT_CANCELLED);
 
     request = {};
     request.operation = DSLT_OP_DILATE_SPHERE;
@@ -327,10 +474,45 @@ void cuda_pointwise_parity_test() {
     request.window_min = -0.25F;
     request.window_max = 1.0F;
     (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA); // Load kernels before the baseline.
+
+    auto memory_height = depth_request;
+    memory_height.operation = DSLT_OP_HEIGHT_MAP;
+    memory_height.backend = DSLT_BACKEND_CUDA;
+    (void)run_float_operation_result(
+        handle, memory_height, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+    auto memory_depth = depth_request;
+    memory_depth.backend = DSLT_BACKEND_CUDA;
+    (void)run_float_operation(handle, memory_depth, DSLT_BACKEND_CUDA);
+    auto memory_projection = memory_height;
+    memory_projection.operation = DSLT_OP_HEIGHT_PROJECTION;
+    memory_projection.target_spacing_z = 0.0F;
+    memory_projection.minimum_component_size = 2;
+    memory_projection.constant_c = 0.1F;
+    memory_projection.window_min = 0.0F;
+    memory_projection.window_max = 0.0F;
+    (void)run_float_operation_result(
+        handle, memory_projection, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+        switch (iteration % 4) {
+        case 0:
+            (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+            break;
+        case 1:
+            (void)run_float_operation_result(
+                handle, memory_height, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+            break;
+        case 2:
+            (void)run_float_operation(handle, memory_depth, DSLT_BACKEND_CUDA);
+            break;
+        default:
+            memory_projection.target_spacing_z = iteration % 8 == 3 ? 0.0F : 1.0F;
+            (void)run_float_operation_result(
+                handle, memory_projection, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+            break;
+        }
     }
     dslt_backend_info after{};
     require(dslt_get_backend_info(handle, &after));

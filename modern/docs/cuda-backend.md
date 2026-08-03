@@ -20,7 +20,9 @@ The currently ported groups are:
 - mean/Gaussian smoothing;
 - cubic/spherical dilation and erosion;
 - area-average and Lanczos 2/3 Z resampling; and
-- XY, YZ, and ZX orthogonal-view extraction.
+- XY, YZ, and ZX orthogonal-view extraction;
+- filtered height maps and normal/Z height projection; and
+- 3D depth maps derived from the filtered height surface.
 
 ## Resource ownership and execution
 
@@ -45,6 +47,13 @@ Z resampling likewise synchronizes and reports after every output slice. The
 CUDA result carries its own output width, height, depth, and kind so the C ABI
 publishes the same variable-shape metadata as the CPU reference. Orthogonal
 views run as one plane extraction and publish `DSLT_OUTPUT_IMAGE_FLOAT32`.
+
+Height-map operations use the CPU reference's separable clamp-boundary line
+weights, threshold-crossing interpolation, and optional repeated XY smoothing.
+Normal and Z projections preserve the reference sampling and threshold rules.
+Depth maps run a two-pass squared-distance calculation for each output Z slice.
+These phases synchronize at cancellable boundaries and include their temporary
+volume and plane buffers in the VRAM preflight estimate.
 
 ## Validation gates
 
@@ -152,3 +161,32 @@ The fixture compares area averaging and Lanczos orders 2 and 3 with the CPU
 reference on a calibrated 3D volume. It verifies variable output depth, exact
 XY/YZ/ZX plane values and dimensions, image output kind, `Auto` selection,
 invalid parameters, and cancellation after a completed resampling slice.
+
+The height/depth projection fixture compares Gaussian and mean height surfaces,
+normal and Z projections, and volumetric depth values against CPU at the
+project float tolerance. It also covers variable image metadata, `Auto`
+selection, parameter rejection, and cancellation during depth-slice execution.
+After kernel warm-up, the memory fixture cycles pointwise execution, height
+maps, depth maps, and both projection modes across 100 requests and permits at
+most 1 MiB of apparent free-memory drift.
+
+## Recorded height/depth projection runtime evidence
+
+The first height-map, depth-map, and height-projection runtime gate was
+completed on 2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `2624b65f81511b9ff9d5a42fc2b0827def43db07` |
+| Hosted build | GitHub Actions run `30854398694`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `8F865B9C82E56320C6446F72EDECB27694EEFEC96D98BE61BF8DA39114A0DE82` |
+| `dslt_native_tests.exe` SHA-256 | `6E968738139C4400EBCC02A748DC2AEA9A953BA1B0273E4712D88FD444EAB9F4` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The runtime fixture exercises mean and Gaussian surface filtering, repeated XY
+smoothing, volumetric depth distance, normal and Z projection, variable output
+metadata, invalid parameters, `Auto` selection, mid-depth cancellation, and the
+100-request mixed-operation memory gate.
