@@ -69,6 +69,7 @@ try {
         'docs\functional-spec.md',
         'docs\h-minima-spec.md',
         'docs\height-map-spec.md',
+        'docs\height-projection-spec.md',
         'docs\real-data-manifest.example.json',
         'docs\real-data-validation.md',
         'docs\release-policy.md',

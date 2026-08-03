@@ -596,6 +596,66 @@ void filtered_height_map_fixture() {
     assert(rejected);
 }
 
+void height_projection_and_depth_fixture() {
+    const auto depth_desc = descriptor(3, 1, 3);
+    const dslt::Volume depth_volume(
+        depth_desc,
+        std::vector<float>{
+            1.0F, 0.0F, 1.0F,
+            0.0F, 0.0F, 0.0F,
+            0.0F, 0.0F, 0.0F,
+        });
+    const dslt::ops::HeightMapParameters height_parameters{0, 0, 0, 0, 0.5F};
+    const auto depth = dslt::ops::depth_map(depth_volume, height_parameters, {});
+    assert(depth.size() == depth_volume.voxel_count());
+    assert(close(depth[offset(0, 0, 1, depth_desc)], 1.0F));
+    assert(close(depth[offset(0, 0, 2, depth_desc)], 1.0F));
+    assert(close(depth[offset(2, 0, 2, depth_desc)], 1.0F));
+    assert(depth[offset(1, 0, 2, depth_desc)] == 0.0F);
+
+    const auto projection_desc = descriptor(1, 1, 4);
+    const dslt::Volume projection_volume(
+        projection_desc, std::vector<float>{1.0F, 0.2F, 0.8F, 0.4F});
+    const dslt::ops::HeightProjectionParameters z_parameters{1, 2, 0.0F, 1.0F, 0.0F};
+    const auto z_projection = dslt::ops::height_projection(
+        projection_volume, height_parameters, z_parameters, {});
+    assert(z_projection.size() == 1 && close(z_projection[0], 0.8F));
+
+    const dslt::ops::HeightProjectionParameters normal_parameters{0, 2, 0.0F, 1.0F, 0.0F};
+    const auto normal_projection = dslt::ops::height_projection(
+        projection_volume, height_parameters, normal_parameters, {});
+    assert(normal_projection.size() == 1 && close(normal_projection[0], 0.8F));
+
+    const auto binary_projection = dslt::ops::height_projection(
+        projection_volume, height_parameters,
+        dslt::ops::HeightProjectionParameters{0, 2, 0.0F, 1.0F, 0.5F}, {});
+    assert(binary_projection.size() == 1 && binary_projection[0] == 1.0F);
+    const auto rejected_projection = dslt::ops::height_projection(
+        projection_volume, height_parameters,
+        dslt::ops::HeightProjectionParameters{1, 2, 0.0F, 1.0F, 0.9F}, {});
+    assert(rejected_projection.size() == 1 && rejected_projection[0] == 0.0F);
+
+    bool rejected = false;
+    try {
+        static_cast<void>(dslt::ops::height_projection(
+            projection_volume, height_parameters,
+            dslt::ops::HeightProjectionParameters{2, 0, 0.0F, 0.0F, 0.0F}, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    bool cancelled = false;
+    try {
+        static_cast<void>(dslt::ops::depth_map(
+            depth_volume, height_parameters,
+            [](float value) { return value == 0.0F; }));
+    } catch (const std::runtime_error& error) {
+        cancelled = std::string_view(error.what()) == "cancelled";
+    }
+    assert(cancelled);
+}
+
 } // namespace
 
 int main() {
@@ -612,5 +672,6 @@ int main() {
     h_minima_fixture();
     watershed_fixture();
     filtered_height_map_fixture();
+    height_projection_and_depth_fixture();
     return 0;
 }

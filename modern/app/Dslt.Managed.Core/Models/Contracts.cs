@@ -34,6 +34,7 @@ public enum ProcessingOperation
     AdaptiveThreshold3D = 22,
     HMinima = 23,
     Watershed = 24,
+    HeightProjection = 25,
 }
 
 public enum OutputKind
@@ -57,6 +58,12 @@ public enum DsltKernelType
 {
     Gaussian = 0,
     Mean = 1,
+}
+
+public enum HeightProjectionMode
+{
+    Normal = 0,
+    Z = 1,
 }
 
 public sealed record VolumeSourceInfo(
@@ -166,7 +173,12 @@ public sealed record OperationParameters(
     int CropBorderXy = 0,
     float[]? CropHeightMap = null,
     string? SeedLabelsSha256 = null,
-    int[]? SelectedSeedLabels = null);
+    int[]? SelectedSeedLabels = null,
+    HeightProjectionMode ProjectionMode = HeightProjectionMode.Z,
+    float ProjectionOffset = 0,
+    float ProjectionStartDepth = 0,
+    int ProjectionRange = 0,
+    float ProjectionThreshold = 0);
 
 public sealed record ProcessingLabelState(
     int Width,

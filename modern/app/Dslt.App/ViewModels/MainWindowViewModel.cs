@@ -51,6 +51,11 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _heightMapZRadius = 4;
     private DsltKernelType _heightMapKernel = DsltKernelType.Gaussian;
     private int _heightMapSmoothLevel = 1;
+    private HeightProjectionMode _projectionMode = HeightProjectionMode.Z;
+    private float _projectionOffset;
+    private float _projectionStartDepth;
+    private int _projectionRange;
+    private float _projectionThreshold;
     private float _previewOffset = 20;
     private float _zCorrectionFactor = 0.2F;
     private float _minimumC;
@@ -96,6 +101,7 @@ public sealed class MainWindowViewModel : ObservableObject
             new("Erode sphere", ProcessingOperation.ErodeSphere, WorkflowStage.Process),
             new("Filtered height map", ProcessingOperation.HeightMap, WorkflowStage.Process),
             new("Depth map", ProcessingOperation.DepthMap, WorkflowStage.Process),
+            new("Height projection", ProcessingOperation.HeightProjection, WorkflowStage.Process),
             new("Connected components", ProcessingOperation.ConnectedComponents, WorkflowStage.Segment),
             new("Threshold sweep segmentation", ProcessingOperation.ThresholdSweep, WorkflowStage.Segment),
             new("DSLT threshold preview", ProcessingOperation.DsltThreshold, WorkflowStage.Segment),
@@ -126,6 +132,7 @@ public sealed class MainWindowViewModel : ObservableObject
         [ProcessingBackend.Auto, ProcessingBackend.Cpu, ProcessingBackend.Cuda];
     public IReadOnlyList<int> Connectivities { get; } = [6, 18, 26];
     public IReadOnlyList<DsltKernelType> DsltKernels { get; } = Enum.GetValues<DsltKernelType>();
+    public IReadOnlyList<HeightProjectionMode> ProjectionModes { get; } = Enum.GetValues<HeightProjectionMode>();
 
     public OperationOption SelectedOperation
     {
@@ -144,6 +151,8 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsHMinima));
             OnPropertyChanged(nameof(IsWatershed));
             OnPropertyChanged(nameof(IsHeightMap));
+            OnPropertyChanged(nameof(IsHeightSurfaceOperation));
+            OnPropertyChanged(nameof(IsHeightProjection));
             OnPropertyChanged(nameof(MinimumComponentSizeLabel));
             OnPropertyChanged(nameof(MinimumInvalidStructureArea));
             OnPropertyChanged(nameof(MinimumComponentSize));
@@ -171,10 +180,10 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public float Threshold
     {
-        get => IsHeightMap ? _heightMapThreshold : _threshold;
+        get => IsHeightSurfaceOperation ? _heightMapThreshold : _threshold;
         set
         {
-            if (IsHeightMap)
+            if (IsHeightSurfaceOperation)
                 SetProperty(ref _heightMapThreshold, Math.Clamp(value, 0, 1));
             else
                 SetProperty(ref _threshold, Math.Clamp(value, 0, 1));
@@ -359,6 +368,42 @@ public sealed class MainWindowViewModel : ObservableObject
         set => SetProperty(ref _heightMapSmoothLevel, Math.Clamp(value, 0, 10));
     }
 
+    public HeightProjectionMode ProjectionMode
+    {
+        get => _projectionMode;
+        set => SetProperty(ref _projectionMode, value);
+    }
+
+    public float ProjectionOffset
+    {
+        get => _projectionOffset;
+        set => SetProperty(ref _projectionOffset,
+            float.IsFinite(value) ? Math.Clamp(value, -MaximumProjectionDepth, MaximumProjectionDepth) : 0);
+    }
+
+    public float ProjectionStartDepth
+    {
+        get => _projectionStartDepth;
+        set => SetProperty(ref _projectionStartDepth,
+            float.IsFinite(value) ? Math.Clamp(value, -MaximumProjectionDepth, MaximumProjectionDepth) : 0);
+    }
+
+    public int ProjectionRange
+    {
+        get => _projectionRange;
+        set => SetProperty(ref _projectionRange, Math.Clamp(value, 0, MaximumProjectionDepth));
+    }
+
+    public float ProjectionThreshold
+    {
+        get => _projectionThreshold;
+        set => SetProperty(ref _projectionThreshold,
+            float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0);
+    }
+
+    public int MaximumProjectionDepth => Math.Max(0, (_volume?.Depth ?? 1) - 1);
+    public int MinimumProjectionDepth => -MaximumProjectionDepth;
+
     public float PreviewOffset
     {
         get => _previewOffset;
@@ -533,11 +578,15 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsHMinima => SelectedOperation.Operation == ProcessingOperation.HMinima;
     public bool IsWatershed => SelectedOperation.Operation == ProcessingOperation.Watershed;
     public bool IsHeightMap => SelectedOperation.Operation == ProcessingOperation.HeightMap;
+    public bool IsHeightSurfaceOperation => SelectedOperation.Operation is ProcessingOperation.HeightMap or
+        ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection;
+    public bool IsHeightProjection => SelectedOperation.Operation == ProcessingOperation.HeightProjection;
     public string MinimumComponentSizeLabel => IsWatershed
         ? "Minimum selected seed size"
         : "Exclusive minimum component size";
     public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
-        ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap;
+        ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap or
+        ProcessingOperation.HeightProjection;
     public bool UsesRadius => SelectedOperation.Operation is ProcessingOperation.SmoothMean or ProcessingOperation.SmoothGaussian or
         ProcessingOperation.DilateCube or ProcessingOperation.ErodeCube or ProcessingOperation.DilateSphere or
         ProcessingOperation.ErodeSphere or ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation or
@@ -761,6 +810,11 @@ public sealed class MainWindowViewModel : ObservableObject
         HeightMapZRadius: HeightMapZRadius,
         HeightMapKernel: HeightMapKernel,
         HeightMapSmoothLevel: HeightMapSmoothLevel,
+        ProjectionMode: ProjectionMode,
+        ProjectionOffset: ProjectionOffset,
+        ProjectionStartDepth: ProjectionStartDepth,
+        ProjectionRange: ProjectionRange,
+        ProjectionThreshold: ProjectionThreshold,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea,
         SeedLabelsSha256: labelState is null
@@ -776,6 +830,14 @@ public sealed class MainWindowViewModel : ObservableObject
         _xIndex = replacement.Width / 2;
         _yIndex = replacement.Height / 2;
         _zIndex = replacement.Depth / 2;
+        _projectionOffset = Math.Clamp(_projectionOffset, -MaximumProjectionDepth, MaximumProjectionDepth);
+        _projectionStartDepth = Math.Clamp(_projectionStartDepth, -MaximumProjectionDepth, MaximumProjectionDepth);
+        _projectionRange = Math.Clamp(_projectionRange, 0, MaximumProjectionDepth);
+        OnPropertyChanged(nameof(MaximumProjectionDepth));
+        OnPropertyChanged(nameof(MinimumProjectionDepth));
+        OnPropertyChanged(nameof(ProjectionOffset));
+        OnPropertyChanged(nameof(ProjectionStartDepth));
+        OnPropertyChanged(nameof(ProjectionRange));
         _lastResult = null;
         _lastParameters = null;
         _editingSession = null;

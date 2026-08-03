@@ -65,6 +65,14 @@ struct HeightMapParameters final {
     float threshold;
 };
 
+struct HeightProjectionParameters final {
+    int mode;
+    int range;
+    float offset;
+    float start_depth;
+    float projection_threshold;
+};
+
 struct DsltWorkEstimate final {
     std::uint64_t voxel_count;
     std::uint64_t direction_count;
@@ -175,7 +183,15 @@ std::vector<float> height_map(
     const Volume& volume,
     const HeightMapParameters& parameters,
     const Engine::Progress& progress);
-std::vector<float> depth_map(const Volume& volume, float threshold, const Engine::Progress& progress);
+std::vector<float> depth_map(
+    const Volume& volume,
+    const HeightMapParameters& parameters,
+    const Engine::Progress& progress);
+std::vector<float> height_projection(
+    const Volume& volume,
+    const HeightMapParameters& height_parameters,
+    const HeightProjectionParameters& projection_parameters,
+    const Engine::Progress& progress);
 std::vector<float> resample_z(const Volume& volume, float target_spacing, int lanczos_order, bool lanczos, std::uint32_t& output_depth, const Engine::Progress& progress);
 std::vector<float> extract_plane(const Volume& volume, dslt_operation operation, int slice, std::uint32_t& width, std::uint32_t& height);
 std::vector<float> dslt_threshold(

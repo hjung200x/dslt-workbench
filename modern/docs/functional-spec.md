@@ -29,7 +29,7 @@ The detailed DSLT mathematical and ordering contract is maintained in
 | Cube/sphere morphology | radius, filter shape | Radius 1 in segment edit panels | Radius 0-64 in native core |
 | Flood fill/components | threshold, 6/18/26 connectivity, minimum size | Threshold 0.1, connectivity 6, minimum size 0 | Connectivity is exactly 6, 18, or 26; preview minimum size is at least 1 |
 | Height map | XY/Z radius, threshold, mean/Gaussian filter, smooth level | XY radius 0, Z radius 4, threshold 0.25, Gaussian, smooth level 1 | GPU-visible source path is implemented on CPU: clamp-boundary Z filtering, strict threshold crossing with linear Z interpolation, and repeated separable XY smoothing; ABI/WPF fixtures pass, archived-runtime comparison pending |
-| Depth map/projection | height map, offset, range, depth-code settings | Depth code off | Simplified calibrated Z depth is synthetic-validated; projection parity is pending |
+| Depth map/projection | height map, normal/Z mode, offset, start depth, range, projection threshold, depth-code settings | Z mode selected; offset/range/start/threshold 0; depth code off | Exact voxel-index 3D Euclidean depth, scalar Z/normal sampling, inclusive range, legacy threshold behavior, cancellation, ABI, and WPF controls are synthetic-validated; RGB depth coloring and archived-runtime comparison remain presentation/reference work |
 | H-minima | h, check interval | h 0.1, interval 50 (hidden) | CPU 3x3x3 erosion reconstruction, lower-mask fitting, exact fixed point, residual inversion, progress/cancellation, ABI and WPF controls are synthetic-validated; archived-runtime comparison pending |
 | DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | radius 14, level 2, Z factor 0.2, mean | CPU threshold, iterative sweep, fixed/height-map crop, public work estimate, resource rejection, and ramp oracles implemented; archived-runtime comparison pending |
 | Threshold sweep | min, max, interval, minimum volumes, closing | min 0, effective max 1 after WPF coercion, interval 0.02, hidden minimum volume 0, valid area 100, closing 2 | CPU descending sweep, closing, crop, validation, append-only labeling, final-pass acceptance, progress/cancellation, and WPF controls are synthetic-validated; archived-runtime comparison pending |
@@ -51,7 +51,7 @@ conversion conflict. Their effective runtime defaults are intentionally marked
 The Workbench label model uses signed 32-bit values with `-1` as background.
 `LabelEditingSession` provides label selection, deterministic merge, 6/18/26
 connected-component split, crop, dilation, erosion, and bounded undo.
-Crop is a dimension-changing undo transaction; result provenance schema 1.6
+Crop is a dimension-changing undo transaction; result provenance schema 1.6+
 records its output origin in the source coordinate system as structured X/Y/Z
 fields in addition to the ordered edit history. Watershed records the complete
 seed-label SHA-256 and selected label identifiers without duplicating the seed

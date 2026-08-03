@@ -159,6 +159,52 @@ if (engine.IsAvailable)
     if (Math.Abs(heightMapData[0] - 2.5F) > 1e-6F)
         throw new InvalidOperationException("Filtered height-map crossing interpolation is incorrect.");
 
+    var heightProjectionResult = await engine.RunAsync(
+        new VolumeData(
+            1, 1, 4, 1, 0, Calibration.Unit,
+            [1.0F, 0.2F, 0.8F, 0.4F]),
+        new OperationParameters(
+            ProcessingOperation.HeightProjection,
+            ProcessingBackend.Cpu,
+            Threshold: 0.5F,
+            HeightMapXyRadius: 0,
+            HeightMapZRadius: 0,
+            HeightMapKernel: DsltKernelType.Gaussian,
+            HeightMapSmoothLevel: 0,
+            ProjectionMode: HeightProjectionMode.Z,
+            ProjectionStartDepth: 1.0F,
+            ProjectionRange: 2),
+        null,
+        CancellationToken.None);
+    var heightProjectionData = heightProjectionResult.FloatData ??
+        throw new InvalidOperationException("Height projection returned no float output.");
+    Equal(1, heightProjectionData.Length, "Height-projection output size");
+    if (Math.Abs(heightProjectionData[0] - 0.8F) > 1e-6F)
+        throw new InvalidOperationException("Height projection did not preserve Z-range maximum sampling.");
+
+    var depthMapResult = await engine.RunAsync(
+        new VolumeData(
+            3, 1, 3, 1, 0, Calibration.Unit,
+            [
+                1.0F, 0.0F, 1.0F,
+                0.0F, 0.0F, 0.0F,
+                0.0F, 0.0F, 0.0F,
+            ]),
+        new OperationParameters(
+            ProcessingOperation.DepthMap,
+            ProcessingBackend.Cpu,
+            Threshold: 0.5F,
+            HeightMapXyRadius: 0,
+            HeightMapZRadius: 0,
+            HeightMapKernel: DsltKernelType.Gaussian,
+            HeightMapSmoothLevel: 0),
+        null,
+        CancellationToken.None);
+    var depthMapData = depthMapResult.FloatData ??
+        throw new InvalidOperationException("Depth map returned no float output.");
+    if (Math.Abs(depthMapData[6] - 1.0F) > 1e-6F)
+        throw new InvalidOperationException("Depth map did not use the nearest 3D surface point.");
+
     var constantVolume = new VolumeData(
         3, 3, 3, 1, 0, Calibration.Unit,
         Enumerable.Repeat(0.5f, 27).ToArray());
@@ -279,7 +325,7 @@ if (!File.Exists(rawPath) || !File.Exists(jsonPath))
 var json = await File.ReadAllTextAsync(jsonPath);
 if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance validation level is missing.");
-if (!json.Contains("\"schemaVersion\": \"1.6\"", StringComparison.Ordinal) ||
+if (!json.Contains("\"schemaVersion\": \"1.7\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputVoxelType\": \"Float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputContainer\": \"memory-float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"outputSha256\":", StringComparison.Ordinal))
