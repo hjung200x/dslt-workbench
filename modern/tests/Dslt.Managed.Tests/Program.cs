@@ -69,7 +69,19 @@ if (engine.IsAvailable)
         null,
         CancellationToken.None);
     Equal(2, componentResult.ComponentCount, "Native ABI component count");
+
+    for (var iteration = 0; iteration < 100; iteration++)
+    {
+        using var lifecycleEngine = new NativeProcessingEngine();
+        var lifecycleResult = await lifecycleEngine.RunAsync(
+            nativeImpulse,
+            new OperationParameters(ProcessingOperation.SmoothMean, ProcessingBackend.Cpu, Radius: 1),
+            null,
+            CancellationToken.None);
+        Equal(nativeImpulse.VoxelCount, lifecycleResult.FloatData!.Length, "SafeHandle lifecycle output size");
+    }
     Console.WriteLine("DSLT native ABI integration tests passed.");
+    Console.WriteLine("DSLT SafeHandle lifecycle stress test passed.");
 }
 
 var temporaryBase = Path.Combine(Path.GetTempPath(), $"dslt-test-{Guid.NewGuid():N}");

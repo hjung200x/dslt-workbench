@@ -47,3 +47,26 @@ jobs:
         run: |
           $env:PATH = "$PWD\modern\native\out\build\windows-cpu\Release;$env:PATH"
           dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release
+      - name: Configure native AddressSanitizer build
+        working-directory: modern/native
+        run: cmake --preset windows-cpu-asan
+      - name: Build native AddressSanitizer tests
+        working-directory: modern/native
+        run: cmake --build --preset windows-cpu-asan
+      - name: Copy AddressSanitizer runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.ASAN -property installationPath
+          if (-not $vsRoot) { throw "Visual Studio AddressSanitizer component was not found." }
+          $runtime = Get-ChildItem -Path "$vsRoot\VC\Tools\MSVC\*\bin\Hostx64\x64\clang_rt.asan_dynamic-x86_64.dll" |
+            Sort-Object FullName |
+            Select-Object -Last 1
+          if (-not $runtime) { throw "AddressSanitizer runtime DLL was not found." }
+          Copy-Item -LiteralPath $runtime.FullName -Destination "modern\native\out\build\windows-cpu-asan\RelWithDebInfo" -Force
+      - name: Run native AddressSanitizer stress tests
+        working-directory: modern/native
+        shell: pwsh
+        run: |
+          $env:ASAN_OPTIONS = "halt_on_error=1:abort_on_error=1:detect_leaks=0"
+          ctest --preset windows-cpu-asan
