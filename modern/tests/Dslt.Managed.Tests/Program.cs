@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Dslt.Managed.Core.Interop;
+using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Services;
 using Dslt.Managed.Core.Synthetic;
@@ -106,6 +107,63 @@ if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
 File.Delete(rawPath);
 File.Delete(jsonPath);
 Console.WriteLine("DSLT provenance export test passed.");
+
+var labelTiffBase = Path.Combine(Path.GetTempPath(), $"dslt-label-{Guid.NewGuid():N}");
+var labelCalibration = new Calibration(0.25, 0.5, 1.75, true, "um");
+var labels16 = new[]
+{
+    -1, 0, 1, 2,
+    3, 4, 5, 6,
+    7, 8, 9, short.MaxValue,
+    short.MinValue, 12, 13, 14,
+    15, 16, 17, 18,
+    19, 20, 21, 22,
+};
+var label16Path = labelTiffBase + ".i16.tif";
+LabelTiffCodec.Write(label16Path, 4, 3, 2, labels16, labelCalibration);
+var labels16RoundTrip = LabelTiffCodec.Read(label16Path);
+Equal((int)LabelTiffEncoding.SignedInt16, (int)labels16RoundTrip.Encoding, "Signed 16-bit label TIFF encoding");
+Equal(2, labels16RoundTrip.Depth, "Signed 16-bit label TIFF depth");
+Equal(0.25, labels16RoundTrip.Calibration.SpacingX, "Signed 16-bit TIFF X spacing");
+Equal(0.5, labels16RoundTrip.Calibration.SpacingY, "Signed 16-bit TIFF Y spacing");
+Equal(1.75, labels16RoundTrip.Calibration.SpacingZ, "Signed 16-bit TIFF Z spacing");
+if (!labels16.SequenceEqual(labels16RoundTrip.Labels))
+    throw new InvalidOperationException("Signed 16-bit label TIFF was not bit-exact after round trip.");
+
+var labels32 = (int[])labels16.Clone();
+labels32[5] = short.MaxValue + 1;
+labels32[6] = 1_000_000;
+var label32Path = labelTiffBase + ".i32.tif";
+LabelTiffCodec.Write(label32Path, 4, 3, 2, labels32, labelCalibration);
+var labels32RoundTrip = LabelTiffCodec.Read(label32Path);
+Equal((int)LabelTiffEncoding.SignedInt32, (int)labels32RoundTrip.Encoding, "Signed 32-bit label TIFF encoding");
+if (!labels32.SequenceEqual(labels32RoundTrip.Labels))
+    throw new InvalidOperationException("Signed 32-bit label TIFF was not bit-exact after round trip.");
+
+var labelPackageBase = labelTiffBase + ".package";
+var labelResult = new ProcessingResult(
+    ProcessingBackend.Cpu,
+    OutputKind.LabelsInt32,
+    4,
+    3,
+    2,
+    23,
+    null,
+    labels32);
+await ResultPackageWriter.WriteAsync(labelPackageBase, sphere, operation, labelResult);
+var labelPackageTiff = labelPackageBase + ".labels.i32.tif";
+var labelPackageJson = labelPackageBase + ".json";
+if (!File.Exists(labelPackageTiff)) throw new InvalidOperationException("Extended signed 32-bit label TIFF was not exported.");
+var labelPackageMetadata = await File.ReadAllTextAsync(labelPackageJson);
+if (!labelPackageMetadata.Contains("exceed the legacy signed 16-bit TIFF range", StringComparison.Ordinal))
+    throw new InvalidOperationException("Extended label TIFF compatibility warning is missing.");
+
+File.Delete(label16Path);
+File.Delete(label32Path);
+File.Delete(labelPackageBase + ".i32.raw");
+File.Delete(labelPackageTiff);
+File.Delete(labelPackageJson);
+Console.WriteLine("DSLT signed 16/32-bit label TIFF round-trip tests passed.");
 
 var disconnected = Enumerable.Repeat(LabelEditingSession.Background, 5 * 3).ToArray();
 disconnected[0] = 4;

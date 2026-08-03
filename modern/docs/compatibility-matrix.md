@@ -4,10 +4,11 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 
 | Legacy capability | Workbench contract | Status | Validation |
 |---|---|---:|---|
-| Basic multi-page TIFF input | `VolumeDescriptor` + WPF TIFF adapter | implemented | Three-frame Gray8 smoke fixture |
-| ImageJ HyperStack metadata | TIFF metadata adapter | pending-reference | Metadata round-trip fixtures required |
-| LSM input | TIFF-compatible LSM adapter | pending-reference | Real LSM fixture required |
-| 8/16/32-bit input | Normalize to float working volume | scaffolded | Gray8 smoke fixture only; remaining type fixtures required |
+| Basic multi-page TIFF input | `VolumeDescriptor` + WPF TIFF adapter | implemented | Gray8/Gray16/Gray32Float fixtures |
+| ImageJ HyperStack metadata | `XYCZT` to channel-planar adapter | implemented | Synthetic 2-channel x 2-slice calibration fixture |
+| LSM input | TIFF-compatible WIC pixel adapter | pending-reference | Private Zeiss metadata and real LSM fixture required |
+| 8/16-bit integer and 32-bit float input | Raw decoded samples + normalized float working volume | implemented | Bit-exact decoded sample fixtures |
+| 32-bit integer image input | Raw TIFF path | scaffolded | Explicitly rejected until signed/unsigned fixtures exist |
 | Channel selection | Explicit `channel` in descriptor/request | implemented | Synthetic multichannel fixture |
 | Z area-average scaling | `ResampleZArea` | implemented | Ramp and impulse fixtures |
 | Z Lanczos 2/3 scaling | `ResampleZLanczos` | implemented | Ramp and impulse fixtures |
@@ -27,7 +28,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Threshold sweep | `ThresholdSweep` | scaffolded | Legacy comparison required |
 | Watershed | `Watershed` | pending-reference | Legacy comparison required |
 | Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity and undo fixtures |
-| Segment TIFF load/save | Signed 16-bit compatibility + int32 extended | scaffolded | Round-trip fixtures required |
+| Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |
 | Win32/x86 build | None | excluded | Windows x64 policy |
 
 `pending-reference` algorithms are not exposed as completed UI actions. This

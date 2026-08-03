@@ -11,8 +11,9 @@ The detailed DSLT mathematical and ordering contract is maintained in
 
 | Capability | Legacy evidence | Confirmed default/range | Workbench preview contract |
 |---|---|---|---|
-| Multi-page TIFF | `set3DImage_MultiTIFF`; `MultiTiffIO::GetImageData` | Channel defaults to 0 | Frames must have equal X/Y size; failed load preserves the active volume |
-| ImageJ/LSM metadata | `TiffDecoder` metadata and calibration members | Not fully established | Pending real metadata fixtures; no equivalence claim |
+| Multi-page TIFF | `set3DImage_MultiTIFF`; `MultiTiffIO::GetImageData` | Channel defaults to 0 | Classic Gray8/Gray16/Gray32Float decoded sample bytes are preserved; frames must have equal X/Y size; failed load preserves the active volume |
+| ImageJ HyperStack | `TiffDecoder`; page order `XYCZT` | One time point loaded at a time | `C x Z`, unit, and spacing are synthetic-validated; time series are rejected explicitly |
+| LSM metadata | TIFF-compatible pixel decode plus Zeiss private fields | Not fully established | Pixel path is scaffolded; private metadata remains pending real LSM fixtures |
 | Channel selection | `ch_slider`; `setChannel` | 0 through channel count - 1 | `SelectedChannel` must be within `[0, Channels)` |
 | Z interpolation | `SC_AREA_AVE`, `SC_LANCZOS2`, `SC_LANCZOS3` | Area average selected in the legacy UI | Area average or Lanczos order 2/3; target spacing must be positive |
 | Orthogonal planes | `getImageDataArrayXY/YZ/ZX` | Coordinates start at 0 | Out-of-range plane indices return an invalid-argument error |
@@ -49,11 +50,11 @@ conversion conflict. Their effective runtime defaults are intentionally marked
 
 The Workbench label model uses signed 32-bit values with `-1` as background.
 `LabelEditingSession` provides label selection, deterministic merge, 6/18/26
-connected-component split, crop, dilation, erosion, and bounded undo. Legacy
-signed-16-bit TIFF persistence and extended signed-32-bit TIFF persistence are
-still gated on bit-exact TIFF fixtures. The preview result package therefore
-uses an explicit `.i32.raw` payload plus JSON provenance and does not masquerade
-as a compatibility TIFF.
+connected-component split, crop, dilation, erosion, and bounded undo.
+`LabelTiffCodec` writes legacy-compatible signed 16-bit TIFF whenever all labels
+fit and otherwise writes signed 32-bit TIFF with an explicit compatibility
+warning. Result packages retain the `.i32.raw` payload and JSON provenance.
+See [`tiff-io-spec.md`](tiff-io-spec.md).
 
 ## Common error and state rules
 

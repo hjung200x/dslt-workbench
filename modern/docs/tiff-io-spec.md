@@ -1,0 +1,140 @@
+# TIFF, ImageJ, LSM, and label I/O contract
+
+## Validation status
+
+This contract distinguishes decoded-sample preservation from complete file
+preservation. Workbench currently has synthetic fixtures for classic TIFF,
+ImageJ hyperstack metadata, and signed label TIFF. It does not yet have a real
+Zeiss LSM fixture or a legacy-executable capture.
+
+| Capability | Current level |
+|---|---|
+| Gray8, Gray16, and Gray32Float TIFF pixels | Synthetic-data validated |
+| ImageJ `C x Z` hyperstack order and calibration | Synthetic-data validated |
+| Signed 16-bit legacy label TIFF | Synthetic-data validated |
+| Signed 32-bit extended label TIFF | Synthetic-data validated |
+| LSM pixels through the Windows TIFF codec | Scaffolded; real fixture required |
+| Zeiss LSM private metadata | Pending reference |
+
+No entry in this table implies legacy comparison or functional equivalence.
+
+## Image volume model
+
+`VolumeData` stores two representations when a TIFF/LSM file is loaded:
+
+- `Samples`: channel-planar float values used by the processing core;
+- `VolumeSourceInfo.ChannelPlanarRawSamples`: decoded sample bytes before
+  normalization, together with the source voxel type, container, and ImageJ
+  description.
+
+The internal order is `C -> Z -> Y -> X`: all voxels for channel 0 are
+contiguous, followed by all voxels for channel 1. This matches the native core's
+selected-channel contract. ImageJ directories arrive in `XYCZT` order, where C
+changes fastest. The loader rejects time series with `frames != 1` rather than
+silently flattening T into Z.
+
+All dimension and byte-count products use checked arithmetic. A directory with
+a different X/Y size, a metadata/page-count conflict, a non-finite float, or an
+unsupported sample format fails before the caller replaces the active volume.
+Before managed buffers are allocated, the loader estimates the float working
+array, decoded raw array, and one page buffer and rejects a request exceeding
+75% of the runtime's reported available memory.
+
+## Supported image TIFF inputs
+
+| TIFF fields | Behavior |
+|---|---|
+| Classic TIFF magic 42 | Supported |
+| BigTIFF magic 43 | Rejected with an explicit error |
+| SamplesPerPixel 1 | Supported |
+| Photometric MinIsWhite/MinIsBlack | Supported through the Windows Imaging Component decode path |
+| Unsigned 8-bit | Decoded bytes preserved; processing floats normalized per channel |
+| Unsigned 16-bit | Decoded bytes preserved; processing floats normalized per channel |
+| Signed 16-bit | Accepted only when WIC exposes unconverted Gray16 samples |
+| IEEE float 32-bit | Decoded IEEE bytes preserved; finite values normalized by maximum absolute value per channel |
+| Signed/unsigned image integer 32-bit | Not yet enabled in the WIC path; rejected without changing state |
+| WIC-supported strip compression | Decoded by the installed Windows TIFF codec |
+
+The original loader calls `getXYZStackFloat(..., normalize=true, channel)` and
+loads each channel into a separate contiguous region
+(`3DFilter/filter3d.cpp:332-338`, `MultiTiffIO/tiff_decorder.cpp:2545-2601`).
+Workbench therefore normalizes each channel independently. It keeps decoded raw
+samples alongside the processing float array so export and provenance do not
+depend on the normalized values.
+
+The `InputSha256` provenance field hashes decoded raw samples when present and
+falls back to float samples for synthetic volumes. It is a decoded-volume hash,
+not a hash of the container file.
+
+## ImageJ metadata
+
+The first IFD's `ImageDescription` is parsed as case-insensitive `key=value`
+lines. The following fields affect the volume contract:
+
+| Field | Effect |
+|---|---|
+| `channels` | Channel count; default 1 |
+| `slices` | Z count; defaults to directory count divided by channels |
+| `frames` | Must be 1 |
+| `pixel_width` / `pixel_height` | X/Y spacing when positive and finite |
+| `spacing` | Z spacing when positive and finite |
+| `unit` | Calibration unit name; default `pixel` |
+
+When explicit X/Y fields are absent, the inverse TIFF XResolution/YResolution
+is used. Metadata declarations must agree exactly with the number of decoded
+directories.
+
+## LSM handling
+
+`.lsm` files and TIFFs containing private tag 34412 are identified as `LSM`.
+Their pixels use the same WIC TIFF decode path, so an LSM that exposes supported
+grayscale directories can be opened. Workbench does not yet interpret the
+Zeiss private LSM structure for channel names, timestamps, or voxel calibration.
+Those claims remain blocked until representative real LSM files are available.
+
+## Label TIFF contract
+
+`LabelTiffCodec` is independent of WIC and implements the compatibility subset
+directly. It reads little- or big-endian classic TIFF and writes little-endian
+classic TIFF with:
+
+- one signed integer sample per pixel;
+- Photometric MinIsBlack;
+- top-left orientation;
+- no compression on output;
+- one output strip per Z page;
+- PageNumber and ImageJ description fields;
+- XResolution/YResolution and ImageJ Z spacing/unit;
+- signed 16-bit `SampleFormat=2` for legacy-compatible output;
+- signed 32-bit `SampleFormat=2` for extended output.
+
+The reader accepts multiple uncompressed strips per page, validates every
+offset and byte count against file length, rejects directory cycles, and
+requires identical dimensions and sample type across pages.
+
+The export rule is deterministic:
+
+```text
+if every label is in [-32768, 32767]: write .labels.i16.tif
+otherwise:                           write .labels.i32.tif
+```
+
+The signed 32-bit path adds this provenance warning:
+
+```text
+Labels exceed the legacy signed 16-bit TIFF range; a signed 32-bit TIFF was written.
+```
+
+Result packages continue to include the `.i32.raw` payload and JSON sidecar.
+The TIFF is an additional interoperable representation; it does not replace
+the lossless internal label array.
+
+## Required next fixtures
+
+- at least one LZW-compressed real TIFF for each supported image sample type;
+- ImageJ hyperstacks with two or more channels and real X/Y resolution tags;
+- a real `.lsm` with trusted channel count and voxel calibration;
+- a legacy-generated signed 16-bit segment TIFF;
+- 32-bit signed and unsigned image TIFFs before enabling those image paths;
+- malformed offsets, strip-count mismatch, truncated file, and allocation-limit
+  rejection fixtures.

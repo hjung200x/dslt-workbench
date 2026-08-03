@@ -20,17 +20,23 @@ public sealed record ProcessingProvenance(
     int OutputWidth,
     int OutputHeight,
     int OutputDepth,
-    int ComponentCount)
+    int ComponentCount,
+    string? LabelTiffEncoding,
+    string? CompatibilityWarning)
 {
     public static ProcessingProvenance Create(
         VolumeData input,
         OperationParameters operation,
-        ProcessingResult result)
+        ProcessingResult result,
+        string? labelTiffEncoding = null,
+        string? compatibilityWarning = null)
     {
-        var bytes = MemoryMarshal.AsBytes(input.Samples.AsSpan());
+        ReadOnlySpan<byte> bytes = input.Source is null
+            ? MemoryMarshal.AsBytes(input.Samples.AsSpan())
+            : input.Source.ChannelPlanarRawSamples;
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         return new ProcessingProvenance(
-            "1.0",
+            "1.1",
             "synthetic-data-validated",
             DateTimeOffset.UtcNow,
             hash,
@@ -45,7 +51,8 @@ public sealed record ProcessingProvenance(
             result.Width,
             result.Height,
             result.Depth,
-            result.ComponentCount);
+            result.ComponentCount,
+            labelTiffEncoding,
+            compatibilityWarning);
     }
 }
-
