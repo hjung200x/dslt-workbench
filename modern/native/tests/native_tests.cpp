@@ -614,6 +614,24 @@ void cuda_pointwise_parity_test() {
     require(dslt_set_volume_f32(
         handle, &threshold_sweep_desc,
         threshold_sweep_source.data(), threshold_sweep_source.size()));
+
+    auto staged_dslt_segmentation_request = dslt_segmentation_request;
+    staged_dslt_segmentation_request.constant_c = 0.0F;
+    staged_dslt_segmentation_request.window_min = 0.1F;
+    staged_dslt_segmentation_request.window_max = 0.1F;
+    staged_dslt_segmentation_request.target_spacing_z = 0.2F;
+    staged_dslt_segmentation_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_staged_dslt_segmentation = run_label_operation_result(
+        handle, staged_dslt_segmentation_request, DSLT_BACKEND_CPU);
+    staged_dslt_segmentation_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_staged_dslt_segmentation = run_label_operation_result(
+        handle, staged_dslt_segmentation_request, DSLT_BACKEND_CUDA);
+    assert(cpu_staged_dslt_segmentation.values == cuda_staged_dslt_segmentation.values);
+    assert(cuda_staged_dslt_segmentation.result.component_count == 2);
+    assert(cuda_staged_dslt_segmentation.result.reserved == 2);
+    assert(cuda_staged_dslt_segmentation.values[threshold_sweep_index(0, 2)] >= 0);
+    assert(cuda_staged_dslt_segmentation.values[threshold_sweep_index(5, 2)] == -1);
+
     dslt_operation_request threshold_sweep_request{};
     threshold_sweep_request.operation = DSLT_OP_THRESHOLD_SWEEP;
     threshold_sweep_request.constant_c = 0.4F;
@@ -692,6 +710,19 @@ void cuda_pointwise_parity_test() {
     const auto cuda_height_crop_sweep = run_label_operation_result(
         handle, threshold_sweep_request, DSLT_BACKEND_CUDA);
     assert(cpu_height_crop_sweep.values == cuda_height_crop_sweep.values);
+
+    staged_dslt_segmentation_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_height_crop_dslt_segmentation = run_label_operation_result(
+        handle, staged_dslt_segmentation_request, DSLT_BACKEND_CPU);
+    staged_dslt_segmentation_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_height_crop_dslt_segmentation = run_label_operation_result(
+        handle, staged_dslt_segmentation_request, DSLT_BACKEND_CUDA);
+    assert(cpu_height_crop_dslt_segmentation.values ==
+        cuda_height_crop_dslt_segmentation.values);
+    assert(cpu_height_crop_dslt_segmentation.result.component_count ==
+        cuda_height_crop_dslt_segmentation.result.component_count);
+    assert(cpu_height_crop_dslt_segmentation.result.reserved ==
+        cuda_height_crop_dslt_segmentation.result.reserved);
 
     auto watershed_desc = descriptor(5, 1, 1);
     const std::vector<float> watershed_source(watershed_desc.element_count, 0.0F);
