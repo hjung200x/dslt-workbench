@@ -22,6 +22,15 @@
         "DSLT_ENABLE_CUDA": "ON",
         "CMAKE_CUDA_ARCHITECTURES": "75;86;89;100"
       }
+    },
+    {
+      "name": "windows-cpu-asan",
+      "displayName": "Windows x64 CPU + AddressSanitizer",
+      "inherits": "windows-cpu",
+      "binaryDir": "${sourceDir}/out/build/windows-cpu-asan",
+      "cacheVariables": {
+        "DSLT_ENABLE_ASAN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -34,6 +43,11 @@
       "name": "windows-cuda-release",
       "configurePreset": "windows-cuda",
       "configuration": "Release"
+    },
+    {
+      "name": "windows-cpu-asan",
+      "configurePreset": "windows-cpu-asan",
+      "configuration": "RelWithDebInfo"
     }
   ],
   "testPresets": [
@@ -47,6 +61,12 @@
       "name": "windows-cuda",
       "configurePreset": "windows-cuda",
       "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-cpu-asan",
+      "configurePreset": "windows-cpu-asan",
+      "configuration": "RelWithDebInfo",
       "output": { "outputOnFailure": true }
     }
   ]

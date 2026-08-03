@@ -3,6 +3,21 @@ project(dslt_workbench_native VERSION 0.1.0 LANGUAGES CXX)
 
 option(DSLT_ENABLE_CUDA "Build the optional CUDA backend" OFF)
 option(DSLT_BUILD_TESTS "Build native tests" ON)
+option(DSLT_ENABLE_ASAN "Enable AddressSanitizer for native targets" OFF)
+
+function(dslt_enable_address_sanitizer target_name)
+    if(NOT DSLT_ENABLE_ASAN)
+        return()
+    endif()
+
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /fsanitize=address /Zi)
+        target_link_options(${target_name} PRIVATE /INCREMENTAL:NO /DEBUG)
+    else()
+        target_compile_options(${target_name} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+        target_link_options(${target_name} PRIVATE -fsanitize=address)
+    endif()
+endfunction()
 
 add_library(dslt_core SHARED
     src/c_api.cpp
@@ -16,6 +31,7 @@ target_include_directories(dslt_core
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_compile_definitions(dslt_core PRIVATE DSLT_CORE_EXPORTS)
+dslt_enable_address_sanitizer(dslt_core)
 
 if(MSVC)
     target_compile_options(dslt_core PRIVATE /W4 /permissive- /EHsc /utf-8)
@@ -37,5 +53,6 @@ if(DSLT_BUILD_TESTS)
     add_executable(dslt_native_tests tests/native_tests.cpp)
     target_compile_features(dslt_native_tests PRIVATE cxx_std_20)
     target_link_libraries(dslt_native_tests PRIVATE dslt_core)
+    dslt_enable_address_sanitizer(dslt_native_tests)
     add_test(NAME dslt_native_tests COMMAND dslt_native_tests)
 endif()

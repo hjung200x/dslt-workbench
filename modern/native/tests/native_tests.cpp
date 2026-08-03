@@ -28,6 +28,38 @@ void require(dslt_status actual, dslt_status expected = DSLT_OK) {
     }
 }
 
+void lifecycle_stress_test() {
+    constexpr int iterations = 250;
+    auto desc = descriptor(16, 12, 8);
+    std::vector<float> volume(desc.element_count, 0.0F);
+    for (std::size_t index = 0; index < volume.size(); index += 17) volume[index] = 1.0F;
+
+    for (int iteration = 0; iteration < iterations; ++iteration) {
+        dslt_handle handle = nullptr;
+        require(dslt_create(&handle));
+        require(dslt_set_volume_f32(handle, &desc, volume.data(), volume.size()));
+
+        dslt_operation_request request{};
+        request.operation = iteration % 2 == 0 ? DSLT_OP_SMOOTH_MEAN : DSLT_OP_CONNECTED_COMPONENTS;
+        request.backend = DSLT_BACKEND_CPU;
+        request.radius = 1;
+        request.threshold = 0.5F;
+        request.connectivity = 26;
+        request.minimum_component_size = 1;
+        dslt_operation_result result{};
+        require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+
+        if (result.output_kind == DSLT_OUTPUT_LABELS_INT32) {
+            std::vector<std::int32_t> labels(result.element_count);
+            require(dslt_copy_labels_i32(handle, labels.data(), labels.size()));
+        } else {
+            std::vector<float> output(result.element_count);
+            require(dslt_copy_output_f32(handle, output.data(), output.size()));
+        }
+        dslt_destroy(handle);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -95,6 +127,7 @@ int main() {
     require(dslt_set_volume_f32(handle, &invalid, objects.data(), 3), DSLT_INVALID_ARGUMENT);
 
     dslt_destroy(handle);
+    lifecycle_stress_test();
     std::cout << "DSLT native synthetic tests passed\n";
     return 0;
 }
