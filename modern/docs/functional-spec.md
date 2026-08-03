@@ -4,6 +4,8 @@ This document separates confirmed legacy behavior from the Workbench preview
 contract. Legacy evidence comes from `WpfApplication/MainWindow.xaml`,
 `WpfApplication/MainWindow.xaml.cs`, `3DFilter_CLR_Interface/3DFilter_CLR_Interface.h`,
 `3DFilter/filter3d.h`, and `MultiTiffIO/multi_tiff.cpp` at the pinned baseline.
+The detailed DSLT mathematical and ordering contract is maintained in
+[`dslt-algorithm-spec.md`](dslt-algorithm-spec.md).
 
 ## Input and navigation
 
@@ -28,7 +30,7 @@ contract. Legacy evidence comes from `WpfApplication/MainWindow.xaml`,
 | Height map | XY/Z block, threshold, threshold type, smooth level | Z block 4, threshold 0.25, smooth level 1 | Simplified first-hit height map is synthetic-validated; full legacy parameterization is pending |
 | Depth map/projection | height map, offset, range, depth-code settings | Depth code off | Simplified calibrated Z depth is synthetic-validated; projection parity is pending |
 | H-minima | h, check interval | h 0.1, interval 50 (hidden) | Not exposed until legacy result capture |
-| DSLT/Sobel-like | block, angle/level, Z factor, C sweep, kernel | block 14, level 2, Z factor 0.2 | Not exposed until directional-kernel parity fixtures exist |
+| DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | radius 14, level 2, Z factor 0.2, mean | Source behavior and fixtures are specified; implementation remains gated on scalar-oracle tests |
 | Threshold sweep | min, max, interval, minimum volumes, closing | interval 0.02, closing 2 | ABI ID reserved; returns `not implemented` |
 | Watershed | stride, minimum segment volume | stride 0.001 (hidden) | Not exposed until seed and tie-breaking behavior is captured |
 
@@ -37,6 +39,11 @@ ranges (for example a maximum of 1 with a value of 20). Those values are
 recorded as source facts, not copied as valid Workbench defaults. A legacy runtime
 capture is required to determine whether WPF coercion or code-behind supplied
 the effective value.
+
+The SGL sweep controls are a particularly important case: the visible min/max
+labels, control names, declared ranges, negative values, and code-behind sign
+conversion conflict. Their effective runtime defaults are intentionally marked
+`capture-required`; see `dslt-algorithm-spec.md`.
 
 ## Segment editing and persistence
 

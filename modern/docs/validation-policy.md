@@ -22,6 +22,9 @@ The project must not claim level 2 or 3 while only level 1 evidence exists.
   create/load/process/copy/destroy cycles.
 - Managed/native lifetime: 100 repeated `SafeHandle` processing and disposal
   cycles complete without failure.
+- DSLT scalar oracle: direction enumeration, every-radius minimum ordering,
+  trilinear clamp sampling, strict threshold ties, and C sign conversion pass
+  the fixtures in `dslt-algorithm-spec.md` before SIMD or CUDA optimization.
 
 ## v1.0 real-data gate
 

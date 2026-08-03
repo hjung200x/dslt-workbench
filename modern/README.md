@@ -42,4 +42,6 @@ optional and never changes CPU semantics.
 Only synthetic-data equivalence can be claimed until representative confocal
 stacks and accepted reference results are available. See
 `docs/validation-policy.md`. Legacy-to-Workbench parameters and error rules are
-tracked in `docs/functional-spec.md` and `docs/compatibility-matrix.md`.
+tracked in `docs/functional-spec.md` and `docs/compatibility-matrix.md`. The
+directional threshold equations, sampling rules, parameter mapping, and
+required fixtures are fixed in `docs/dslt-algorithm-spec.md`.
