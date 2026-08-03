@@ -27,7 +27,7 @@ jobs:
         run: dotnet run --project modern/tests/Dslt.App.Tests/Dslt.App.Tests.csproj --configuration Release
 
   native-cpu:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
