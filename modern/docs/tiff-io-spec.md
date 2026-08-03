@@ -13,8 +13,8 @@ Zeiss LSM fixture or a legacy-executable capture.
 | ImageJ `C x Z` hyperstack order and calibration | Synthetic-data validated |
 | Signed 16-bit legacy label TIFF | Synthetic-data validated |
 | Signed 32-bit extended label TIFF | Synthetic-data validated |
-| LSM pixels through the Windows TIFF codec | Scaffolded; real fixture required |
-| Zeiss LSM private metadata | Pending reference |
+| LSM pixels through the Windows TIFF codec | Synthetic-data validated; real fixture required |
+| Zeiss LSM core dimensions and voxel sizes | Synthetic-data validated from tag 34412; real fixture required |
 
 No entry in this table implies legacy comparison or functional equivalence.
 
@@ -97,10 +97,33 @@ directories.
 ## LSM handling
 
 `.lsm` files and TIFFs containing private tag 34412 are identified as `LSM`.
-Their pixels use the same WIC TIFF decode path, so an LSM that exposes supported
-grayscale directories can be opened. Workbench does not yet interpret the
-Zeiss private LSM structure for channel names, timestamps, or voxel calibration.
-Those claims remain blocked until representative real LSM files are available.
+The loader validates the two known `CZ_LSMINFO` magic values, declared structure
+size, positive X/Y/Z/C/T dimensions, and finite positive voxel sizes. The core
+layout fields are read at their source-compatible offsets: dimensions at bytes
+8 through 24 and three IEEE Float64 voxel sizes at bytes 40 through 63. LSM is
+required to be little-endian.
+
+`DimensionX` and `DimensionY` must match the full-resolution TIFF frame. The
+number of non-thumbnail IFDs must equal `Z x C x T`, and time dimension must be
+one. LSM pages are converted from C-fastest Z/C order to internal channel-planar
+storage. IFDs whose NewSubfileType marks reduced resolution are excluded;
+because Windows codecs differ, the loader accepts either all IFDs or only the
+already-filtered full-resolution frames from WIC, and rejects every other frame
+count.
+
+Voxel sizes are stored by LSM in meters and converted to `um` calibration.
+Malformed magic, size, dimensions, voxel sizes, IFD cycles, or page-count
+disagreement fail before the active volume is replaced. Channel names,
+timestamps, spectral metadata, multiple time points, and files beyond classic
+TIFF's 32-bit offsets remain outside this preview contract. Complete claims
+remain blocked until representative real LSM files are available.
+
+Public layout evidence is the BSD-licensed
+[`tifffile` CZ_LSMINFO definition](https://github.com/cgohlke/tifffile/blob/master/tifffile/tifffile.py#L16345-L16360).
+Bio-Formats documents strong LSM pixel and metadata support while noting that
+its Zeiss specification copies cannot be redistributed. Workbench therefore
+keeps real-file comparison as a required gate rather than treating the
+synthetic binary fixture as full compatibility proof.
 
 ## Label TIFF contract
 

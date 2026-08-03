@@ -55,20 +55,42 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         var decoder = stream is null
             ? null
             : new TiffBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-        var frameCount = rawInt32Pages?.Count ?? decoder?.Frames.Count ?? 0;
+        var fullDirectoryIndices = metadata.Directories
+            .Select((directory, index) => (directory, index))
+            .Where(item => !item.directory.IsReducedResolution)
+            .Select(item => item.index)
+            .ToArray();
+        var decoderFrameIndices = decoder is null
+            ? []
+            : decoder.Frames.Count == metadata.Directories.Count
+                ? fullDirectoryIndices
+                : decoder.Frames.Count == fullDirectoryIndices.Length
+                    ? Enumerable.Range(0, decoder.Frames.Count).ToArray()
+                    : throw new InvalidDataException(
+                        $"TIFF metadata contains {metadata.Directories.Count} directories ({fullDirectoryIndices.Length} full resolution), but the Windows codec exposed {decoder.Frames.Count} frames.");
+        if (rawInt32Pages is not null && rawInt32Pages.Count != fullDirectoryIndices.Length)
+            throw new InvalidDataException("Raw TIFF page count does not match its full-resolution directories.");
+        var frameCount = rawInt32Pages?.Count ?? decoderFrameIndices.Length;
         if (frameCount == 0) throw new InvalidDataException("TIFF stack contains no frames.");
-        var width = rawInt32Pages?[0].Width ?? decoder!.Frames[0].PixelWidth;
-        var height = rawInt32Pages?[0].Height ?? decoder!.Frames[0].PixelHeight;
+        var firstFrameIndex = decoderFrameIndices.Length == 0 ? 0 : decoderFrameIndices[0];
+        var width = rawInt32Pages?[0].Width ?? decoder!.Frames[firstFrameIndex].PixelWidth;
+        var height = rawInt32Pages?[0].Height ?? decoder!.Frames[firstFrameIndex].PixelHeight;
         var imageJ = ParseImageJDescription(metadata.ImageDescription);
-        var channels = ReadPositiveImageJInteger(imageJ, "channels", 1);
-        var timeFrames = ReadPositiveImageJInteger(imageJ, "frames", 1);
+        var lsm = metadata.LsmInfo;
+        if (lsm is not null && (lsm.DimensionX != width || lsm.DimensionY != height))
+            throw new InvalidDataException(
+                $"CZ_LSMINFO declares {lsm.DimensionX} x {lsm.DimensionY}, but the full-resolution TIFF frame is {width} x {height}.");
+        var channels = lsm?.DimensionChannels ?? ReadPositiveImageJInteger(imageJ, "channels", 1);
+        var timeFrames = lsm?.DimensionTime ?? ReadPositiveImageJInteger(imageJ, "frames", 1);
         if (timeFrames != 1)
-            throw new NotSupportedException("Time-series ImageJ hyperstacks are not supported; select or export one time point.");
-        var declaredImages = ReadPositiveImageJInteger(imageJ, "images", frameCount);
+            throw new NotSupportedException("Time-series TIFF/LSM stacks are not supported; select or export one time point.");
+        var declaredImages = lsm is null
+            ? ReadPositiveImageJInteger(imageJ, "images", frameCount)
+            : checked(lsm.DimensionChannels * lsm.DimensionZ * lsm.DimensionTime);
         if (declaredImages != frameCount)
             throw new InvalidDataException(
                 $"ImageJ metadata declares {declaredImages} images, but TIFF contains {frameCount} directories.");
-        var depth = ReadPositiveImageJInteger(imageJ, "slices", frameCount / channels);
+        var depth = lsm?.DimensionZ ?? ReadPositiveImageJInteger(imageJ, "slices", frameCount / channels);
         if (checked(channels * depth) != frameCount)
             throw new InvalidDataException(
                 $"ImageJ metadata declares {channels} channels and {depth} slices, but TIFF contains {frameCount} directories.");
@@ -97,7 +119,7 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
             }
             else
             {
-                var frame = decoder!.Frames[page];
+                var frame = decoder!.Frames[decoderFrameIndices[page]];
                 if (frame.PixelWidth != width || frame.PixelHeight != height)
                     throw new InvalidDataException("All TIFF frames must have the same dimensions.");
                 var source = PrepareFrame(frame, voxelType);
@@ -206,6 +228,16 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
 
     private static Calibration ResolveCalibration(TiffMetadata metadata, Dictionary<string, string> imageJ)
     {
+        if (metadata.LsmInfo is { } lsm)
+        {
+            const double metersToMicrometers = 1_000_000;
+            return new Calibration(
+                lsm.VoxelSizeX * metersToMicrometers,
+                lsm.VoxelSizeY * metersToMicrometers,
+                lsm.VoxelSizeZ * metersToMicrometers,
+                true,
+                "um");
+        }
         var spacingX = ReadPositiveImageJDouble(imageJ, "pixel_width") ?? InvertResolution(metadata.XResolution);
         var spacingY = ReadPositiveImageJDouble(imageJ, "pixel_height") ?? InvertResolution(metadata.YResolution);
         var spacingZ = ReadPositiveImageJDouble(imageJ, "spacing") ?? 1;
