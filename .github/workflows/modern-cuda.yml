@@ -3,7 +3,7 @@ name: DSLT Workbench CUDA
 on:
   workflow_dispatch:
   push:
-    branches: [ master, 'codex/**' ]
+    branches: [ main, master, 'codex/**' ]
     paths:
       - 'modern/native/**'
       - '.github/workflows/modern-cuda.yml'

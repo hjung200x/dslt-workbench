@@ -2,7 +2,7 @@ name: DSLT Workbench CI
 
 on:
   push:
-    branches: [ master, 'codex/**' ]
+    branches: [ main, master, 'codex/**' ]
     paths:
       - 'modern/**'
       - '.github/workflows/modern-ci.yml'
