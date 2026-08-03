@@ -199,6 +199,16 @@
               <TextBlock Text="Core comparison: source &gt; local mean + 0.002 × offset" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             </StackPanel>
 
+            <StackPanel Visibility="{Binding IsHMinima, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <Separator Margin="0,16,0,12" Background="#354152" />
+              <TextBlock Text="H-MINIMA" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <TextBlock Text="Height h" Margin="0,10,0,5" />
+              <Slider Minimum="0" Maximum="1" Value="{Binding HMinimaHeight}" SmallChange="0.01" />
+              <TextBlock Text="{Binding HMinimaHeight, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
+              <TextBlock Text="Convergence check interval" Margin="0,10,0,5" />
+              <TextBox Text="{Binding HMinimaCheckInterval, UpdateSourceTrigger=PropertyChanged}" />
+            </StackPanel>
+
             <StackPanel Visibility="{Binding IsThresholdSweep, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="THRESHOLD SWEEP" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />

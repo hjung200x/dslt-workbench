@@ -133,6 +133,22 @@ int main() {
     request.connectivity = 2;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
+    const std::vector<float> h_minima_source{1.0F, 0.0F, 1.0F};
+    require(dslt_set_volume_f32(
+        handle, &adaptive_desc, h_minima_source.data(), h_minima_source.size()));
+    request = {};
+    request.operation = DSLT_OP_H_MINIMA;
+    request.backend = DSLT_BACKEND_CPU;
+    request.radius = 1; // Convergence check interval in the v1 common request.
+    request.threshold = 0.5F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    std::vector<float> h_minima(result.element_count);
+    require(dslt_copy_output_f32(handle, h_minima.data(), h_minima.size()));
+    assert(h_minima[0] == 0.8F && h_minima[1] == 0.0F && h_minima[2] == 0.8F);
+
+    request.radius = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
     request = {};
     request.operation = DSLT_OP_SMOOTH_MEAN;
     request.backend = DSLT_BACKEND_CPU;

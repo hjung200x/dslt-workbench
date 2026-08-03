@@ -455,6 +455,72 @@ void adaptive_threshold_fixture() {
     assert(cancelled);
 }
 
+void h_minima_fixture() {
+    const auto desc = descriptor(3, 1, 1);
+    const std::vector<float> pit{1.0F, 0.0F, 1.0F};
+    const dslt::Volume volume(desc, pit);
+    const auto immediate = dslt::ops::h_minima(volume, 0.5F, 1, {});
+    const auto batched = dslt::ops::h_minima(volume, 0.5F, 50, {});
+    const std::vector<float> expected{0.8F, 0.0F, 0.8F};
+    assert(immediate == expected);
+    assert(batched == expected);
+
+    const auto zero = dslt::ops::h_minima(volume, 0.0F, 1, {});
+    assert(std::all_of(zero.begin(), zero.end(), [](float value) { return value == 0.8F; }));
+
+    const std::vector<float> shallow{1.0F, 0.8F, 1.0F};
+    const dslt::Volume shallow_volume(desc, shallow);
+    const auto suppressed = dslt::ops::h_minima(shallow_volume, 0.3F, 1, {});
+    assert(std::all_of(suppressed.begin(), suppressed.end(), [](float value) { return value == 0.0F; }));
+
+    const auto cube_desc = descriptor(3, 3, 3);
+    std::vector<float> cube(cube_desc.element_count, 1.0F);
+    cube[offset(1, 1, 1, cube_desc)] = 0.0F;
+    const dslt::Volume cube_volume(cube_desc, cube);
+    const auto cube_result = dslt::ops::h_minima(cube_volume, 0.5F, 1, {});
+    assert(cube_result[offset(1, 1, 1, cube_desc)] == 0.0F);
+    assert(std::count(cube_result.begin(), cube_result.end(), 0.8F) == 26);
+
+    for (const auto invalid_height : {-0.1F, 1.1F, std::numeric_limits<float>::quiet_NaN()}) {
+        bool rejected = false;
+        try {
+            static_cast<void>(dslt::ops::h_minima(volume, invalid_height, 1, {}));
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        assert(rejected);
+    }
+
+    bool rejected = false;
+    try {
+        static_cast<void>(dslt::ops::h_minima(volume, 0.1F, 0, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    auto non_finite = pit;
+    non_finite[1] = std::numeric_limits<float>::infinity();
+    const dslt::Volume non_finite_volume(desc, non_finite);
+    rejected = false;
+    try {
+        static_cast<void>(dslt::ops::h_minima(non_finite_volume, 0.1F, 1, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    bool cancelled = false;
+    try {
+        static_cast<void>(dslt::ops::h_minima(
+            cube_volume, 0.5F, 50,
+            [](float progress) { return progress == 0.0F; }));
+    } catch (const std::runtime_error& error) {
+        cancelled = std::string_view(error.what()) == "cancelled";
+    }
+    assert(cancelled);
+}
+
 } // namespace
 
 int main() {
@@ -468,5 +534,6 @@ int main() {
     iterative_sweep_fixture();
     threshold_sweep_fixture();
     adaptive_threshold_fixture();
+    h_minima_fixture();
     return 0;
 }

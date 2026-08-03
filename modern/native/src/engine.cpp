@@ -136,6 +136,9 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
                 source_, request.radius, request.connectivity, request.constant_c,
                 request.operation == DSLT_OP_ADAPTIVE_THRESHOLD_3D, progress);
             break;
+        case DSLT_OP_H_MINIMA:
+            output_ = ops::h_minima(source_, request.threshold, request.radius, progress);
+            break;
         case DSLT_OP_SMOOTH_MEAN:
             output_ = ops::smooth(source_, request.radius, false, progress);
             break;

@@ -109,6 +109,11 @@ std::vector<float> adaptive_threshold(
     float constant_c,
     bool include_z,
     const Engine::Progress& progress);
+std::vector<float> h_minima(
+    const Volume& volume,
+    float height,
+    int check_interval,
+    const Engine::Progress& progress);
 std::vector<float> smooth(const Volume& volume, int radius, bool gaussian, const Engine::Progress& progress);
 std::vector<float> morphology(const Volume& volume, int radius, bool dilate, bool spherical, const Engine::Progress& progress);
 std::vector<float> morphology_buffer(

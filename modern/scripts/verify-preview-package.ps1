@@ -67,6 +67,7 @@ try {
         'docs\adaptive-threshold-spec.md',
         'docs\dslt-algorithm-spec.md',
         'docs\functional-spec.md',
+        'docs\h-minima-spec.md',
         'docs\real-data-manifest.example.json',
         'docs\real-data-validation.md',
         'docs\release-policy.md',

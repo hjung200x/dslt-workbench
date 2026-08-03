@@ -79,6 +79,10 @@ The source-derived mean/Gaussian local-threshold equations, clamp boundary,
 2D/3D distinction, legacy C scaling, and known GPU discrepancy are defined in
 `docs/adaptive-threshold-spec.md`.
 
+The erosion-reconstruction marker, mask fitting, convergence, residual
+threshold, and hidden check-interval contract for H-minima are defined in
+`docs/h-minima-spec.md`.
+
 The current WPF workflow, state-preservation guarantees, and the remaining
 orthogonal-view and label-editing UI work are tracked in
 `docs/ui-workflow.md`.

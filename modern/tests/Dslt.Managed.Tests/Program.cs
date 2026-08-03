@@ -105,6 +105,20 @@ if (engine.IsAvailable)
         "Adaptive threshold 3D Z-local output");
     Equal(0.8F, adaptive3DData[1], "Adaptive threshold 3D center output");
 
+    var hMinimaResult = await engine.RunAsync(
+        new VolumeData(3, 1, 1, 1, 0, Calibration.Unit, [1.0F, 0.0F, 1.0F]),
+        new OperationParameters(
+            ProcessingOperation.HMinima,
+            ProcessingBackend.Cpu,
+            HMinimaHeight: 0.5F,
+            HMinimaCheckInterval: 1),
+        null,
+        CancellationToken.None);
+    var hMinimaData = hMinimaResult.FloatData ??
+        throw new InvalidOperationException("H-minima returned no float output.");
+    if (!hMinimaData.SequenceEqual(new[] { 0.8F, 0.0F, 0.8F }))
+        throw new InvalidOperationException("H-minima ABI output did not preserve the pit fixture.");
+
     var constantVolume = new VolumeData(
         3, 3, 3, 1, 0, Calibration.Unit,
         Enumerable.Repeat(0.5f, 27).ToArray());

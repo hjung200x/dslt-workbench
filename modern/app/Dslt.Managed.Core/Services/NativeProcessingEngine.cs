@@ -189,11 +189,12 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         var isThresholdSweep = value.Operation == ProcessingOperation.ThresholdSweep;
         var isAdaptiveThreshold = value.Operation is
             ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
+        var isHMinima = value.Operation == ProcessingOperation.HMinima;
         return new NativeOperationRequest
         {
             Operation = (int)value.Operation,
             Backend = (int)value.Backend,
-            Radius = value.Radius,
+            Radius = isHMinima ? value.HMinimaCheckInterval : value.Radius,
             Connectivity = isDslt ? (int)value.DsltKernel :
                 isAdaptiveThreshold ? (int)value.AdaptiveThresholdKernel : value.Connectivity,
             MinimumComponentSize = isThresholdSweep
@@ -202,7 +203,8 @@ public sealed class NativeProcessingEngine : IProcessingEngine
             SliceIndex = isSegmentation || isThresholdSweep ? value.ClosingRadius : value.SliceIndex,
             LanczosOrder = isDslt ? value.DirectionLevel : value.LanczosOrder,
             Threshold = isSegmentation ? value.MinimumInvalidStructureArea :
-                isThresholdSweep ? value.ThresholdSweepMinimumInvalidStructureArea : value.Threshold,
+                isThresholdSweep ? value.ThresholdSweepMinimumInvalidStructureArea :
+                isHMinima ? value.HMinimaHeight : value.Threshold,
             ConstantC = isSegmentation ? value.MinimumC :
                 isThresholdSweep ? value.MinimumThreshold : value.ConstantC,
             WindowMinimum = isSegmentation ? value.MaximumC :
