@@ -47,6 +47,16 @@ struct DsltSegmentationParameters final {
     CropParameters crop{};
 };
 
+struct ThresholdSweepParameters final {
+    float minimum_threshold;
+    float maximum_threshold;
+    float interval;
+    int closing_radius;
+    int minimum_component_size;
+    int minimum_invalid_structure_area;
+    CropParameters crop{};
+};
+
 struct DsltWorkEstimate final {
     std::uint64_t voxel_count;
     std::uint64_t direction_count;
@@ -122,6 +132,10 @@ ComponentLabels dslt_segmentation_from_response(
     const dslt_volume_descriptor& descriptor,
     const DsltResponse& response,
     const DsltSegmentationParameters& parameters,
+    const Engine::Progress& progress);
+ComponentLabels threshold_sweep(
+    const Volume& volume,
+    const ThresholdSweepParameters& parameters,
     const Engine::Progress& progress);
 std::vector<std::int32_t> connected_components(
     const Volume& volume,

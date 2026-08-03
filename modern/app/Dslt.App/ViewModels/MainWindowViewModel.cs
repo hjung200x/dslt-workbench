@@ -38,6 +38,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private double _zoom = 1;
     private int _connectivity = 6;
     private int _minimumComponentSize;
+    private int _thresholdSweepMinimumComponentSize;
     private int _directionLevel = 2;
     private DsltKernelType _dsltKernel = DsltKernelType.Mean;
     private float _previewOffset = 20;
@@ -45,8 +46,12 @@ public sealed class MainWindowViewModel : ObservableObject
     private float _minimumC;
     private float _maximumC;
     private float _cInterval = 0.002F;
+    private float _minimumThreshold;
+    private float _maximumThreshold = 1.0F;
+    private float _thresholdInterval = 0.02F;
     private int _closingRadius = 2;
     private int _minimumInvalidStructureArea = 500;
+    private int _thresholdSweepMinimumInvalidStructureArea = 100;
     private ProcessingBackend _backend = ProcessingBackend.Auto;
     private OperationOption _selectedOperation;
     private WorkflowStage _selectedStage = WorkflowStage.Inspect;
@@ -79,6 +84,7 @@ public sealed class MainWindowViewModel : ObservableObject
             new("Height map", ProcessingOperation.HeightMap, WorkflowStage.Process),
             new("Depth map", ProcessingOperation.DepthMap, WorkflowStage.Process),
             new("Connected components", ProcessingOperation.ConnectedComponents, WorkflowStage.Segment),
+            new("Threshold sweep segmentation", ProcessingOperation.ThresholdSweep, WorkflowStage.Segment),
             new("DSLT threshold preview", ProcessingOperation.DsltThreshold, WorkflowStage.Segment),
             new("DSLT iterative segmentation", ProcessingOperation.DsltSegmentation, WorkflowStage.Segment),
         ];
@@ -119,6 +125,9 @@ public sealed class MainWindowViewModel : ObservableObject
                 : "Work estimates are available for DSLT operations.";
             OnPropertyChanged(nameof(IsDsltOperation));
             OnPropertyChanged(nameof(IsDsltSegmentation));
+            OnPropertyChanged(nameof(IsThresholdSweep));
+            OnPropertyChanged(nameof(MinimumInvalidStructureArea));
+            OnPropertyChanged(nameof(MinimumComponentSize));
             OnPropertyChanged(nameof(UsesThreshold));
             OnPropertyChanged(nameof(UsesRadius));
             OnPropertyChanged(nameof(Radius));
@@ -249,8 +258,14 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public int MinimumComponentSize
     {
-        get => _minimumComponentSize;
-        set => SetProperty(ref _minimumComponentSize, Math.Max(0, value));
+        get => IsThresholdSweep ? _thresholdSweepMinimumComponentSize : _minimumComponentSize;
+        set
+        {
+            if (IsThresholdSweep)
+                SetProperty(ref _thresholdSweepMinimumComponentSize, Math.Max(0, value));
+            else
+                SetProperty(ref _minimumComponentSize, Math.Max(0, value));
+        }
     }
 
     public int DirectionLevel
@@ -295,6 +310,25 @@ public sealed class MainWindowViewModel : ObservableObject
         set => SetProperty(ref _cInterval, float.IsFinite(value) ? Math.Max(0.000001F, value) : 0.002F);
     }
 
+    public float MinimumThreshold
+    {
+        get => _minimumThreshold;
+        set => SetProperty(ref _minimumThreshold, float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0);
+    }
+
+    public float MaximumThreshold
+    {
+        get => _maximumThreshold;
+        set => SetProperty(ref _maximumThreshold, float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 1);
+    }
+
+    public float ThresholdInterval
+    {
+        get => _thresholdInterval;
+        set => SetProperty(ref _thresholdInterval,
+            float.IsFinite(value) ? Math.Clamp(value, 0.000001F, 1) : 0.02F);
+    }
+
     public int ClosingRadius
     {
         get => _closingRadius;
@@ -303,8 +337,16 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public int MinimumInvalidStructureArea
     {
-        get => _minimumInvalidStructureArea;
-        set => SetProperty(ref _minimumInvalidStructureArea, Math.Clamp(value, 0, 10_000));
+        get => IsThresholdSweep
+            ? _thresholdSweepMinimumInvalidStructureArea
+            : _minimumInvalidStructureArea;
+        set
+        {
+            if (IsThresholdSweep)
+                SetProperty(ref _thresholdSweepMinimumInvalidStructureArea, Math.Clamp(value, 0, 10_000));
+            else
+                SetProperty(ref _minimumInvalidStructureArea, Math.Clamp(value, 0, 10_000));
+        }
     }
 
     public ImageSource? SourceImage
@@ -406,6 +448,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public int SelectedLabelCount => _editingSession?.Selection.Count ?? 0;
     public bool IsDsltOperation => SelectedOperation.Operation is ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation;
     public bool IsDsltSegmentation => SelectedOperation.Operation == ProcessingOperation.DsltSegmentation;
+    public bool IsThresholdSweep => SelectedOperation.Operation == ProcessingOperation.ThresholdSweep;
     public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
         ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap;
     public bool UsesRadius => SelectedOperation.Operation is ProcessingOperation.SmoothMean or ProcessingOperation.SmoothGaussian or
@@ -510,8 +553,11 @@ public sealed class MainWindowViewModel : ObservableObject
             UpdateSelectionState();
             RefreshResultImage();
             SelectedStage = result.OutputKind == OutputKind.LabelsInt32 ? WorkflowStage.Edit : SelectedOperation.Stage;
+            var passName = parameters.Operation == ProcessingOperation.ThresholdSweep
+                ? "threshold passes"
+                : "C passes";
             Status = result.CompletedPasses > 0
-                ? $"Completed on {result.UsedBackend} · {result.ComponentCount} components · {result.CompletedPasses} C passes"
+                ? $"Completed on {result.UsedBackend} · {result.ComponentCount} components · {result.CompletedPasses} {passName}"
                 : $"Completed on {result.UsedBackend} · {result.ComponentCount} components";
             Progress = 100;
             OnPropertyChanged(nameof(HasResult));
@@ -587,6 +633,11 @@ public sealed class MainWindowViewModel : ObservableObject
         MinimumC: MinimumC,
         MaximumC: MaximumC,
         CInterval: CInterval,
+        MinimumThreshold: MinimumThreshold,
+        MaximumThreshold: MaximumThreshold,
+        ThresholdInterval: ThresholdInterval,
+        ThresholdSweepMinimumComponentSize: IsThresholdSweep ? MinimumComponentSize : 0,
+        ThresholdSweepMinimumInvalidStructureArea: IsThresholdSweep ? MinimumInvalidStructureArea : 100,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea);
 

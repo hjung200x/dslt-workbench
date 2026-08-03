@@ -193,6 +193,42 @@ int main() {
     request.window_max = 0.0F;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
+    auto sweep_desc = descriptor(9, 5, 1);
+    std::vector<float> sweep_source(sweep_desc.element_count, 1.0F);
+    const auto sweep_index = [&sweep_desc](std::size_t x, std::size_t y) {
+        return y * sweep_desc.width + x;
+    };
+    sweep_source[sweep_index(0, 2)] = 0.0F;
+    for (std::size_t y = 1; y <= 3; ++y) {
+        for (std::size_t x = 4; x <= 6; ++x) {
+            if (x != 5 || y != 2) sweep_source[sweep_index(x, y)] = 0.0F;
+        }
+    }
+    require(dslt_set_volume_f32(handle, &sweep_desc, sweep_source.data(), sweep_source.size()));
+    crop = {};
+    require(dslt_set_crop(handle, &crop, nullptr, 0));
+    request = {};
+    request.operation = DSLT_OP_THRESHOLD_SWEEP;
+    request.backend = DSLT_BACKEND_CPU;
+    request.minimum_component_size = 0;
+    request.slice_index = 0;  // Spherical closing radius in the v1 common request.
+    request.threshold = 0.0F; // Minimum invalid-structure area in the v1 common request.
+    request.constant_c = 0.4F; // Minimum threshold in the v1 common request.
+    request.window_min = 0.8F; // Maximum threshold in the v1 common request.
+    request.window_max = 0.4F; // Threshold interval in the v1 common request.
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.output_kind == DSLT_OUTPUT_LABELS_INT32);
+    assert(result.component_count == 2);
+    assert(result.reserved == 2);
+    labels.assign(result.element_count, -1);
+    require(dslt_copy_labels_i32(handle, labels.data(), labels.size()));
+    assert(labels[sweep_index(0, 2)] == 0);
+    assert(labels[sweep_index(4, 1)] == 1);
+    assert(labels[sweep_index(5, 2)] == -1);
+
+    request.window_max = 0.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
     dslt_destroy(handle);
     lifecycle_stress_test();
     std::cout << "DSLT native synthetic tests passed\n";

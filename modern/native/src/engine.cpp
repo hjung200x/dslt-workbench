@@ -180,9 +180,38 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
             result_.depth = 1;
             result_.output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
             break;
-        case DSLT_OP_THRESHOLD_SWEEP:
-            set_error("threshold sweep requires legacy behavior capture before implementation");
-            return DSLT_NOT_IMPLEMENTED;
+        case DSLT_OP_THRESHOLD_SWEEP: {
+            if (!std::isfinite(request.threshold) || request.threshold < 0.0F ||
+                std::floor(request.threshold) != request.threshold ||
+                request.threshold > static_cast<float>(std::numeric_limits<int>::max())) {
+                throw std::invalid_argument("minimum invalid-structure area must be a non-negative integer");
+            }
+            const ops::ThresholdSweepParameters parameters{
+                request.constant_c,
+                request.window_min,
+                request.window_max,
+                request.slice_index,
+                request.minimum_component_size,
+                static_cast<int>(request.threshold),
+                ops::CropParameters{
+                    crop_.options.enabled != 0,
+                    crop_.options.use_height_map != 0,
+                    crop_.options.upper,
+                    crop_.options.lower,
+                    crop_.options.border_xy,
+                    crop_.height_map,
+                },
+            };
+            auto segmentation = ops::threshold_sweep(source_, parameters, progress);
+            labels_ = std::move(segmentation.labels);
+            output_.clear();
+            result_.component_count = segmentation.component_count;
+            result_.reserved = segmentation.passes_completed;
+            result_.output_kind = DSLT_OUTPUT_LABELS_INT32;
+            result_.element_count = labels_.size();
+            last_error_.clear();
+            return DSLT_OK;
+        }
         case DSLT_OP_DSLT_THRESHOLD:
             output_ = ops::dslt_threshold(
                 source_, request.radius, request.lanczos_order, request.connectivity,

@@ -186,19 +186,26 @@ public sealed class NativeProcessingEngine : IProcessingEngine
     {
         var isDslt = value.Operation is ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation;
         var isSegmentation = value.Operation == ProcessingOperation.DsltSegmentation;
+        var isThresholdSweep = value.Operation == ProcessingOperation.ThresholdSweep;
         return new NativeOperationRequest
         {
             Operation = (int)value.Operation,
             Backend = (int)value.Backend,
             Radius = value.Radius,
             Connectivity = isDslt ? (int)value.DsltKernel : value.Connectivity,
-            MinimumComponentSize = value.MinimumComponentSize,
-            SliceIndex = isSegmentation ? value.ClosingRadius : value.SliceIndex,
+            MinimumComponentSize = isThresholdSweep
+                ? value.ThresholdSweepMinimumComponentSize
+                : value.MinimumComponentSize,
+            SliceIndex = isSegmentation || isThresholdSweep ? value.ClosingRadius : value.SliceIndex,
             LanczosOrder = isDslt ? value.DirectionLevel : value.LanczosOrder,
-            Threshold = isSegmentation ? value.MinimumInvalidStructureArea : value.Threshold,
-            ConstantC = isSegmentation ? value.MinimumC : value.ConstantC,
-            WindowMinimum = isSegmentation ? value.MaximumC : value.WindowMinimum,
-            WindowMaximum = isSegmentation ? value.CInterval : value.WindowMaximum,
+            Threshold = isSegmentation ? value.MinimumInvalidStructureArea :
+                isThresholdSweep ? value.ThresholdSweepMinimumInvalidStructureArea : value.Threshold,
+            ConstantC = isSegmentation ? value.MinimumC :
+                isThresholdSweep ? value.MinimumThreshold : value.ConstantC,
+            WindowMinimum = isSegmentation ? value.MaximumC :
+                isThresholdSweep ? value.MaximumThreshold : value.WindowMinimum,
+            WindowMaximum = isSegmentation ? value.CInterval :
+                isThresholdSweep ? value.ThresholdInterval : value.WindowMaximum,
             TargetSpacingZ = isDslt ? value.ZCorrectionFactor : value.TargetSpacingZ,
         };
     }

@@ -41,6 +41,30 @@ internal static class WorkflowViewModelTests
             "The legacy preview C offset was not mapped to core Cxy.");
 
         target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.ThresholdSweep);
+        Assert(target.MinimumThreshold == 0 && target.MaximumThreshold == 1 &&
+               Math.Abs(target.ThresholdInterval - 0.02F) < 1e-6F &&
+               target.MinimumComponentSize == 0 && target.MinimumInvalidStructureArea == 100,
+            "Threshold sweep legacy defaults were not exposed by the UI.");
+        target.MinimumThreshold = 0.2F;
+        target.MaximumThreshold = 0.9F;
+        target.ThresholdInterval = 0.05F;
+        target.ClosingRadius = 3;
+        target.MinimumInvalidStructureArea = 125;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.ThresholdSweep,
+                MinimumThreshold: 0.2F,
+                MaximumThreshold: 0.9F,
+                ThresholdInterval: 0.05F,
+                ClosingRadius: 3,
+                ThresholdSweepMinimumInvalidStructureArea: 125,
+            }, "Threshold sweep UI parameters were not preserved in the processing request.");
+        Assert(target.SelectedStage == WorkflowStage.Edit,
+            "Threshold sweep labels did not advance the workflow to editing.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.DsltSegmentation);
 
         engine.RunBehavior = FakeRunBehavior.Success;

@@ -32,7 +32,7 @@ The detailed DSLT mathematical and ordering contract is maintained in
 | Depth map/projection | height map, offset, range, depth-code settings | Depth code off | Simplified calibrated Z depth is synthetic-validated; projection parity is pending |
 | H-minima | h, check interval | h 0.1, interval 50 (hidden) | Not exposed until legacy result capture |
 | DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | radius 14, level 2, Z factor 0.2, mean | CPU threshold, iterative sweep, fixed/height-map crop, public work estimate, resource rejection, and ramp oracles implemented; archived-runtime comparison pending |
-| Threshold sweep | min, max, interval, minimum volumes, closing | interval 0.02, closing 2 | ABI ID reserved; returns `not implemented` |
+| Threshold sweep | min, max, interval, minimum volumes, closing | min 0, effective max 1 after WPF coercion, interval 0.02, hidden minimum volume 0, valid area 100, closing 2 | CPU descending sweep, closing, crop, validation, append-only labeling, final-pass acceptance, progress/cancellation, and WPF controls are synthetic-validated; archived-runtime comparison pending |
 | Watershed | stride, minimum segment volume | stride 0.001 (hidden) | Not exposed until seed and tie-breaking behavior is captured |
 
 Several legacy XAML controls contain defaults outside their declared slider
