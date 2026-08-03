@@ -6,6 +6,7 @@
 #include <deque>
 #include <limits>
 #include <numbers>
+#include <numeric>
 #include <stdexcept>
 
 namespace dslt::ops {
@@ -374,6 +375,116 @@ std::vector<float> spherical_closing(
     return morphology_buffer(closed, descriptor, radius, false, true, erosion_progress);
 }
 
+namespace {
+
+Engine::Progress mapped_progress(
+    const Engine::Progress& progress,
+    float start,
+    float length) {
+    return [progress, start, length](float value) {
+        return !progress || progress(start + std::clamp(value, 0.0F, 1.0F) * length);
+    };
+}
+
+std::vector<float> chunked_spherical_morphology(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    int radius,
+    bool opening,
+    const Engine::Progress& progress) {
+    if (radius < 0) throw std::invalid_argument("chunked morphology radius must be non-negative");
+    if (radius == 0) return {source.begin(), source.end()};
+    const auto chunks = static_cast<std::size_t>((radius + 3) / 4);
+    const auto total_steps = chunks * 2;
+    std::size_t step = 0;
+    auto result = std::vector<float>(source.begin(), source.end());
+    const auto run = [&](bool dilate) {
+        int remaining = radius;
+        while (remaining > 0) {
+            const auto current = std::min(remaining, 4);
+            const auto operation_progress = mapped_progress(
+                progress,
+                static_cast<float>(step) / static_cast<float>(total_steps),
+                1.0F / static_cast<float>(total_steps));
+            result = morphology_buffer(result, descriptor, current, dilate, true, operation_progress);
+            remaining -= current;
+            ++step;
+        }
+    };
+    run(!opening);
+    run(opening);
+    return result;
+}
+
+int estimate_wall_thickness(
+    std::span<const float> mask,
+    const dslt_volume_descriptor& descriptor,
+    int starting_radius,
+    const Engine::Progress& progress) {
+    const auto maximum_dimension = std::max({descriptor.width, descriptor.height, descriptor.depth});
+    if (maximum_dimension > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("volume dimensions exceed wall-thickness limits");
+    }
+    const auto maximum_radius = static_cast<int>(maximum_dimension);
+    auto radius = starting_radius > 1 ? starting_radius : 1;
+    radius = std::min(radius, maximum_radius);
+    const auto source_sum = std::accumulate(mask.begin(), mask.end(), 0.0,
+        [](double sum, float value) { return sum + std::abs(static_cast<double>(value)); });
+    const auto attempts = static_cast<std::size_t>(maximum_radius - radius + 1);
+    for (std::size_t attempt = 0; attempt < attempts; ++attempt, ++radius) {
+        const auto attempt_progress = mapped_progress(
+            progress,
+            static_cast<float>(attempt) / static_cast<float>(attempts),
+            1.0F / static_cast<float>(attempts));
+        const auto opened = chunked_spherical_morphology(mask, descriptor, radius, true, attempt_progress);
+        const auto opened_sum = std::accumulate(opened.begin(), opened.end(), 0.0,
+            [](double sum, float value) { return sum + std::abs(static_cast<double>(value)); });
+        if (opened_sum <= source_sum * 0.5) return radius * 2;
+    }
+    return maximum_radius * 2;
+}
+
+std::size_t invalid_structure_voxels(
+    std::span<const std::int32_t> candidate_labels,
+    std::span<const std::int32_t> existing_labels,
+    std::int32_t component,
+    const dslt_volume_descriptor& descriptor,
+    int wall_radius,
+    const Engine::Progress& progress) {
+    std::vector<float> component_mask(candidate_labels.size(), 0.0F);
+    for (std::size_t index = 0; index < candidate_labels.size(); ++index) {
+        if (candidate_labels[index] == component) component_mask[index] = 1.0F;
+    }
+    const auto closed = chunked_spherical_morphology(
+        component_mask, descriptor, wall_radius, false, progress);
+    std::size_t count = 0;
+    for (std::size_t index = 0; index < closed.size(); ++index) {
+        if (closed[index] > 0.0F && candidate_labels[index] < 0 && existing_labels[index] < 0) ++count;
+    }
+    return count;
+}
+
+std::vector<float> c_schedule(float minimum, float maximum, float interval) {
+    if (!std::isfinite(minimum) || !std::isfinite(maximum) || !std::isfinite(interval) ||
+        minimum > maximum || interval <= 0.0F) {
+        throw std::invalid_argument("DSLT C sweep requires finite ordered bounds and a positive interval");
+    }
+    std::vector<float> values{minimum};
+    constexpr std::size_t maximum_passes = 100000;
+    for (std::size_t iteration = 1; values.back() < maximum; ++iteration) {
+        if (iteration >= maximum_passes) throw std::invalid_argument("DSLT C sweep exceeds the pass limit");
+        const auto candidate = static_cast<double>(minimum) + static_cast<double>(interval) * iteration;
+        if (!std::isfinite(candidate) || candidate >= maximum) {
+            if (values.back() != maximum) values.push_back(maximum);
+            break;
+        }
+        values.push_back(static_cast<float>(candidate));
+    }
+    return values;
+}
+
+} // namespace
+
 std::vector<std::int32_t> connected_components(
     const Volume& volume,
     float threshold_value,
@@ -446,9 +557,13 @@ ComponentLabels connected_components_low_6(
     const dslt_volume_descriptor& descriptor,
     float maximum_value,
     int minimum_size_exclusive,
+    std::span<const std::int32_t> excluded_labels,
     const Engine::Progress& progress) {
     const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
     if (source.size() != expected) throw std::invalid_argument("component buffer dimensions do not match");
+    if (!excluded_labels.empty() && excluded_labels.size() != expected) {
+        throw std::invalid_argument("excluded label dimensions do not match");
+    }
     if (!std::isfinite(maximum_value)) throw std::invalid_argument("component maximum value must be finite");
     if (minimum_size_exclusive < 0) throw std::invalid_argument("exclusive minimum component size must be non-negative");
 
@@ -465,7 +580,8 @@ ComponentLabels connected_components_low_6(
         for (std::size_t y = 0; y < descriptor.height; ++y) {
             for (std::size_t x = 0; x < descriptor.width; ++x) {
                 const auto seed = flat(x, y, z, descriptor.width, descriptor.height);
-                if (visited[seed] != 0 || source[seed] > maximum_value) continue;
+                if (visited[seed] != 0 || source[seed] > maximum_value ||
+                    (!excluded_labels.empty() && excluded_labels[seed] >= 0)) continue;
                 queue.clear();
                 component.clear();
                 queue.push_back(seed);
@@ -484,7 +600,8 @@ ComponentLabels connected_components_low_6(
                         if (nx < 0 || ny < 0 || nz < 0 ||
                             nx >= descriptor.width || ny >= descriptor.height || nz >= descriptor.depth) continue;
                         const auto neighbor = flat(nx, ny, nz, descriptor.width, descriptor.height);
-                        if (visited[neighbor] == 0 && source[neighbor] <= maximum_value) {
+                        if (visited[neighbor] == 0 && source[neighbor] <= maximum_value &&
+                            (excluded_labels.empty() || excluded_labels[neighbor] < 0)) {
                             visited[neighbor] = 1;
                             queue.push_back(neighbor);
                         }
@@ -502,6 +619,119 @@ ComponentLabels connected_components_low_6(
         report(progress, z + 1, descriptor.depth);
     }
     return result;
+}
+
+ComponentLabels dslt_segmentation_from_response(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    const DsltResponse& response,
+    const DsltSegmentationParameters& parameters,
+    const Engine::Progress& progress) {
+    if (parameters.radius < 1 || parameters.radius > 127) {
+        throw std::invalid_argument("DSLT radius must be between 1 and 127");
+    }
+    if (parameters.direction_level < 1 || parameters.direction_level > 5) {
+        throw std::invalid_argument("DSLT direction level must be between 1 and 5");
+    }
+    if (parameters.kernel_type != 0 && parameters.kernel_type != 1) {
+        throw std::invalid_argument("DSLT kernel type must be 0 (Gaussian) or 1 (mean)");
+    }
+    if (!std::isfinite(parameters.z_correction_factor) || parameters.z_correction_factor < 0.0F) {
+        throw std::invalid_argument("DSLT Z correction factor must be finite and non-negative");
+    }
+    if (parameters.closing_radius < 0 || parameters.closing_radius > 64) {
+        throw std::invalid_argument("DSLT closing radius must be between 0 and 64");
+    }
+    if (parameters.minimum_component_size < 0 || parameters.minimum_invalid_structure_area < 0) {
+        throw std::invalid_argument("DSLT component and invalid-structure limits must be non-negative");
+    }
+
+    const auto values = c_schedule(parameters.minimum_c, parameters.maximum_c, parameters.c_interval);
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
+    if (source.size() != expected || response.minimum.size() != expected || response.alpha.size() != expected) {
+        throw std::invalid_argument("DSLT sweep response dimensions do not match the source volume");
+    }
+    ComponentLabels result{std::vector<std::int32_t>(source.size(), -1), 0};
+    auto previous_thickness = 0;
+    const auto pass_length = 1.0F / static_cast<float>(values.size());
+
+    for (std::size_t pass = 0; pass < values.size(); ++pass) {
+        const auto pass_start = static_cast<float>(pass) * pass_length;
+        auto mask = apply_dslt_threshold(
+            source, descriptor, response, values[pass], parameters.z_correction_factor,
+            mapped_progress(progress, pass_start, pass_length * 0.15F));
+        mask = spherical_closing(
+            mask, descriptor, parameters.closing_radius,
+            mapped_progress(progress, pass_start + pass_length * 0.15F, pass_length * 0.20F));
+        for (std::size_t index = 0; index < mask.size(); ++index) {
+            if (result.labels[index] >= 0) mask[index] = 0.0F;
+        }
+
+        const auto thickness = estimate_wall_thickness(
+            mask, descriptor, previous_thickness / 2,
+            mapped_progress(progress, pass_start + pass_length * 0.35F, pass_length * 0.25F));
+        previous_thickness = thickness;
+        const auto candidates = connected_components_low_6(
+            mask, descriptor, 0.1F, parameters.minimum_component_size, result.labels,
+            mapped_progress(progress, pass_start + pass_length * 0.60F, pass_length * 0.15F));
+
+        const auto final_pass = pass + 1 == values.size();
+        const auto invalid_limit = static_cast<std::uint64_t>(parameters.minimum_invalid_structure_area) *
+            static_cast<std::uint64_t>(thickness);
+        std::uint32_t invalid_components = 0;
+        for (std::uint32_t component = 0; component < candidates.component_count; ++component) {
+            const auto component_progress = mapped_progress(
+                progress,
+                pass_start + pass_length * (0.75F + 0.25F * static_cast<float>(component) /
+                    static_cast<float>(std::max(candidates.component_count, 1U))),
+                pass_length * 0.25F / static_cast<float>(std::max(candidates.component_count, 1U)));
+            const auto invalid_voxels = final_pass
+                ? 0U
+                : invalid_structure_voxels(
+                    candidates.labels, result.labels, static_cast<std::int32_t>(component), descriptor,
+                    thickness / 2, component_progress);
+            if (!final_pass && invalid_voxels > invalid_limit) {
+                ++invalid_components;
+                continue;
+            }
+            if (result.component_count >= static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+                throw std::overflow_error("component label count exceeds int32 capacity");
+            }
+            const auto label = static_cast<std::int32_t>(result.component_count++);
+            for (std::size_t index = 0; index < candidates.labels.size(); ++index) {
+                if (candidates.labels[index] == static_cast<std::int32_t>(component)) result.labels[index] = label;
+            }
+        }
+        if (progress && !progress(pass_start + pass_length)) throw std::runtime_error("cancelled");
+        result.passes_completed = static_cast<std::uint32_t>(pass + 1);
+        if (invalid_components == 0) break;
+    }
+    report(progress, 1, 1);
+    return result;
+}
+
+ComponentLabels dslt_segmentation(
+    const Volume& volume,
+    const DsltSegmentationParameters& parameters,
+    const Engine::Progress& progress) {
+    if (parameters.radius < 1 || parameters.radius > 127 ||
+        parameters.direction_level < 1 || parameters.direction_level > 5 ||
+        (parameters.kernel_type != 0 && parameters.kernel_type != 1)) {
+        throw std::invalid_argument("DSLT segmentation response parameters are outside the supported range");
+    }
+    if (!std::isfinite(parameters.z_correction_factor) || parameters.z_correction_factor < 0.0F ||
+        parameters.closing_radius < 0 || parameters.closing_radius > 64 ||
+        parameters.minimum_component_size < 0 || parameters.minimum_invalid_structure_area < 0) {
+        throw std::invalid_argument("DSLT segmentation limits are outside the supported range");
+    }
+    static_cast<void>(c_schedule(parameters.minimum_c, parameters.maximum_c, parameters.c_interval));
+    const auto response = dslt_response(
+        volume, parameters.radius, parameters.direction_level, parameters.kernel_type,
+        mapped_progress(progress, 0.0F, 0.45F));
+    const auto source = selected_channel(volume);
+    return dslt_segmentation_from_response(
+        source, volume.descriptor(), response, parameters,
+        mapped_progress(progress, 0.45F, 0.55F));
 }
 
 std::vector<float> height_map(const Volume& volume, float threshold_value, const Engine::Progress& progress) {

@@ -88,6 +88,27 @@ if (engine.IsAvailable)
         CancellationToken.None);
     Equal(27, dsltResult.FloatData!.Count(value => value == 0), "DSLT strict threshold tie output");
 
+    var dsltSegmentation = await engine.RunAsync(
+        constantVolume,
+        new OperationParameters(
+            ProcessingOperation.DsltSegmentation,
+            ProcessingBackend.Cpu,
+            Radius: 1,
+            MinimumComponentSize: 0,
+            DirectionLevel: 1,
+            DsltKernel: DsltKernelType.Mean,
+            ZCorrectionFactor: 0.2f,
+            MinimumC: 0,
+            MaximumC: 0,
+            CInterval: 0.1f,
+            ClosingRadius: 0,
+            MinimumInvalidStructureArea: 0),
+        null,
+        CancellationToken.None);
+    Equal(1, dsltSegmentation.ComponentCount, "DSLT segmentation component count");
+    Equal(1, dsltSegmentation.CompletedPasses, "DSLT segmentation completed passes");
+    Equal(27, dsltSegmentation.Labels!.Count(label => label == 0), "DSLT segmentation labels");
+
     for (var iteration = 0; iteration < 100; iteration++)
     {
         using var lifecycleEngine = new NativeProcessingEngine();

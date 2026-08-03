@@ -29,6 +29,7 @@ public enum ProcessingOperation
     ExtractZx = 17,
     ThresholdSweep = 18,
     DsltThreshold = 19,
+    DsltSegmentation = 20,
 }
 
 public enum OutputKind
@@ -136,7 +137,12 @@ public sealed record OperationParameters(
     float TargetSpacingZ = 1,
     int DirectionLevel = 2,
     DsltKernelType DsltKernel = DsltKernelType.Mean,
-    float ZCorrectionFactor = 0.2f);
+    float ZCorrectionFactor = 0.2f,
+    float MinimumC = 0,
+    float MaximumC = 0,
+    float CInterval = 0.002f,
+    int ClosingRadius = 2,
+    int MinimumInvalidStructureArea = 500);
 
 public sealed record BackendInformation(
     bool CpuAvailable,
@@ -153,4 +159,5 @@ public sealed record ProcessingResult(
     int Depth,
     int ComponentCount,
     float[]? FloatData,
-    int[]? Labels);
+    int[]? Labels,
+    int CompletedPasses = 0);
