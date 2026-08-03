@@ -238,5 +238,23 @@ The H-minima fixture compares deep and shallow 3D pits, zero height, check
 intervals 1 and 50, and the final binary mask voxel-for-voxel with CPU. It also
 covers `Auto`, invalid height/interval, non-finite source rejection,
 reconstruction cancellation, and inclusion in the mixed-operation memory gate.
-Runtime evidence is pending a successful hosted build and NVIDIA-device
-execution.
+
+## Recorded H-minima runtime evidence
+
+The first H-minima runtime gate was completed on 2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `b24be0498bfa51010e6fe67de95b8d99df47a918` |
+| Hosted build | GitHub Actions run `30857716787`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `64AC6EEE4F34B1BFF4C9A5D5614E82DE409ADBF016EA71F61772B2F750F62FB9` |
+| `dslt_native_tests.exe` SHA-256 | `2924C4AC497533609491964C86EE093245F13975E2DE8F70C96049BAA9F10A30` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The runtime fixture proves voxel-exact binary masks for deep and shallow 3D
+pits, zero height, and check intervals 1 and 50. It also executes `Auto`,
+invalid parameter and source rejection, iteration cancellation, and repeated
+reconstruction workspace allocation.
