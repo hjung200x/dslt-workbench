@@ -45,29 +45,37 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         if (metadata.Photometric is not (0 or 1))
             throw new NotSupportedException("Only grayscale TIFF photometric interpretation is supported.");
 
-        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var decoder = new TiffBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-        if (decoder.Frames.Count == 0) throw new InvalidDataException("TIFF stack contains no frames.");
-        var width = decoder.Frames[0].PixelWidth;
-        var height = decoder.Frames[0].PixelHeight;
+        var voxelType = ResolveVoxelType(metadata);
+        var rawInt32Pages = voxelType is VolumeVoxelType.UnsignedInt32 or VolumeVoxelType.SignedInt32
+            ? RawInt32TiffDecoder.Read(path, voxelType, cancellationToken)
+            : null;
+        using var stream = rawInt32Pages is null
+            ? File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read)
+            : null;
+        var decoder = stream is null
+            ? null
+            : new TiffBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var frameCount = rawInt32Pages?.Count ?? decoder?.Frames.Count ?? 0;
+        if (frameCount == 0) throw new InvalidDataException("TIFF stack contains no frames.");
+        var width = rawInt32Pages?[0].Width ?? decoder!.Frames[0].PixelWidth;
+        var height = rawInt32Pages?[0].Height ?? decoder!.Frames[0].PixelHeight;
         var imageJ = ParseImageJDescription(metadata.ImageDescription);
         var channels = ReadPositiveImageJInteger(imageJ, "channels", 1);
         var timeFrames = ReadPositiveImageJInteger(imageJ, "frames", 1);
         if (timeFrames != 1)
             throw new NotSupportedException("Time-series ImageJ hyperstacks are not supported; select or export one time point.");
-        var declaredImages = ReadPositiveImageJInteger(imageJ, "images", decoder.Frames.Count);
-        if (declaredImages != decoder.Frames.Count)
+        var declaredImages = ReadPositiveImageJInteger(imageJ, "images", frameCount);
+        if (declaredImages != frameCount)
             throw new InvalidDataException(
-                $"ImageJ metadata declares {declaredImages} images, but TIFF contains {decoder.Frames.Count} directories.");
-        var depth = ReadPositiveImageJInteger(imageJ, "slices", decoder.Frames.Count / channels);
-        if (checked(channels * depth) != decoder.Frames.Count)
+                $"ImageJ metadata declares {declaredImages} images, but TIFF contains {frameCount} directories.");
+        var depth = ReadPositiveImageJInteger(imageJ, "slices", frameCount / channels);
+        if (checked(channels * depth) != frameCount)
             throw new InvalidDataException(
-                $"ImageJ metadata declares {channels} channels and {depth} slices, but TIFF contains {decoder.Frames.Count} directories.");
+                $"ImageJ metadata declares {channels} channels and {depth} slices, but TIFF contains {frameCount} directories.");
 
         var sliceLength = checked(width * height);
         var voxelCount = checked(sliceLength * depth);
         var sampleCount = checked(voxelCount * channels);
-        var voxelType = ResolveVoxelType(metadata);
         var bytesPerSample = BytesPerSample(voxelType);
         ValidateAllocationBudget(
             checked((long)sampleCount * sizeof(float) +
@@ -77,14 +85,24 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         var rawSamples = new byte[checked(sampleCount * bytesPerSample)];
         var pageBytes = new byte[checked(sliceLength * bytesPerSample)];
 
-        for (var page = 0; page < decoder.Frames.Count; page++)
+        for (var page = 0; page < frameCount; page++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var frame = decoder.Frames[page];
-            if (frame.PixelWidth != width || frame.PixelHeight != height)
-                throw new InvalidDataException("All TIFF frames must have the same dimensions.");
-            var source = PrepareFrame(frame, voxelType);
-            source.CopyPixels(pageBytes, checked(width * bytesPerSample), 0);
+            if (rawInt32Pages is not null)
+            {
+                var rawPage = rawInt32Pages[page];
+                if (rawPage.Width != width || rawPage.Height != height)
+                    throw new InvalidDataException("All TIFF frames must have the same dimensions.");
+                Buffer.BlockCopy(rawPage.LittleEndianSamples, 0, pageBytes, 0, pageBytes.Length);
+            }
+            else
+            {
+                var frame = decoder!.Frames[page];
+                if (frame.PixelWidth != width || frame.PixelHeight != height)
+                    throw new InvalidDataException("All TIFF frames must have the same dimensions.");
+                var source = PrepareFrame(frame, voxelType);
+                source.CopyPixels(pageBytes, checked(width * bytesPerSample), 0);
+            }
 
             var channel = page % channels;
             var z = page / channels;
@@ -131,8 +149,8 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         (16, 1) => VolumeVoxelType.UnsignedInt16,
         (16, 2) => VolumeVoxelType.SignedInt16,
         (32, 3) => VolumeVoxelType.Float32,
-        (32, 1) => throw new NotSupportedException("Unsigned 32-bit integer TIFF requires the raw TIFF path, which is not enabled yet."),
-        (32, 2) => throw new NotSupportedException("Signed 32-bit image TIFF requires the raw TIFF path; signed 32-bit label TIFF is supported separately."),
+        (32, 1) => VolumeVoxelType.UnsignedInt32,
+        (32, 2) => VolumeVoxelType.SignedInt32,
         _ => throw new NotSupportedException(
             $"Unsupported TIFF sample type: BitsPerSample={metadata.BitsPerSample}, SampleFormat={metadata.SampleFormat}."),
     };
@@ -141,8 +159,8 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
     {
         VolumeVoxelType.UnsignedInt8 => 1,
         VolumeVoxelType.UnsignedInt16 or VolumeVoxelType.SignedInt16 => 2,
-        VolumeVoxelType.Float32 => 4,
-        _ => throw new NotSupportedException($"TIFF sample type {voxelType} is not supported by the WIC pixel path."),
+        VolumeVoxelType.UnsignedInt32 or VolumeVoxelType.SignedInt32 or VolumeVoxelType.Float32 => 4,
+        _ => throw new NotSupportedException($"TIFF sample type {voxelType} is not supported."),
     };
 
     private static void ConvertSamples(ReadOnlySpan<byte> source, Span<float> destination, VolumeVoxelType voxelType)
@@ -154,8 +172,10 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
                 VolumeVoxelType.UnsignedInt8 => source[i],
                 VolumeVoxelType.UnsignedInt16 => BinaryPrimitives.ReadUInt16LittleEndian(source[(i * 2)..]),
                 VolumeVoxelType.SignedInt16 => BinaryPrimitives.ReadInt16LittleEndian(source[(i * 2)..]),
+                VolumeVoxelType.UnsignedInt32 => BinaryPrimitives.ReadUInt32LittleEndian(source[(i * 4)..]),
+                VolumeVoxelType.SignedInt32 => BinaryPrimitives.ReadInt32LittleEndian(source[(i * 4)..]),
                 VolumeVoxelType.Float32 => BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(source[(i * 4)..])),
-                _ => throw new NotSupportedException($"TIFF sample type {voxelType} is not supported by the WIC pixel path."),
+                _ => throw new NotSupportedException($"TIFF sample type {voxelType} is not supported."),
             };
             if (!float.IsFinite(destination[i]))
                 throw new InvalidDataException("TIFF contains a non-finite floating-point sample.");

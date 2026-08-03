@@ -11,7 +11,7 @@ The detailed DSLT mathematical and ordering contract is maintained in
 
 | Capability | Legacy evidence | Confirmed default/range | Workbench preview contract |
 |---|---|---|---|
-| Multi-page TIFF | `set3DImage_MultiTIFF`; `MultiTiffIO::GetImageData` | Channel defaults to 0 | Classic Gray8/Gray16/Gray32Float decoded sample bytes are preserved; frames must have equal X/Y size; failed load preserves the active volume |
+| Multi-page TIFF | `set3DImage_MultiTIFF`; `MultiTiffIO::GetImageData` | Channel defaults to 0 | Classic Gray8/Gray16/Gray32Float plus uncompressed signed/unsigned Int32 decoded samples are preserved; raw Int32 supports endian conversion, multiple strips, cancellation, and malformed-range rejection; frames must have equal X/Y size; failed load preserves the active volume |
 | ImageJ HyperStack | `TiffDecoder`; page order `XYCZT` | One time point loaded at a time | `C x Z`, unit, and spacing are synthetic-validated; time series are rejected explicitly |
 | LSM metadata | TIFF-compatible pixel decode plus Zeiss private fields | Not fully established | Pixel path is scaffolded; private metadata remains pending real LSM fixtures |
 | Channel selection | `ch_slider`; `setChannel` | 0 through channel count - 1 | `SelectedChannel` must be within `[0, Channels)` |

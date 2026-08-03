@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -39,6 +40,10 @@ internal static class Program
 
             RunGray16RoundTripTest();
             RunGray32FloatRoundTripTest();
+            RunUnsignedInt32RoundTripTest();
+            RunUnsignedInt32MinIsWhiteTest();
+            RunSignedInt32BigEndianRoundTripTest();
+            RunMalformedInt32StripTest();
             RunImageJHyperStackTest();
             await WorkflowViewModelTests.RunAsync();
             Console.WriteLine("DSLT WPF TIFF, metadata, hyperstack, and workflow tests passed.");
@@ -136,6 +141,198 @@ internal static class Program
         writer.Write(1u);
         writer.Write(1u);
         foreach (var value in values) writer.Write(value);
+    }
+
+    private static void RunUnsignedInt32RoundTripTest()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-gray32u-{Guid.NewGuid():N}.tif");
+        try
+        {
+            var values = new uint[]
+            {
+                0, 1, 0x80000000, uint.MaxValue,
+                uint.MaxValue, 0x80000000, 1, 0,
+            };
+            WriteInt32Tiff(path, values, signed: false, littleEndian: true);
+            var volume = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+            volume.Validate();
+            if (volume.Depth != 2) throw new InvalidOperationException("Unsigned 32-bit multi-page depth was not preserved.");
+            if (volume.Source?.VoxelType != VolumeVoxelType.UnsignedInt32)
+                throw new InvalidOperationException("Unsigned 32-bit TIFF voxel type was not preserved.");
+            var expectedBytes = new byte[values.Length * sizeof(uint)];
+            Buffer.BlockCopy(values, 0, expectedBytes, 0, expectedBytes.Length);
+            if (!expectedBytes.SequenceEqual(volume.Source.ChannelPlanarRawSamples))
+                throw new InvalidOperationException("Unsigned 32-bit TIFF decoded bytes were not bit-exact.");
+            if (volume.Samples[0] != 0 || Math.Abs(volume.Samples[2] - 0.5F) > 1e-6F || volume.Samples[3] != 1)
+                throw new InvalidOperationException("Unsigned 32-bit TIFF processing samples were not normalized.");
+
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            try
+            {
+                _ = WpfWorkspaceFileService.ReadStack(path, cancellation.Token);
+                throw new InvalidOperationException("Cancelled 32-bit TIFF load was not interrupted.");
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected.
+            }
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    private static void RunSignedInt32BigEndianRoundTripTest()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-gray32s-be-{Guid.NewGuid():N}.tif");
+        try
+        {
+            var values = new[] { int.MinValue, -1, 0, int.MaxValue };
+            WriteInt32Tiff(path, values.Select(value => unchecked((uint)value)).ToArray(), signed: true, littleEndian: false);
+            var volume = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+            volume.Validate();
+            if (volume.Source?.VoxelType != VolumeVoxelType.SignedInt32)
+                throw new InvalidOperationException("Signed 32-bit TIFF voxel type was not preserved.");
+            var expectedBytes = new byte[values.Length * sizeof(int)];
+            Buffer.BlockCopy(values, 0, expectedBytes, 0, expectedBytes.Length);
+            if (!expectedBytes.SequenceEqual(volume.Source.ChannelPlanarRawSamples))
+                throw new InvalidOperationException("Big-endian signed 32-bit TIFF was not canonicalized bit-exactly.");
+            if (volume.Samples[0] != -1 || volume.Samples[2] != 0 || Math.Abs(volume.Samples[3] - 1) > 1e-6F)
+                throw new InvalidOperationException("Signed 32-bit TIFF processing samples were not normalized.");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    private static void RunUnsignedInt32MinIsWhiteTest()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-gray32u-white-{Guid.NewGuid():N}.tif");
+        try
+        {
+            WriteInt32Tiff(
+                path, [0, uint.MaxValue, 1, uint.MaxValue - 1],
+                signed: false, littleEndian: true, photometric: 0);
+            var volume = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+            var decoded = new uint[4];
+            Buffer.BlockCopy(volume.Source!.ChannelPlanarRawSamples, 0, decoded, 0, sizeof(uint) * decoded.Length);
+            if (!decoded.SequenceEqual(new[] { uint.MaxValue, 0u, uint.MaxValue - 1, 1u }))
+                throw new InvalidOperationException("Unsigned 32-bit MinIsWhite samples were not inverted.");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    private static void RunMalformedInt32StripTest()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-gray32-invalid-{Guid.NewGuid():N}.tif");
+        try
+        {
+            WriteInt32Tiff(path, [1, 2, 3, 4], signed: false, littleEndian: true, corruptSecondStripCount: true);
+            try
+            {
+                _ = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+                throw new InvalidOperationException("Malformed 32-bit TIFF strip was accepted.");
+            }
+            catch (InvalidDataException)
+            {
+                // Expected: malformed input must fail without producing a volume.
+            }
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    private static void WriteInt32Tiff(
+        string path,
+        uint[] values,
+        bool signed,
+        bool littleEndian,
+        bool corruptSecondStripCount = false,
+        ushort photometric = 1)
+    {
+        if (values.Length == 0 || values.Length % 4 != 0)
+            throw new ArgumentException("The fixture requires one or more 2x2 pages.", nameof(values));
+        const ushort entryCount = 12;
+        const uint ifdOffset = 8;
+        const uint ifdByteCount = 2 + entryCount * 12 + 4;
+        const uint pageByteCount = ifdByteCount + 4 * sizeof(uint) + 4 * sizeof(uint);
+        const uint rowByteCount = 2 * sizeof(uint);
+        using var stream = File.Create(path);
+        stream.WriteByte(littleEndian ? (byte)'I' : (byte)'M');
+        stream.WriteByte(littleEndian ? (byte)'I' : (byte)'M');
+        WriteUInt16(stream, 42, littleEndian);
+        WriteUInt32(stream, ifdOffset, littleEndian);
+        var pageCount = values.Length / 4;
+        for (var page = 0; page < pageCount; page++)
+        {
+            var currentIfdOffset = checked(ifdOffset + (uint)page * pageByteCount);
+            var stripOffsetsOffset = checked(currentIfdOffset + ifdByteCount);
+            var stripByteCountsOffset = checked(stripOffsetsOffset + 2 * sizeof(uint));
+            var pixelOffset = checked(stripByteCountsOffset + 2 * sizeof(uint));
+            var nextIfdOffset = page + 1 < pageCount ? checked(currentIfdOffset + pageByteCount) : 0;
+            WriteUInt16(stream, entryCount, littleEndian);
+            WriteLongEntry(stream, 256, 2, littleEndian);
+            WriteLongEntry(stream, 257, 2, littleEndian);
+            WriteShortEntry(stream, 258, 32, littleEndian);
+            WriteShortEntry(stream, 259, 1, littleEndian);
+            WriteShortEntry(stream, 262, photometric, littleEndian);
+            WriteArrayOffsetEntry(stream, 273, 2, stripOffsetsOffset, littleEndian);
+            WriteShortEntry(stream, 274, 1, littleEndian);
+            WriteShortEntry(stream, 277, 1, littleEndian);
+            WriteLongEntry(stream, 278, 1, littleEndian);
+            WriteArrayOffsetEntry(stream, 279, 2, stripByteCountsOffset, littleEndian);
+            WriteShortEntry(stream, 284, 1, littleEndian);
+            WriteShortEntry(stream, 339, signed ? (ushort)2 : (ushort)1, littleEndian);
+            WriteUInt32(stream, nextIfdOffset, littleEndian);
+            WriteUInt32(stream, pixelOffset, littleEndian);
+            WriteUInt32(stream, pixelOffset + rowByteCount, littleEndian);
+            WriteUInt32(stream, rowByteCount, littleEndian);
+            WriteUInt32(stream, corruptSecondStripCount && page == pageCount - 1 ? rowByteCount - 1 : rowByteCount, littleEndian);
+            for (var sample = 0; sample < 4; sample++)
+                WriteUInt32(stream, values[page * 4 + sample], littleEndian);
+        }
+    }
+
+    private static void WriteLongEntry(Stream stream, ushort tag, uint value, bool littleEndian)
+    {
+        WriteUInt16(stream, tag, littleEndian);
+        WriteUInt16(stream, 4, littleEndian);
+        WriteUInt32(stream, 1, littleEndian);
+        WriteUInt32(stream, value, littleEndian);
+    }
+
+    private static void WriteShortEntry(Stream stream, ushort tag, ushort value, bool littleEndian)
+    {
+        WriteUInt16(stream, tag, littleEndian);
+        WriteUInt16(stream, 3, littleEndian);
+        WriteUInt32(stream, 1, littleEndian);
+        WriteUInt16(stream, value, littleEndian);
+        WriteUInt16(stream, 0, littleEndian);
+    }
+
+    private static void WriteArrayOffsetEntry(
+        Stream stream,
+        ushort tag,
+        uint count,
+        uint offset,
+        bool littleEndian)
+    {
+        WriteUInt16(stream, tag, littleEndian);
+        WriteUInt16(stream, 4, littleEndian);
+        WriteUInt32(stream, count, littleEndian);
+        WriteUInt32(stream, offset, littleEndian);
+    }
+
+    private static void WriteUInt16(Stream stream, ushort value, bool littleEndian)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(ushort)];
+        if (littleEndian) BinaryPrimitives.WriteUInt16LittleEndian(bytes, value);
+        else BinaryPrimitives.WriteUInt16BigEndian(bytes, value);
+        stream.Write(bytes);
+    }
+
+    private static void WriteUInt32(Stream stream, uint value, bool littleEndian)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(uint)];
+        if (littleEndian) BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+        else BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
+        stream.Write(bytes);
     }
 
     private static void WriteLongEntry(BinaryWriter writer, ushort tag, uint value)
