@@ -41,6 +41,23 @@ internal static class WorkflowViewModelTests
             "The legacy preview C offset was not mapped to core Cxy.");
 
         target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.AdaptiveThreshold3D);
+        Assert(target.Radius == 14 && target.AdaptiveThresholdKernel == DsltKernelType.Mean &&
+               target.AdaptiveThresholdOffset == 20,
+            "Adaptive threshold legacy defaults were not exposed by the UI.");
+        target.Radius = 7;
+        target.AdaptiveThresholdKernel = DsltKernelType.Gaussian;
+        target.AdaptiveThresholdOffset = 35;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.AdaptiveThreshold3D,
+                Radius: 7,
+                AdaptiveThresholdKernel: DsltKernelType.Gaussian,
+            } && Math.Abs(target.LastParameters.ConstantC - -0.07F) < 1e-6F,
+            "Adaptive threshold UI parameters were not mapped to the native contract.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.ThresholdSweep);
         Assert(target.MinimumThreshold == 0 && target.MaximumThreshold == 1 &&
                Math.Abs(target.ThresholdInterval - 0.02F) < 1e-6F &&

@@ -102,6 +102,13 @@ std::vector<float> apply_dslt_threshold(
     const Engine::Progress& progress);
 std::vector<float> window_level(const Volume& volume, float minimum, float maximum, const Engine::Progress& progress);
 std::vector<float> threshold(const Volume& volume, float value, const Engine::Progress& progress);
+std::vector<float> adaptive_threshold(
+    const Volume& volume,
+    int radius,
+    int kernel_type,
+    float constant_c,
+    bool include_z,
+    const Engine::Progress& progress);
 std::vector<float> smooth(const Volume& volume, int radius, bool gaussian, const Engine::Progress& progress);
 std::vector<float> morphology(const Volume& volume, int radius, bool dilate, bool spherical, const Engine::Progress& progress);
 std::vector<float> morphology_buffer(

@@ -31,6 +31,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private float _windowMaximum = 1.0F;
     private int _radius = 1;
     private int _dsltRadius = 14;
+    private int _adaptiveThresholdRadius = 14;
     private int _channelIndex;
     private int _xIndex;
     private int _yIndex;
@@ -41,6 +42,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _thresholdSweepMinimumComponentSize;
     private int _directionLevel = 2;
     private DsltKernelType _dsltKernel = DsltKernelType.Mean;
+    private DsltKernelType _adaptiveThresholdKernel = DsltKernelType.Mean;
+    private float _adaptiveThresholdOffset = 20;
     private float _previewOffset = 20;
     private float _zCorrectionFactor = 0.2F;
     private float _minimumC;
@@ -77,6 +80,8 @@ public sealed class MainWindowViewModel : ObservableObject
         [
             new("Window / level", ProcessingOperation.WindowLevel, WorkflowStage.Inspect),
             new("Threshold 3D", ProcessingOperation.Threshold3D, WorkflowStage.Process),
+            new("Adaptive threshold 2D", ProcessingOperation.AdaptiveThreshold2D, WorkflowStage.Process),
+            new("Adaptive threshold 3D", ProcessingOperation.AdaptiveThreshold3D, WorkflowStage.Process),
             new("Mean smoothing", ProcessingOperation.SmoothMean, WorkflowStage.Process),
             new("Gaussian smoothing", ProcessingOperation.SmoothGaussian, WorkflowStage.Process),
             new("Dilate sphere", ProcessingOperation.DilateSphere, WorkflowStage.Process),
@@ -126,6 +131,7 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsDsltOperation));
             OnPropertyChanged(nameof(IsDsltSegmentation));
             OnPropertyChanged(nameof(IsThresholdSweep));
+            OnPropertyChanged(nameof(IsAdaptiveThreshold));
             OnPropertyChanged(nameof(MinimumInvalidStructureArea));
             OnPropertyChanged(nameof(MinimumComponentSize));
             OnPropertyChanged(nameof(UsesThreshold));
@@ -179,18 +185,21 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public int Radius
     {
-        get => IsDsltOperation ? _dsltRadius : _radius;
+        get => IsDsltOperation ? _dsltRadius :
+            IsAdaptiveThreshold ? _adaptiveThresholdRadius : _radius;
         set
         {
             if (IsDsltOperation)
                 SetProperty(ref _dsltRadius, Math.Clamp(value, 1, 100));
+            else if (IsAdaptiveThreshold)
+                SetProperty(ref _adaptiveThresholdRadius, Math.Clamp(value, 0, 100));
             else
                 SetProperty(ref _radius, Math.Clamp(value, 0, 64));
         }
     }
 
     public int MinimumRadius => IsDsltOperation ? 1 : 0;
-    public int MaximumRadius => IsDsltOperation ? 100 : 64;
+    public int MaximumRadius => IsDsltOperation || IsAdaptiveThreshold ? 100 : 64;
 
     public int ChannelIndex
     {
@@ -278,6 +287,19 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _dsltKernel;
         set => SetProperty(ref _dsltKernel, value);
+    }
+
+    public DsltKernelType AdaptiveThresholdKernel
+    {
+        get => _adaptiveThresholdKernel;
+        set => SetProperty(ref _adaptiveThresholdKernel, value);
+    }
+
+    public float AdaptiveThresholdOffset
+    {
+        get => _adaptiveThresholdOffset;
+        set => SetProperty(ref _adaptiveThresholdOffset,
+            float.IsFinite(value) ? Math.Clamp(value, -100, 500) : 20);
     }
 
     public float PreviewOffset
@@ -449,11 +471,14 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsDsltOperation => SelectedOperation.Operation is ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation;
     public bool IsDsltSegmentation => SelectedOperation.Operation == ProcessingOperation.DsltSegmentation;
     public bool IsThresholdSweep => SelectedOperation.Operation == ProcessingOperation.ThresholdSweep;
+    public bool IsAdaptiveThreshold => SelectedOperation.Operation is
+        ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
     public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
         ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap;
     public bool UsesRadius => SelectedOperation.Operation is ProcessingOperation.SmoothMean or ProcessingOperation.SmoothGaussian or
         ProcessingOperation.DilateCube or ProcessingOperation.ErodeCube or ProcessingOperation.DilateSphere or
-        ProcessingOperation.ErodeSphere or ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation;
+        ProcessingOperation.ErodeSphere or ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation or
+        ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
     public ProcessingResult? LastResult => _lastResult;
     public OperationParameters? LastParameters => _lastParameters;
 
@@ -623,7 +648,7 @@ public sealed class MainWindowViewModel : ObservableObject
         Threshold: Threshold,
         ConstantC: SelectedOperation.Operation == ProcessingOperation.DsltThreshold
             ? -PreviewOffset * 0.002F
-            : 0,
+            : IsAdaptiveThreshold ? -AdaptiveThresholdOffset * 0.002F : 0,
         WindowMinimum: WindowMinimum,
         WindowMaximum: WindowMaximum,
         TargetSpacingZ: 1,
@@ -638,6 +663,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ThresholdInterval: ThresholdInterval,
         ThresholdSweepMinimumComponentSize: IsThresholdSweep ? MinimumComponentSize : 0,
         ThresholdSweepMinimumInvalidStructureArea: IsThresholdSweep ? MinimumInvalidStructureArea : 100,
+        AdaptiveThresholdKernel: AdaptiveThresholdKernel,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea);
 
