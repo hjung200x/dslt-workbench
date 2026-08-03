@@ -9,6 +9,7 @@
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace dslt::ops {
 
@@ -446,6 +447,43 @@ std::vector<float> convolve_axis_clamp(
     return result;
 }
 
+std::vector<float> minimum_axis_radius_one(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    ConvolutionAxis axis,
+    const Engine::Progress& progress) {
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
+    if (source.size() != expected) {
+        throw std::invalid_argument("minimum-filter dimensions do not match the volume");
+    }
+    std::vector<float> result(source.size());
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t y = 0; y < descriptor.height; ++y) {
+            for (std::size_t x = 0; x < descriptor.width; ++x) {
+                auto minimum = source[flat(x, y, z, descriptor.width, descriptor.height)];
+                for (int delta : {-1, 1}) {
+                    const auto xx = static_cast<long long>(x) + (axis == ConvolutionAxis::x ? delta : 0);
+                    const auto yy = static_cast<long long>(y) + (axis == ConvolutionAxis::y ? delta : 0);
+                    const auto zz = static_cast<long long>(z) + (axis == ConvolutionAxis::z ? delta : 0);
+                    if (xx < 0 || yy < 0 || zz < 0 ||
+                        xx >= descriptor.width || yy >= descriptor.height || zz >= descriptor.depth) {
+                        continue;
+                    }
+                    minimum = std::min(minimum, source[flat(
+                        static_cast<std::size_t>(xx),
+                        static_cast<std::size_t>(yy),
+                        static_cast<std::size_t>(zz),
+                        descriptor.width,
+                        descriptor.height)]);
+                }
+                result[flat(x, y, z, descriptor.width, descriptor.height)] = minimum;
+            }
+        }
+        report(progress, z + 1, descriptor.depth);
+    }
+    return result;
+}
+
 std::vector<float> chunked_spherical_morphology(
     std::span<const float> source,
     const dslt_volume_descriptor& descriptor,
@@ -655,6 +693,88 @@ std::vector<float> adaptive_threshold(
     }
     report(progress, 1, 1);
     return local;
+}
+
+std::vector<float> h_minima(
+    const Volume& volume,
+    float height,
+    int check_interval,
+    const Engine::Progress& progress) {
+    if (!std::isfinite(height) || height < 0.0F || height > 1.0F) {
+        throw std::invalid_argument("h-minima height must be finite and between 0 and 1");
+    }
+    if (check_interval < 1 || check_interval > 10000) {
+        throw std::invalid_argument("h-minima check interval must be between 1 and 10000");
+    }
+    const auto source = selected_channel(volume);
+    if (!std::all_of(source.begin(), source.end(), [](float value) { return std::isfinite(value); })) {
+        throw std::invalid_argument("h-minima source must contain only finite values");
+    }
+    auto current = source;
+    for (auto& value : current) {
+        value += height;
+        if (!std::isfinite(value)) {
+            throw std::invalid_argument("h-minima marker overflowed float range");
+        }
+    }
+    auto checkpoint = current;
+    const auto& descriptor = volume.descriptor();
+    const auto checkpoint_margin = static_cast<std::size_t>(check_interval) * 2;
+    if (source.size() > std::numeric_limits<std::size_t>::max() - checkpoint_margin) {
+        throw ResourceLimitError("h-minima iteration limit overflowed size_t");
+    }
+    const auto maximum_iterations = source.size() + checkpoint_margin;
+    auto since_check = 0;
+    auto converged = false;
+    for (std::size_t iteration = 0; iteration < maximum_iterations; ++iteration) {
+        const auto iteration_start = 0.95F * static_cast<float>(iteration) /
+            static_cast<float>(std::max(maximum_iterations, std::size_t{1}));
+        const auto iteration_length = 0.95F /
+            static_cast<float>(std::max(maximum_iterations, std::size_t{1}));
+        auto previous_iteration = std::move(current);
+        current = minimum_axis_radius_one(
+            previous_iteration, descriptor, ConvolutionAxis::x,
+            mapped_progress(progress, iteration_start, iteration_length * 0.25F));
+        current = minimum_axis_radius_one(
+            current, descriptor, ConvolutionAxis::y,
+            mapped_progress(progress, iteration_start + iteration_length * 0.25F, iteration_length * 0.25F));
+        current = minimum_axis_radius_one(
+            current, descriptor, ConvolutionAxis::z,
+            mapped_progress(progress, iteration_start + iteration_length * 0.50F, iteration_length * 0.25F));
+        for (std::size_t index = 0; index < current.size(); ++index) {
+            current[index] = std::max(current[index], source[index]);
+        }
+        if (progress && !progress(iteration_start + iteration_length)) {
+            throw std::runtime_error("cancelled");
+        }
+        if (current == previous_iteration) {
+            converged = true;
+            break;
+        }
+        if (++since_check >= check_interval) {
+            if (current == checkpoint) {
+                converged = true;
+                break;
+            }
+            checkpoint = current;
+            since_check = 0;
+        }
+    }
+    if (!converged) {
+        throw ResourceLimitError("h-minima reconstruction did not converge within the checked iteration limit");
+    }
+    std::vector<float> result(source.size());
+    constexpr float residual_threshold = 0.00001F;
+    for (std::size_t index = 0; index < result.size(); ++index) {
+        result[index] = current[index] - source[index] < residual_threshold ? 0.8F : 0.0F;
+        if ((index & 0xffffU) == 0 && progress &&
+            !progress(0.95F + 0.05F * static_cast<float>(index) /
+                static_cast<float>(std::max(result.size(), std::size_t{1})))) {
+            throw std::runtime_error("cancelled");
+        }
+    }
+    report(progress, 1, 1);
+    return result;
 }
 
 DsltWorkEstimate estimate_dslt_work(

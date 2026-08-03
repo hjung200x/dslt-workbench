@@ -74,7 +74,8 @@ typedef enum dslt_operation {
     DSLT_OP_DSLT_THRESHOLD = 19,
     DSLT_OP_DSLT_SEGMENTATION = 20,
     DSLT_OP_ADAPTIVE_THRESHOLD_2D = 21,
-    DSLT_OP_ADAPTIVE_THRESHOLD_3D = 22
+    DSLT_OP_ADAPTIVE_THRESHOLD_3D = 22,
+    DSLT_OP_H_MINIMA = 23
 } dslt_operation;
 
 typedef struct dslt_calibration {

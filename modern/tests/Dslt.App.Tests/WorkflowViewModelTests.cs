@@ -58,6 +58,20 @@ internal static class WorkflowViewModelTests
             "Adaptive threshold UI parameters were not mapped to the native contract.");
 
         target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.HMinima);
+        Assert(Math.Abs(target.HMinimaHeight - 0.1F) < 1e-6F && target.HMinimaCheckInterval == 50,
+            "H-minima legacy defaults were not exposed by the UI.");
+        target.HMinimaHeight = 0.25F;
+        target.HMinimaCheckInterval = 25;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.HMinima,
+                HMinimaHeight: 0.25F,
+                HMinimaCheckInterval: 25,
+            }, "H-minima UI parameters were not preserved in the processing request.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.ThresholdSweep);
         Assert(target.MinimumThreshold == 0 && target.MaximumThreshold == 1 &&
                Math.Abs(target.ThresholdInterval - 0.02F) < 1e-6F &&

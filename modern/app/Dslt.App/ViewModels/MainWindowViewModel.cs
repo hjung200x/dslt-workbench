@@ -44,6 +44,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private DsltKernelType _dsltKernel = DsltKernelType.Mean;
     private DsltKernelType _adaptiveThresholdKernel = DsltKernelType.Mean;
     private float _adaptiveThresholdOffset = 20;
+    private float _hMinimaHeight = 0.1F;
+    private int _hMinimaCheckInterval = 50;
     private float _previewOffset = 20;
     private float _zCorrectionFactor = 0.2F;
     private float _minimumC;
@@ -82,6 +84,7 @@ public sealed class MainWindowViewModel : ObservableObject
             new("Threshold 3D", ProcessingOperation.Threshold3D, WorkflowStage.Process),
             new("Adaptive threshold 2D", ProcessingOperation.AdaptiveThreshold2D, WorkflowStage.Process),
             new("Adaptive threshold 3D", ProcessingOperation.AdaptiveThreshold3D, WorkflowStage.Process),
+            new("H-minima transform", ProcessingOperation.HMinima, WorkflowStage.Process),
             new("Mean smoothing", ProcessingOperation.SmoothMean, WorkflowStage.Process),
             new("Gaussian smoothing", ProcessingOperation.SmoothGaussian, WorkflowStage.Process),
             new("Dilate sphere", ProcessingOperation.DilateSphere, WorkflowStage.Process),
@@ -132,6 +135,7 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsDsltSegmentation));
             OnPropertyChanged(nameof(IsThresholdSweep));
             OnPropertyChanged(nameof(IsAdaptiveThreshold));
+            OnPropertyChanged(nameof(IsHMinima));
             OnPropertyChanged(nameof(MinimumInvalidStructureArea));
             OnPropertyChanged(nameof(MinimumComponentSize));
             OnPropertyChanged(nameof(UsesThreshold));
@@ -300,6 +304,19 @@ public sealed class MainWindowViewModel : ObservableObject
         get => _adaptiveThresholdOffset;
         set => SetProperty(ref _adaptiveThresholdOffset,
             float.IsFinite(value) ? Math.Clamp(value, -100, 500) : 20);
+    }
+
+    public float HMinimaHeight
+    {
+        get => _hMinimaHeight;
+        set => SetProperty(ref _hMinimaHeight,
+            float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0.1F);
+    }
+
+    public int HMinimaCheckInterval
+    {
+        get => _hMinimaCheckInterval;
+        set => SetProperty(ref _hMinimaCheckInterval, Math.Clamp(value, 1, 10_000));
     }
 
     public float PreviewOffset
@@ -473,6 +490,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsThresholdSweep => SelectedOperation.Operation == ProcessingOperation.ThresholdSweep;
     public bool IsAdaptiveThreshold => SelectedOperation.Operation is
         ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
+    public bool IsHMinima => SelectedOperation.Operation == ProcessingOperation.HMinima;
     public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
         ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap;
     public bool UsesRadius => SelectedOperation.Operation is ProcessingOperation.SmoothMean or ProcessingOperation.SmoothGaussian or
@@ -664,6 +682,8 @@ public sealed class MainWindowViewModel : ObservableObject
         ThresholdSweepMinimumComponentSize: IsThresholdSweep ? MinimumComponentSize : 0,
         ThresholdSweepMinimumInvalidStructureArea: IsThresholdSweep ? MinimumInvalidStructureArea : 100,
         AdaptiveThresholdKernel: AdaptiveThresholdKernel,
+        HMinimaHeight: HMinimaHeight,
+        HMinimaCheckInterval: HMinimaCheckInterval,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea);
 

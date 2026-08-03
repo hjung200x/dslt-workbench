@@ -32,6 +32,7 @@ public enum ProcessingOperation
     DsltSegmentation = 20,
     AdaptiveThreshold2D = 21,
     AdaptiveThreshold3D = 22,
+    HMinima = 23,
 }
 
 public enum OutputKind
@@ -149,6 +150,8 @@ public sealed record OperationParameters(
     int ThresholdSweepMinimumComponentSize = 0,
     int ThresholdSweepMinimumInvalidStructureArea = 100,
     DsltKernelType AdaptiveThresholdKernel = DsltKernelType.Mean,
+    float HMinimaHeight = 0.1f,
+    int HMinimaCheckInterval = 50,
     int ClosingRadius = 2,
     int MinimumInvalidStructureArea = 500,
     bool CropEnabled = false,
