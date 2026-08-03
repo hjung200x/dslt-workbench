@@ -1,6 +1,7 @@
 #include "operations.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <deque>
 #include <limits>
@@ -27,12 +28,196 @@ float sinc(float value) {
     return std::sin(p) / p;
 }
 
+struct Vec3 final {
+    float x;
+    float y;
+    float z;
+
+    bool operator==(const Vec3&) const = default;
+};
+
+Vec3 midpoint(const Vec3& left, const Vec3& right) {
+    return {(left.x + right.x) * 0.5F, (left.y + right.y) * 0.5F, (left.z + right.z) * 0.5F};
+}
+
+std::vector<Vec3> geodesic_directions(int level) {
+    if (level < 1 || level > 5) throw std::invalid_argument("DSLT direction level must be between 1 and 5");
+    std::vector<Vec3> vertices{
+        { 0.000000F, -0.000000F,  1.000000F}, { 0.723600F,  0.525720F,  0.447215F},
+        {-0.276385F,  0.850640F,  0.447215F}, {-0.894425F, -0.000000F,  0.447215F},
+        {-0.276385F, -0.850640F,  0.447215F}, { 0.723600F, -0.525720F,  0.447215F},
+        { 0.276385F,  0.850640F, -0.447215F}, {-0.723600F,  0.525720F, -0.447215F},
+        {-0.723600F, -0.525720F, -0.447215F}, { 0.276385F, -0.850640F, -0.447215F},
+        { 0.894425F,  0.000000F, -0.447215F}, {-0.000000F,  0.000000F, -1.000000F},
+    };
+    std::vector<std::array<std::size_t, 3>> faces{
+        {0, 1, 2}, {1, 0, 5}, {0, 2, 3}, {0, 3, 4}, {0, 4, 5},
+        {1, 5, 10}, {2, 1, 6}, {3, 2, 7}, {4, 3, 8}, {5, 4, 9},
+        {1, 10, 6}, {2, 6, 7}, {3, 7, 8}, {4, 8, 9}, {5, 9, 10},
+        {6, 10, 11}, {7, 6, 11}, {8, 7, 11}, {9, 8, 11}, {9, 10, 11},
+    };
+
+    const auto midpoint_index = [&vertices](std::size_t left, std::size_t right) {
+        const auto value = midpoint(vertices[left], vertices[right]);
+        const auto found = std::find(vertices.begin(), vertices.end(), value);
+        if (found != vertices.end()) return static_cast<std::size_t>(found - vertices.begin());
+        vertices.push_back(value);
+        return vertices.size() - 1;
+    };
+
+    for (int subdivision = 0; subdivision < level; ++subdivision) {
+        std::vector<std::array<std::size_t, 3>> next;
+        next.reserve(faces.size() * 4);
+        for (const auto& face : faces) {
+            const auto m01 = midpoint_index(face[0], face[1]);
+            const auto m12 = midpoint_index(face[1], face[2]);
+            const auto m02 = midpoint_index(face[0], face[2]);
+            next.push_back({face[0], m01, m02});
+            next.push_back({face[1], m12, m01});
+            next.push_back({face[2], m02, m12});
+            next.push_back({m02, m01, m12});
+        }
+        faces = std::move(next);
+    }
+
+    std::vector<Vec3> directions;
+    directions.reserve(vertices.size() / 2 + 1);
+    for (const auto& vertex : vertices) {
+        const Vec3 opposite{-vertex.x, -vertex.y, -vertex.z};
+        if (std::find(directions.begin(), directions.end(), opposite) == directions.end()) {
+            directions.push_back(vertex);
+        }
+    }
+    for (auto& direction : directions) {
+        const auto length = std::sqrt(
+            direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+        direction.x /= length;
+        direction.y /= length;
+        direction.z /= length;
+    }
+    return directions;
+}
+
+std::vector<float> line_weights(int radius, bool gaussian) {
+    const auto length = radius * 2 + 1;
+    std::vector<float> weights(static_cast<std::size_t>(length), 1.0F / static_cast<float>(length));
+    if (!gaussian) return weights;
+    const auto sigma = 0.3F * static_cast<float>(radius - 1) + 0.8F;
+    const auto denominator = 2.0F * sigma * sigma;
+    float sum = 0.0F;
+    for (int index = 0; index < length; ++index) {
+        const auto offset = static_cast<float>(index - radius);
+        weights[static_cast<std::size_t>(index)] = std::exp(-(offset * offset) / denominator);
+        sum += weights[static_cast<std::size_t>(index)];
+    }
+    for (auto& weight : weights) weight /= sum;
+    return weights;
+}
+
+float trilinear_clamp(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    float x,
+    float y,
+    float z) {
+    const auto cx = std::clamp(x, 0.0F, static_cast<float>(descriptor.width - 1));
+    const auto cy = std::clamp(y, 0.0F, static_cast<float>(descriptor.height - 1));
+    const auto cz = std::clamp(z, 0.0F, static_cast<float>(descriptor.depth - 1));
+    const auto x0 = static_cast<std::size_t>(std::floor(cx));
+    const auto y0 = static_cast<std::size_t>(std::floor(cy));
+    const auto z0 = static_cast<std::size_t>(std::floor(cz));
+    const auto x1 = std::min<std::size_t>(x0 + 1, descriptor.width - 1);
+    const auto y1 = std::min<std::size_t>(y0 + 1, descriptor.height - 1);
+    const auto z1 = std::min<std::size_t>(z0 + 1, descriptor.depth - 1);
+    const auto tx = cx - static_cast<float>(x0);
+    const auto ty = cy - static_cast<float>(y0);
+    const auto tz = cz - static_cast<float>(z0);
+    const auto lerp = [](float left, float right, float amount) { return left + (right - left) * amount; };
+    const auto c00 = lerp(source[flat(x0, y0, z0, descriptor.width, descriptor.height)],
+                          source[flat(x1, y0, z0, descriptor.width, descriptor.height)], tx);
+    const auto c10 = lerp(source[flat(x0, y1, z0, descriptor.width, descriptor.height)],
+                          source[flat(x1, y1, z0, descriptor.width, descriptor.height)], tx);
+    const auto c01 = lerp(source[flat(x0, y0, z1, descriptor.width, descriptor.height)],
+                          source[flat(x1, y0, z1, descriptor.width, descriptor.height)], tx);
+    const auto c11 = lerp(source[flat(x0, y1, z1, descriptor.width, descriptor.height)],
+                          source[flat(x1, y1, z1, descriptor.width, descriptor.height)], tx);
+    return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
+}
+
 } // namespace
 
 std::vector<float> selected_channel(const Volume& volume) {
     std::vector<float> result(volume.voxel_count());
     const auto offset = volume.voxel_count() * volume.descriptor().selected_channel;
     std::copy_n(volume.data().begin() + static_cast<std::ptrdiff_t>(offset), result.size(), result.begin());
+    return result;
+}
+
+std::vector<float> dslt_threshold(
+    const Volume& volume,
+    int radius,
+    int direction_level,
+    int kernel_type,
+    float constant_c_xy,
+    float z_correction_factor,
+    const Engine::Progress& progress) {
+    if (radius < 1 || radius > 127) throw std::invalid_argument("DSLT radius must be between 1 and 127");
+    if (kernel_type != 0 && kernel_type != 1) throw std::invalid_argument("DSLT kernel type must be 0 (Gaussian) or 1 (mean)");
+    if (!std::isfinite(constant_c_xy)) throw std::invalid_argument("DSLT C must be finite");
+    if (!std::isfinite(z_correction_factor) || z_correction_factor < 0.0F)
+        throw std::invalid_argument("DSLT Z correction factor must be finite and non-negative");
+
+    const auto directions = geodesic_directions(direction_level);
+    const auto source = selected_channel(volume);
+    const auto& descriptor = volume.descriptor();
+    std::vector<float> result(source.size(), 0.0F);
+    std::vector<float> minimum(source.size(), std::numeric_limits<float>::max());
+    std::vector<float> alpha(source.size(), 0.0F);
+    const auto total_steps = static_cast<std::size_t>(radius) * directions.size() +
+        static_cast<std::size_t>(descriptor.depth) * descriptor.height;
+    std::size_t completed_steps = 0;
+
+    for (int current_radius = radius; current_radius > 0; --current_radius) {
+        const auto weights = line_weights(current_radius, kernel_type == 0);
+        for (const auto& direction : directions) {
+            const auto xy_length = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+            const auto latitude = std::acos(std::clamp(xy_length, 0.0F, 1.0F));
+            const auto direction_alpha = std::abs(2.0F * latitude / std::numbers::pi_v<float>);
+            for (std::size_t z = 0; z < descriptor.depth; ++z) {
+                for (std::size_t y = 0; y < descriptor.height; ++y) {
+                    for (std::size_t x = 0; x < descriptor.width; ++x) {
+                        float sum = 0.0F;
+                        for (int offset = -current_radius; offset <= current_radius; ++offset) {
+                            const auto weight = weights[static_cast<std::size_t>(offset + current_radius)];
+                            sum += trilinear_clamp(
+                                source, descriptor,
+                                static_cast<float>(x) + direction.x * static_cast<float>(offset),
+                                static_cast<float>(y) + direction.y * static_cast<float>(offset),
+                                static_cast<float>(z) + direction.z * static_cast<float>(offset)) * weight;
+                        }
+                        const auto id = flat(x, y, z, descriptor.width, descriptor.height);
+                        if (minimum[id] > sum) {
+                            minimum[id] = sum;
+                            alpha[id] = direction_alpha;
+                        }
+                    }
+                }
+            }
+            report(progress, ++completed_steps, total_steps);
+        }
+    }
+
+    const auto constant_c_z = constant_c_xy * z_correction_factor;
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t y = 0; y < descriptor.height; ++y) {
+            for (std::size_t x = 0; x < descriptor.width; ++x) {
+                const auto id = flat(x, y, z, descriptor.width, descriptor.height);
+                const auto correction = constant_c_xy * (1.0F - alpha[id]) + constant_c_z * alpha[id];
+                result[id] = source[id] > minimum[id] - correction ? 0.8F : 0.0F;
+            }
+            report(progress, ++completed_steps, total_steps);
+        }
+    }
     return result;
 }
 
@@ -317,4 +502,3 @@ std::vector<float> extract_plane(const Volume& volume, dslt_operation operation,
 }
 
 } // namespace dslt::ops
-

@@ -71,6 +71,23 @@ if (engine.IsAvailable)
         CancellationToken.None);
     Equal(2, componentResult.ComponentCount, "Native ABI component count");
 
+    var constantVolume = new VolumeData(
+        3, 3, 3, 1, 0, Calibration.Unit,
+        Enumerable.Repeat(0.5f, 27).ToArray());
+    var dsltResult = await engine.RunAsync(
+        constantVolume,
+        new OperationParameters(
+            ProcessingOperation.DsltThreshold,
+            ProcessingBackend.Cpu,
+            Radius: 1,
+            ConstantC: 0,
+            DirectionLevel: 1,
+            DsltKernel: DsltKernelType.Mean,
+            ZCorrectionFactor: 0.2f),
+        null,
+        CancellationToken.None);
+    Equal(27, dsltResult.FloatData!.Count(value => value == 0), "DSLT strict threshold tie output");
+
     for (var iteration = 0; iteration < 100; iteration++)
     {
         using var lifecycleEngine = new NativeProcessingEngine();

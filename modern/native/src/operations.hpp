@@ -21,8 +21,15 @@ std::vector<float> height_map(const Volume& volume, float threshold, const Engin
 std::vector<float> depth_map(const Volume& volume, float threshold, const Engine::Progress& progress);
 std::vector<float> resample_z(const Volume& volume, float target_spacing, int lanczos_order, bool lanczos, std::uint32_t& output_depth, const Engine::Progress& progress);
 std::vector<float> extract_plane(const Volume& volume, dslt_operation operation, int slice, std::uint32_t& width, std::uint32_t& height);
+std::vector<float> dslt_threshold(
+    const Volume& volume,
+    int radius,
+    int direction_level,
+    int kernel_type,
+    float constant_c_xy,
+    float z_correction_factor,
+    const Engine::Progress& progress);
 
 } // namespace dslt::ops
 
 #endif
-

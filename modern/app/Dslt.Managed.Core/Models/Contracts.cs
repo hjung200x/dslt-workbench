@@ -28,6 +28,7 @@ public enum ProcessingOperation
     ExtractYz = 16,
     ExtractZx = 17,
     ThresholdSweep = 18,
+    DsltThreshold = 19,
 }
 
 public enum OutputKind
@@ -45,6 +46,12 @@ public enum VolumeVoxelType
     UnsignedInt32 = 4,
     SignedInt32 = 5,
     Float32 = 6,
+}
+
+public enum DsltKernelType
+{
+    Gaussian = 0,
+    Mean = 1,
 }
 
 public sealed record VolumeSourceInfo(
@@ -126,7 +133,10 @@ public sealed record OperationParameters(
     float ConstantC = 0,
     float WindowMinimum = 0,
     float WindowMaximum = 1,
-    float TargetSpacingZ = 1);
+    float TargetSpacingZ = 1,
+    int DirectionLevel = 2,
+    DsltKernelType DsltKernel = DsltKernelType.Mean,
+    float ZCorrectionFactor = 0.2f);
 
 public sealed record BackendInformation(
     bool CpuAvailable,

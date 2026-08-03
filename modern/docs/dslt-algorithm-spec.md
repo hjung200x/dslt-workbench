@@ -15,8 +15,11 @@ the compatibility behavior where it is unambiguous. Any behavior marked
 `capture-required` must be measured with the legacy executable before
 Workbench may claim legacy equivalence.
 
-Implementation status: **specified, not yet implemented in the Workbench CPU
-core**. Stage 7 implements and synthetic-validates this contract.
+Implementation status: **scalar CPU threshold basis implemented; full fixture
+set and iterative segmentation pending**. The initial operation covers ordered
+directions, every-radius response, trilinear clamp sampling, direction-dependent
+C, and strict binarization. Closing, validation, and the C sweep remain in
+Stage 7.
 
 ## Terminology and coordinates
 
@@ -230,3 +233,21 @@ CPU results.
 Until the same fixtures can be run through an archived legacy binary, the
 result level is **synthetic-data validated**, not legacy compared or
 functionally equivalent.
+
+## ABI v1 operation mapping
+
+The stable v1 C request remains 48 bytes. For `DSLT_OP_DSLT_THRESHOLD`, its
+operation-specific fields are interpreted as follows:
+
+| C ABI field | DSLT meaning |
+|---|---|
+| `radius` | Maximum line radius |
+| `lanczos_order` | Geodesic direction level |
+| `connectivity` | Kernel type: 0 Gaussian, 1 mean |
+| `constant_c` | Core `Cxy` value; no UI sign/scale conversion |
+| `target_spacing_z` | Z correction factor used to derive `Cz` |
+
+The .NET `OperationParameters` adapter exposes these as `Radius`,
+`DirectionLevel`, `DsltKernel`, `ConstantC`, and `ZCorrectionFactor`; callers do
+not need to know the C-field reuse. The planned UI-facing positive threshold
+offset adapter is not exposed yet.

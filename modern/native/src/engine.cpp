@@ -157,6 +157,11 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
         case DSLT_OP_THRESHOLD_SWEEP:
             set_error("threshold sweep requires legacy behavior capture before implementation");
             return DSLT_NOT_IMPLEMENTED;
+        case DSLT_OP_DSLT_THRESHOLD:
+            output_ = ops::dslt_threshold(
+                source_, request.radius, request.lanczos_order, request.connectivity,
+                request.constant_c, request.target_spacing_z, progress);
+            break;
         default:
             set_error("unknown operation identifier");
             return DSLT_INVALID_ARGUMENT;
