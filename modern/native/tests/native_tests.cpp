@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -62,17 +63,30 @@ void lifecycle_stress_test() {
 }
 
 #ifdef DSLT_TEST_CUDA
+struct FloatOperationOutput final {
+    std::vector<float> values;
+    dslt_operation_result result{};
+};
+
+FloatOperationOutput run_float_operation_result(
+    dslt_handle handle,
+    dslt_operation_request request,
+    dslt_backend expected_backend,
+    dslt_output_kind expected_kind = DSLT_OUTPUT_VOLUME_FLOAT32) {
+    FloatOperationOutput output{};
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &output.result));
+    assert(output.result.used_backend == expected_backend);
+    assert(output.result.output_kind == expected_kind);
+    output.values.resize(output.result.element_count);
+    require(dslt_copy_output_f32(handle, output.values.data(), output.values.size()));
+    return output;
+}
+
 std::vector<float> run_float_operation(
     dslt_handle handle,
     dslt_operation_request request,
     dslt_backend expected_backend) {
-    dslt_operation_result result{};
-    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
-    assert(result.used_backend == expected_backend);
-    assert(result.output_kind == DSLT_OUTPUT_VOLUME_FLOAT32);
-    std::vector<float> output(result.element_count);
-    require(dslt_copy_output_f32(handle, output.data(), output.size()));
-    return output;
+    return run_float_operation_result(handle, request, expected_backend).values;
 }
 
 void cuda_pointwise_parity_test() {
@@ -173,15 +187,113 @@ void cuda_pointwise_parity_test() {
     request.radius = 1;
     (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
 
+    auto resample_desc = descriptor(3, 2, 4);
+    std::vector<float> resample_source(resample_desc.element_count);
+    for (std::size_t z = 0; z < resample_desc.depth; ++z) {
+        for (std::size_t y = 0; y < resample_desc.height; ++y) {
+            for (std::size_t x = 0; x < resample_desc.width; ++x) {
+                const auto index = z * resample_desc.width * resample_desc.height +
+                    y * resample_desc.width + x;
+                resample_source[index] = static_cast<float>(100 * z + 10 * y + x);
+            }
+        }
+    }
+    require(dslt_set_volume_f32(
+        handle, &resample_desc, resample_source.data(), resample_source.size()));
+
+    for (const auto operation : {
+             DSLT_OP_RESAMPLE_Z_AREA,
+             DSLT_OP_RESAMPLE_Z_LANCZOS}) {
+        for (const auto order : {2, 3}) {
+            if (operation == DSLT_OP_RESAMPLE_Z_AREA && order == 3) continue;
+            dslt_operation_request resample_request{};
+            resample_request.operation = operation;
+            resample_request.target_spacing_z = 1.0F;
+            resample_request.lanczos_order = order;
+            resample_request.backend = DSLT_BACKEND_CPU;
+            const auto cpu = run_float_operation_result(
+                handle, resample_request, DSLT_BACKEND_CPU);
+            resample_request.backend = DSLT_BACKEND_CUDA;
+            const auto cuda = run_float_operation_result(
+                handle, resample_request, DSLT_BACKEND_CUDA);
+            assert(cuda.result.width == 3);
+            assert(cuda.result.height == 2);
+            assert(cuda.result.depth == 8);
+            assert(cpu.values.size() == cuda.values.size());
+            for (std::size_t index = 0; index < cpu.values.size(); ++index) {
+                const auto difference = std::abs(cpu.values[index] - cuda.values[index]);
+                assert(difference <= 1.0e-5F ||
+                    difference <= std::abs(cpu.values[index]) * 1.0e-4F);
+            }
+        }
+    }
+
+    for (const auto view : {
+             std::pair{DSLT_OP_EXTRACT_XY, 2},
+             std::pair{DSLT_OP_EXTRACT_YZ, 1},
+             std::pair{DSLT_OP_EXTRACT_ZX, 1}}) {
+        dslt_operation_request view_request{};
+        view_request.operation = view.first;
+        view_request.slice_index = view.second;
+        view_request.backend = DSLT_BACKEND_CPU;
+        const auto cpu = run_float_operation_result(
+            handle, view_request, DSLT_BACKEND_CPU, DSLT_OUTPUT_IMAGE_FLOAT32);
+        view_request.backend = DSLT_BACKEND_CUDA;
+        const auto cuda = run_float_operation_result(
+            handle, view_request, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+        assert(cpu.result.width == cuda.result.width);
+        assert(cpu.result.height == cuda.result.height);
+        assert(cuda.result.depth == 1);
+        assert(cpu.values == cuda.values);
+    }
+
     request = {};
-    request.operation = DSLT_OP_DILATE_SPHERE;
-    request.backend = DSLT_BACKEND_CUDA;
-    request.radius = 65;
+    request.operation = DSLT_OP_EXTRACT_YZ;
+    request.slice_index = 1;
+    request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic_view = run_float_operation_result(
+        handle, request, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+    assert(automatic_view.result.width == 4);
+    assert(automatic_view.result.height == 2);
+
     dslt_operation_result result{};
+    request = {};
+    request.operation = DSLT_OP_RESAMPLE_Z_AREA;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.target_spacing_z = 0.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_RESAMPLE_Z_LANCZOS;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.target_spacing_z = 1.0F;
+    request.lanczos_order = 1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_EXTRACT_YZ;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.slice_index = static_cast<std::int32_t>(resample_desc.width);
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.target_spacing_z = 0.5F;
+    const auto cancel_resample = [](float progress, void*) -> std::int32_t {
+        return progress >= 0.4F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_resample, nullptr, &result), DSLT_CANCELLED);
+
+    request = {};
+    request.operation = DSLT_OP_DILATE_SPHERE;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.radius = 65;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_CONNECTED_COMPONENTS;
     request.backend = DSLT_BACKEND_CUDA;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
 

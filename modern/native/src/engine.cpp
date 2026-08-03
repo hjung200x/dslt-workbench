@@ -148,10 +148,10 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
         if (cuda_result.status == CudaRunStatus::success) {
             result_ = {};
             result_.used_backend = DSLT_BACKEND_CUDA;
-            result_.output_kind = DSLT_OUTPUT_VOLUME_FLOAT32;
-            result_.width = source_.descriptor().width;
-            result_.height = source_.descriptor().height;
-            result_.depth = source_.descriptor().depth;
+            result_.output_kind = cuda_result.output_kind;
+            result_.width = cuda_result.width;
+            result_.height = cuda_result.height;
+            result_.depth = cuda_result.depth;
             output_ = std::move(cuda_result.output);
             result_.element_count = output_.size();
             labels_.clear();
