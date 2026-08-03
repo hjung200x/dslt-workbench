@@ -24,7 +24,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_EXTRACT_ZX ||
         operation == DSLT_OP_HEIGHT_MAP ||
         operation == DSLT_OP_DEPTH_MAP ||
-        operation == DSLT_OP_HEIGHT_PROJECTION;
+        operation == DSLT_OP_HEIGHT_PROJECTION ||
+        operation == DSLT_OP_CONNECTED_COMPONENTS;
 }
 
 CudaRunResult run_cuda_operation(

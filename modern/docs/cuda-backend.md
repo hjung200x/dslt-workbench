@@ -22,7 +22,8 @@ The currently ported groups are:
 - area-average and Lanczos 2/3 Z resampling; and
 - XY, YZ, and ZX orthogonal-view extraction;
 - filtered height maps and normal/Z height projection; and
-- 3D depth maps derived from the filtered height surface.
+- 3D depth maps derived from the filtered height surface; and
+- 6/18/26-connected component labeling with minimum-size filtering.
 
 ## Resource ownership and execution
 
@@ -54,6 +55,13 @@ Normal and Z projections preserve the reference sampling and threshold rules.
 Depth maps run a two-pass squared-distance calculation for each output Z slice.
 These phases synchronize at cancellable boundaries and include their temporary
 volume and plane buffers in the VRAM preflight estimate.
+
+Connected components propagate the minimum linear voxel index through each
+foreground component, then compact accepted roots in ascending index order.
+This produces the same deterministic labels as the CPU Z-Y-X seed scan for all
+three connectivity modes. Two 64-bit root workspaces are included in VRAM
+preflight; final labels and component count cross the CUDA boundary as native
+`DSLT_OUTPUT_LABELS_INT32` results rather than being converted through floats.
 
 ## Validation gates
 
@@ -190,3 +198,10 @@ The runtime fixture exercises mean and Gaussian surface filtering, repeated XY
 smoothing, volumetric depth distance, normal and Z projection, variable output
 metadata, invalid parameters, `Auto` selection, mid-depth cancellation, and the
 100-request mixed-operation memory gate.
+
+The connected-components fixture compares CPU and CUDA labels voxel-for-voxel
+for 6, 18, and 26 connectivity with multiple minimum-size limits. It also
+covers deterministic component counts, the CPU's NaN-threshold edge behavior,
+`Auto` selection, invalid parameters, propagation cancellation, and inclusion
+in the mixed-operation memory gate. Runtime evidence is pending a successful
+hosted build and NVIDIA-device execution.
