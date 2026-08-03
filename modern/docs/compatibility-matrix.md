@@ -8,7 +8,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | ImageJ HyperStack metadata | `XYCZT` to channel-planar adapter | implemented | Synthetic 2-channel x 2-slice calibration fixture |
 | LSM input | TIFF-compatible WIC pixel adapter | pending-reference | Private Zeiss metadata and real LSM fixture required |
 | 8/16-bit integer and 32-bit float input | Raw decoded samples + normalized float working volume | implemented | Bit-exact decoded sample fixtures |
-| 32-bit integer image input | Raw TIFF path | scaffolded | Explicitly rejected until signed/unsigned fixtures exist |
+| 32-bit integer image input | Checked raw TIFF strip path | scaffolded | Signed/unsigned, little/big-endian, multi-page, multi-strip, cancellation, bit-exact canonical bytes, normalization, and malformed byte-count fixtures implemented; compressed Int32 and real microscopy comparison pending |
 | Channel selection | Explicit `channel` in descriptor/request | implemented | Synthetic multichannel fixture |
 | Z area-average scaling | `ResampleZArea` | implemented | Ramp and impulse fixtures |
 | Z Lanczos 2/3 scaling | `ResampleZLanczos` | implemented | Ramp and impulse fixtures |
