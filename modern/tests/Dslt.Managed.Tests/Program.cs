@@ -252,4 +252,26 @@ morphology.DilateSelected();
 Equal(7, morphology.Labels.Span.Count(2), "6-connected label dilation");
 morphology.ErodeSelected();
 Equal(1, morphology.Labels.Span.Count(2), "6-connected label erosion");
+
+var cropSource = Enumerable.Repeat(LabelEditingSession.Background, 5 * 5 * 3).ToArray();
+for (var z = 1; z <= 2; z++)
+for (var y = 2; y <= 3; y++)
+for (var x = 1; x <= 2; x++)
+    cropSource[z * 25 + y * 5 + x] = 7;
+var cropEditing = new LabelEditingSession(5, 5, 3, cropSource);
+cropEditing.Select([7]);
+var appliedCrop = cropEditing.CropSelected();
+Equal(1, appliedCrop.OriginX, "Crop origin X");
+Equal(2, appliedCrop.OriginY, "Crop origin Y");
+Equal(1, appliedCrop.OriginZ, "Crop origin Z");
+Equal(2, cropEditing.Width, "Cropped session width");
+Equal(2, cropEditing.Height, "Cropped session height");
+Equal(2, cropEditing.Depth, "Cropped session depth");
+Equal(8, cropEditing.Labels.Length, "Cropped session label count");
+if (!cropEditing.Undo()) throw new InvalidOperationException("Crop undo was not recorded.");
+Equal(5, cropEditing.Width, "Crop undo width");
+Equal(5, cropEditing.Height, "Crop undo height");
+Equal(3, cropEditing.Depth, "Crop undo depth");
+if (!cropSource.SequenceEqual(cropEditing.Labels.ToArray()))
+    throw new InvalidOperationException("Crop undo did not restore labels bit-exactly.");
 Console.WriteLine("DSLT label editing tests passed.");

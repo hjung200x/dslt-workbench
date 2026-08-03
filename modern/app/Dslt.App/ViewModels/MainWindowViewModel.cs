@@ -54,6 +54,10 @@ public sealed class MainWindowViewModel : ObservableObject
     private OperationParameters? _lastParameters;
     private LabelEditingSession? _editingSession;
     private readonly List<string> _editHistory = [];
+    private readonly Stack<(int X, int Y, int Z)> _editOriginUndo = [];
+    private int _resultOriginX;
+    private int _resultOriginY;
+    private int _resultOriginZ;
     private int _editIterations = 1;
     private bool _addToSelection;
     private string _selectionSummary = "No label selection";
@@ -91,6 +95,7 @@ public sealed class MainWindowViewModel : ObservableObject
         SplitSelectionCommand = new RelayCommand(SplitSelection, () => HasSelection && !IsBusy);
         DilateSelectionCommand = new RelayCommand(DilateSelection, () => HasSelection && !IsBusy);
         ErodeSelectionCommand = new RelayCommand(ErodeSelection, () => HasSelection && !IsBusy);
+        CropSelectionCommand = new RelayCommand(CropSelection, () => HasSelection && !IsBusy);
         UndoEditCommand = new RelayCommand(UndoEdit, () => _editingSession?.CanUndo == true && !IsBusy);
         GenerateSynthetic();
     }
@@ -356,6 +361,14 @@ public sealed class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _selectionSummary, value);
     }
 
+    public int ResultOriginX => _resultOriginX;
+    public int ResultOriginY => _resultOriginY;
+    public int ResultOriginZ => _resultOriginZ;
+    public string ResultGeometrySummary => _lastResult is null
+        ? "No result geometry"
+        : $"Origin ({ResultOriginX}, {ResultOriginY}, {ResultOriginZ}) · " +
+          $"size {_lastResult.Width} × {_lastResult.Height} × {_lastResult.Depth}";
+
     public string Status
     {
         get => _status;
@@ -421,6 +434,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand SplitSelectionCommand { get; }
     public RelayCommand DilateSelectionCommand { get; }
     public RelayCommand ErodeSelectionCommand { get; }
+    public RelayCommand CropSelectionCommand { get; }
     public RelayCommand UndoEditCommand { get; }
 
     private void GenerateSynthetic() => ReplaceVolume(
@@ -489,6 +503,7 @@ public sealed class MainWindowViewModel : ObservableObject
             _lastResult = result;
             _lastParameters = parameters;
             _editHistory.Clear();
+            ResetResultGeometry();
             _editingSession = result.Labels is null
                 ? null
                 : new LabelEditingSession(result.Width, result.Height, result.Depth, result.Labels);
@@ -500,6 +515,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 : $"Completed on {result.UsedBackend} · {result.ComponentCount} components";
             Progress = 100;
             OnPropertyChanged(nameof(HasResult));
+            OnPropertyChanged(nameof(ResultGeometrySummary));
         }
         catch (OperationCanceledException)
         {
@@ -527,7 +543,14 @@ public sealed class MainWindowViewModel : ObservableObject
         try
         {
             await ResultPackageWriter.WriteAsync(
-                basePath, _volume, _lastParameters, _lastResult, _editHistory);
+                basePath,
+                _volume,
+                _lastParameters,
+                _lastResult,
+                editHistory: _editHistory,
+                outputOriginX: ResultOriginX,
+                outputOriginY: ResultOriginY,
+                outputOriginZ: ResultOriginZ);
             SelectedStage = WorkflowStage.Export;
             Status = $"Result package exported: {basePath}.json";
         }
@@ -579,6 +602,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _lastParameters = null;
         _editingSession = null;
         _editHistory.Clear();
+        ResetResultGeometry();
         ResultImage = null;
         ResultYzImage = null;
         ResultZxImage = null;
@@ -599,6 +623,7 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(VolumeSummary));
         OnPropertyChanged(nameof(HasVolume));
         OnPropertyChanged(nameof(HasResult));
+        OnPropertyChanged(nameof(ResultGeometrySummary));
         NotifyCommandStates();
     }
 
@@ -626,25 +651,25 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             ResultImage = CreateFloatPlane(
                 _lastResult.FloatData, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Xy, ZIndex, WindowMinimum, WindowMaximum);
+                OrthogonalPlane.Xy, ZIndex - ResultOriginZ, WindowMinimum, WindowMaximum);
             ResultYzImage = CreateFloatPlane(
                 _lastResult.FloatData, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Yz, XIndex, WindowMinimum, WindowMaximum);
+                OrthogonalPlane.Yz, XIndex - ResultOriginX, WindowMinimum, WindowMaximum);
             ResultZxImage = CreateFloatPlane(
                 _lastResult.FloatData, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Zx, YIndex, WindowMinimum, WindowMaximum);
+                OrthogonalPlane.Zx, YIndex - ResultOriginY, WindowMinimum, WindowMaximum);
         }
         else if (_lastResult?.Labels is not null)
         {
             ResultImage = CreateLabelPlane(
                 _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Xy, ZIndex, _editingSession?.Selection);
+                OrthogonalPlane.Xy, ZIndex - ResultOriginZ, _editingSession?.Selection);
             ResultYzImage = CreateLabelPlane(
                 _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Yz, XIndex, _editingSession?.Selection);
+                OrthogonalPlane.Yz, XIndex - ResultOriginX, _editingSession?.Selection);
             ResultZxImage = CreateLabelPlane(
                 _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Zx, YIndex, _editingSession?.Selection);
+                OrthogonalPlane.Zx, YIndex - ResultOriginY, _editingSession?.Selection);
         }
         else
         {
@@ -657,20 +682,26 @@ public sealed class MainWindowViewModel : ObservableObject
     private void SelectAtCursor()
     {
         if (_editingSession is null) return;
-        var x = Math.Clamp(XIndex, 0, _editingSession.Width - 1);
-        var y = Math.Clamp(YIndex, 0, _editingSession.Height - 1);
-        var z = Math.Clamp(ZIndex, 0, _editingSession.Depth - 1);
+        var x = XIndex - ResultOriginX;
+        var y = YIndex - ResultOriginY;
+        var z = ZIndex - ResultOriginZ;
+        if (x < 0 || y < 0 || z < 0 ||
+            x >= _editingSession.Width || y >= _editingSession.Height || z >= _editingSession.Depth)
+        {
+            Status = $"Cursor ({XIndex}, {YIndex}, {ZIndex}) is outside the cropped result; selection was preserved.";
+            return;
+        }
         var label = _editingSession.Labels.Span[z * _editingSession.Width * _editingSession.Height +
                                                  y * _editingSession.Width + x];
         if (label == LabelEditingSession.Background)
         {
-            Status = $"Cursor ({x}, {y}, {z}) is on background; selection was preserved.";
+            Status = $"Cursor ({XIndex}, {YIndex}, {ZIndex}) is on background; selection was preserved.";
             return;
         }
         _editingSession.Select([label], replace: !AddToSelection);
         UpdateSelectionState();
         RefreshResultImage();
-        Status = $"Selected label {label} at ({x}, {y}, {z}).";
+        Status = $"Selected label {label} at ({XIndex}, {YIndex}, {ZIndex}).";
     }
 
     private void ClearSelection()
@@ -705,26 +736,55 @@ public sealed class MainWindowViewModel : ObservableObject
         return $"Eroded selected labels by {EditIterations} iteration(s).";
     });
 
+    private void CropSelection()
+    {
+        if (!ApplyLabelEdit(() =>
+            {
+                var crop = _editingSession!.CropSelected();
+                _resultOriginX = checked(_resultOriginX + crop.OriginX);
+                _resultOriginY = checked(_resultOriginY + crop.OriginY);
+                _resultOriginZ = checked(_resultOriginZ + crop.OriginZ);
+                return $"Cropped selection to origin ({ResultOriginX}, {ResultOriginY}, {ResultOriginZ}) " +
+                       $"and size {crop.Width} × {crop.Height} × {crop.Depth}.";
+            })) return;
+        XIndex = Math.Clamp(ResultOriginX + _editingSession!.Width / 2, 0, MaximumXIndex);
+        YIndex = Math.Clamp(ResultOriginY + _editingSession.Height / 2, 0, MaximumYIndex);
+        ZIndex = Math.Clamp(ResultOriginZ + _editingSession.Depth / 2, 0, MaximumZIndex);
+    }
+
     private void UndoEdit()
     {
         if (_editingSession?.Undo() != true) return;
+        if (_editOriginUndo.TryPop(out var origin))
+        {
+            _resultOriginX = origin.X;
+            _resultOriginY = origin.Y;
+            _resultOriginZ = origin.Z;
+        }
         PublishEditedLabels();
         _editHistory.Add("undo");
         Status = "Undid the last label edit.";
     }
 
-    private void ApplyLabelEdit(Func<string> edit)
+    private bool ApplyLabelEdit(Func<string> edit)
     {
+        var previousOrigin = (ResultOriginX, ResultOriginY, ResultOriginZ);
         try
         {
             var message = edit();
+            _editOriginUndo.Push(previousOrigin);
             PublishEditedLabels();
             _editHistory.Add(message);
             Status = message;
+            return true;
         }
         catch (Exception error)
         {
+            _resultOriginX = previousOrigin.ResultOriginX;
+            _resultOriginY = previousOrigin.ResultOriginY;
+            _resultOriginZ = previousOrigin.ResultOriginZ;
             Status = $"Label edit failed; the current result was preserved: {error.Message}";
+            return false;
         }
     }
 
@@ -734,11 +794,30 @@ public sealed class MainWindowViewModel : ObservableObject
         var labels = _editingSession.Labels.ToArray();
         _lastResult = _lastResult with
         {
+            Width = _editingSession.Width,
+            Height = _editingSession.Height,
+            Depth = _editingSession.Depth,
             Labels = labels,
             ComponentCount = labels.Where(label => label >= 0).Distinct().Count(),
         };
+        OnPropertyChanged(nameof(ResultOriginX));
+        OnPropertyChanged(nameof(ResultOriginY));
+        OnPropertyChanged(nameof(ResultOriginZ));
+        OnPropertyChanged(nameof(ResultGeometrySummary));
         UpdateSelectionState();
         RefreshResultImage();
+    }
+
+    private void ResetResultGeometry()
+    {
+        _resultOriginX = 0;
+        _resultOriginY = 0;
+        _resultOriginZ = 0;
+        _editOriginUndo.Clear();
+        OnPropertyChanged(nameof(ResultOriginX));
+        OnPropertyChanged(nameof(ResultOriginY));
+        OnPropertyChanged(nameof(ResultOriginZ));
+        OnPropertyChanged(nameof(ResultGeometrySummary));
     }
 
     private void UpdateSelectionState()
@@ -768,6 +847,7 @@ public sealed class MainWindowViewModel : ObservableObject
         SplitSelectionCommand.NotifyCanExecuteChanged();
         DilateSelectionCommand.NotifyCanExecuteChanged();
         ErodeSelectionCommand.NotifyCanExecuteChanged();
+        CropSelectionCommand.NotifyCanExecuteChanged();
         UndoEditCommand.NotifyCanExecuteChanged();
     }
 

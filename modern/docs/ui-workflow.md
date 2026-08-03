@@ -32,10 +32,15 @@ equivalence; that remains gated by representative datasets.
 - Advance label results to the edit stage and export the result with its JSON
   provenance sidecar.
 - Select the label at the shared cursor, optionally add labels to the selection,
-  and merge, split, dilate, erode, clear, or undo through `LabelEditingSession`.
+  and merge, split, crop, dilate, erode, clear, or undo through
+  `LabelEditingSession`.
   Selected labels are highlighted consistently in all result planes.
-- Store successful label-edit actions in provenance schema 1.2 so an exported
-  result distinguishes processing output from subsequent manual edits.
+- Treat crop dimensions, source-coordinate origin, labels, and selection as one
+  undoable transaction. Shared source/result coordinates remain meaningful
+  after crop.
+- Store successful label-edit actions and structured output origin fields in
+  provenance schema 1.3 so an exported result distinguishes processing output
+  from subsequent manual edits.
 
 ## Automated state checks
 
@@ -55,14 +60,14 @@ equivalence; that remains gated by representative datasets.
 9. ViewModel export writes label-edit history into the JSON provenance sidecar.
 10. normalized horizontal and vertical offsets propagate between differently
     sized WPF viewports without feedback recursion.
+11. crop and undo restore dimensions, source-coordinate origin, and labels
+    bit-exactly, and exported provenance retains the cropped output origin.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
 
 ## Remaining UI work
 
-- Add an undo-safe crop transaction to the edit stage. Selection, merge, split,
-  dilate, erode, and undo are already bound.
 - Recover and add the remaining legacy editing shortcuts. `Ctrl+Z` is currently
   bound to undo; shortcut behavior without source evidence is not guessed.
 - Perform interactive accessibility, DPI, and large-volume responsiveness

@@ -234,6 +234,7 @@
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="LABEL EDITING" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
               <TextBlock Text="{Binding SelectionSummary}" TextWrapping="Wrap" Margin="0,8,0,8" Foreground="{StaticResource MutedBrush}" />
+              <TextBlock Text="{Binding ResultGeometrySummary}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="{StaticResource MutedBrush}" />
               <CheckBox Content="Add cursor label to selection" IsChecked="{Binding AddToSelection}" Margin="0,0,0,8" />
               <WrapPanel>
                 <Button Content="Select at cursor" Command="{Binding SelectAtCursorCommand}" />
@@ -247,6 +248,7 @@
                 <Button Content="Split" Command="{Binding SplitSelectionCommand}" />
                 <Button Content="Dilate" Command="{Binding DilateSelectionCommand}" />
                 <Button Content="Erode" Command="{Binding ErodeSelectionCommand}" />
+                <Button Content="Crop" Command="{Binding CropSelectionCommand}" />
                 <Button Content="Undo" Command="{Binding UndoEditCommand}" Background="#39475A" Foreground="White" />
               </WrapPanel>
             </StackPanel>
