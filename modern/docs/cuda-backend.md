@@ -89,8 +89,7 @@ The resampling fixture checks both Lanczos orders and area averaging against
 the CPU reference at the project-wide float tolerance. Orthogonal-view values
 must be voxel-exact and their output dimensions and image output kind must
 match. Invalid spacing, Lanczos order, and slice index plus mid-resample
-cancellation are covered. Runtime evidence for these newly ported groups is
-pending a successful hosted build and NVIDIA-device execution.
+cancellation are covered.
 
 ## Recorded pointwise runtime evidence
 
@@ -132,3 +131,24 @@ erosion against CPU on a nontrivial 3D volume. It also covers clamp boundaries,
 zero radius, invalid radius, `Auto` selection, and cancellation after a
 completed output Z slice. Smoothing uses the project float tolerance; morphology
 is voxel-exact on the fixture.
+
+## Recorded resampling and orthogonal-view runtime evidence
+
+The first Z-resampling and orthogonal-view runtime gate was completed on
+2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `b4440521015c00a52b1f5579b6802525f65cf52b` |
+| Hosted build | GitHub Actions run `30851354796`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `9E60B1CBE191C1CD8E8A9FF8B9C47ED91309F9BC86C3662E60A3836847850EC7` |
+| `dslt_native_tests.exe` SHA-256 | `74477A299C517E771A630F1E92F6F2DAB3CE1F37246E58B124AF7A750B273F05` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The fixture compares area averaging and Lanczos orders 2 and 3 with the CPU
+reference on a calibrated 3D volume. It verifies variable output depth, exact
+XY/YZ/ZX plane values and dimensions, image output kind, `Auto` selection,
+invalid parameters, and cancellation after a completed resampling slice.
