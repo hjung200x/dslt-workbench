@@ -22,6 +22,7 @@ when it is unavailable, `Auto` always selects CPU and reports the fallback.
 ```powershell
 dotnet build modern/app/Dslt.App/Dslt.App.csproj
 dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj
+dotnet run --project modern/tests/Dslt.App.Tests/Dslt.App.Tests.csproj
 ```
 
 ### Native core
@@ -47,3 +48,7 @@ directional threshold equations, sampling rules, parameter mapping, and
 required fixtures are fixed in `docs/dslt-algorithm-spec.md`. Decoded image
 types, ImageJ ordering, calibration, LSM limitations, and signed label export
 are defined in `docs/tiff-io-spec.md`.
+
+The current WPF workflow, state-preservation guarantees, and the remaining
+orthogonal-view and label-editing UI work are tracked in
+`docs/ui-workflow.md`.

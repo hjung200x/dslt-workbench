@@ -9,7 +9,7 @@ namespace Dslt.App.Tests;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static async Task Main()
     {
         var path = Path.Combine(Path.GetTempPath(), $"dslt-stack-{Guid.NewGuid():N}.tif");
         try
@@ -40,7 +40,8 @@ internal static class Program
             RunGray16RoundTripTest();
             RunGray32FloatRoundTripTest();
             RunImageJHyperStackTest();
-            Console.WriteLine("DSLT WPF TIFF type, metadata, and hyperstack tests passed.");
+            await WorkflowViewModelTests.RunAsync();
+            Console.WriteLine("DSLT WPF TIFF, metadata, hyperstack, and workflow tests passed.");
         }
         finally
         {

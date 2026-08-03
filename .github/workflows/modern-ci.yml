@@ -23,7 +23,7 @@ jobs:
         run: dotnet build modern/app/Dslt.App/Dslt.App.csproj --configuration Release
       - name: Run managed contract tests
         run: dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release
-      - name: Run WPF TIFF smoke test
+      - name: Run WPF I/O and workflow tests
         run: dotnet run --project modern/tests/Dslt.App.Tests/Dslt.App.Tests.csproj --configuration Release
 
   native-cpu:

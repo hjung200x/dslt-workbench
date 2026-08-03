@@ -1,13 +1,13 @@
 <Window x:Class="Dslt.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="DSLT Workbench" Width="1480" Height="900" MinWidth="1120" MinHeight="700"
+        Title="DSLT Workbench" Width="1500" Height="920" MinWidth="1180" MinHeight="720"
         Background="#0B1016" Foreground="#EEF3F8" FontFamily="Segoe UI">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="64" />
       <RowDefinition Height="*" />
-      <RowDefinition Height="42" />
+      <RowDefinition Height="44" />
     </Grid.RowDefinitions>
 
     <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" BorderBrush="#283241" BorderThickness="0,0,0,1">
@@ -18,12 +18,12 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Border Width="32" Height="32" Background="{StaticResource AccentBrush}" CornerRadius="8">
+          <Border Width="34" Height="34" Background="{StaticResource AccentBrush}" CornerRadius="8">
             <TextBlock Text="D" Foreground="#08110F" FontSize="18" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
           <StackPanel Margin="12,0,0,0">
             <TextBlock Text="DSLT Workbench" FontSize="18" FontWeight="SemiBold" />
-            <TextBlock Text="Function-preserving 3D segmentation workbench" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+            <TextBlock Text="Open → inspect → process → segment → edit → export" Foreground="{StaticResource MutedBrush}" FontSize="11" />
           </StackPanel>
         </StackPanel>
         <TextBlock Grid.Column="2" Text="{Binding BackendSummary}" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
@@ -32,34 +32,41 @@
 
     <Grid Grid.Row="1">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="220" />
+        <ColumnDefinition Width="235" />
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="310" />
+        <ColumnDefinition Width="340" />
       </Grid.ColumnDefinitions>
 
       <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="#283241" BorderThickness="0,0,1,0">
-        <StackPanel Margin="18,20">
-          <TextBlock Text="WORKFLOW" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,12" />
-          <Button Content="Open TIFF / LSM" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" />
-          <Button Content="Generate synthetic" Command="{Binding GenerateSyntheticCommand}" HorizontalContentAlignment="Left" />
-          <Separator Margin="0,10" Background="#283241" />
-          <TextBlock Text="1  Inspect" Margin="4,8" />
-          <TextBlock Text="2  Process" Margin="4,8" Foreground="{StaticResource AccentBrush}" />
-          <TextBlock Text="3  Segment" Margin="4,8" />
-          <TextBlock Text="4  Edit" Margin="4,8" />
-          <TextBlock Text="5  Export" Margin="4,8" />
-          <Separator Margin="0,18,0,12" Background="#283241" />
-          <TextBlock Text="VOLUME" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" />
-          <TextBlock Text="{Binding VolumeSummary}" TextWrapping="Wrap" Margin="0,8,0,0" />
-        </StackPanel>
+        <DockPanel Margin="18,20">
+          <StackPanel DockPanel.Dock="Bottom">
+            <Separator Margin="0,14,0,12" Background="#283241" />
+            <TextBlock Text="VOLUME" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding VolumeSummary}" TextWrapping="Wrap" Margin="0,8,0,0" />
+          </StackPanel>
+          <StackPanel>
+            <TextBlock Text="WORKFLOW" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10" />
+            <ListBox ItemsSource="{Binding WorkflowStages}" SelectedItem="{Binding SelectedStage}" Background="Transparent" BorderThickness="0" />
+            <Separator Margin="0,12" Background="#283241" />
+            <Button Content="Open TIFF / LSM" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" />
+            <Button Content="Generate synthetic" Command="{Binding GenerateSyntheticCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
+            <TextBlock Text="CHANNEL" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,14,0,5" />
+            <Slider Minimum="0" Maximum="{Binding MaximumChannelIndex}" Value="{Binding ChannelIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
+            <TextBlock Text="{Binding ChannelIndex, StringFormat=Index {0}}" Foreground="{StaticResource AccentBrush}" />
+            <TextBlock Text="Z SLICE" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,14,0,5" />
+            <Slider Minimum="0" Maximum="{Binding MaximumZIndex}" Value="{Binding ZIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
+            <TextBlock Text="{Binding ZIndex, StringFormat=Slice {0}}" Foreground="{StaticResource AccentBrush}" />
+          </StackPanel>
+        </DockPanel>
       </Border>
 
       <Grid Grid.Column="1" Margin="18">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TextBlock Text="Orthogonal workspace · XY preview" FontSize="14" FontWeight="SemiBold" Margin="2,0,0,12" />
+        <TextBlock Text="Source / destination XY workspace" FontSize="14" FontWeight="SemiBold" Margin="2,0,0,12" />
         <Grid Grid.Row="1">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -73,43 +80,106 @@
           </Border>
           <Border Grid.Column="1" Margin="8,0,0,0" Background="#05080C" BorderBrush="#2D3949" BorderThickness="1" CornerRadius="6">
             <Grid>
-              <TextBlock Text="RESULT" Foreground="{StaticResource MutedBrush}" Margin="12" Panel.ZIndex="1" />
+              <TextBlock Text="LAST VALID RESULT" Foreground="{StaticResource MutedBrush}" Margin="12" Panel.ZIndex="1" />
               <Image Source="{Binding ResultImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" Margin="18" />
             </Grid>
           </Border>
         </Grid>
+        <Grid Grid.Row="2" Margin="0,14,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,10,0">
+            <TextBlock Text="Display minimum" Foreground="{StaticResource MutedBrush}" />
+            <Slider Minimum="0" Maximum="0.99" Value="{Binding WindowMinimum}" SmallChange="0.01" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Margin="10,0,0,0">
+            <TextBlock Text="Display maximum" Foreground="{StaticResource MutedBrush}" />
+            <Slider Minimum="0.01" Maximum="1" Value="{Binding WindowMaximum}" SmallChange="0.01" />
+          </StackPanel>
+        </Grid>
       </Grid>
 
       <Border Grid.Column="2" Background="{StaticResource RaisedBrush}" BorderBrush="#283241" BorderThickness="1,0,0,0">
-        <StackPanel Margin="20">
-          <TextBlock Text="PROCESSING" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,12" />
-          <TextBlock Text="Operation" Margin="0,8,0,5" />
-          <ComboBox ItemsSource="{Binding Operations}" SelectedItem="{Binding SelectedOperation}" />
-          <TextBlock Text="Backend" Margin="0,14,0,5" />
-          <ComboBox ItemsSource="{Binding Backends}" SelectedItem="{Binding Backend}" />
-          <TextBlock Text="Threshold" Margin="0,14,0,5" />
-          <Slider Minimum="0" Maximum="1" SmallChange="0.01" Value="{Binding Threshold}" TickFrequency="0.1" />
-          <TextBlock Text="{Binding Threshold, StringFormat=F2}" Foreground="{StaticResource AccentBrush}" />
-          <TextBlock Text="Radius" Margin="0,14,0,5" />
-          <Slider Minimum="0" Maximum="16" SmallChange="1" Value="{Binding Radius}" TickFrequency="1" IsSnapToTickEnabled="True" />
-          <TextBlock Text="{Binding Radius}" Foreground="{StaticResource AccentBrush}" />
-          <ProgressBar Height="6" Margin="0,24,0,14" Minimum="0" Maximum="100" Value="{Binding Progress}" Foreground="{StaticResource AccentBrush}" />
-          <WrapPanel>
-            <Button Content="Run" Command="{Binding RunCommand}" MinWidth="90" />
-            <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="90" Background="#39475A" Foreground="White" />
-          </WrapPanel>
-          <Button Content="Export result + provenance" Command="{Binding SaveCommand}" Margin="0,10,0,0" Background="#39475A" Foreground="White" />
-          <Border Margin="0,22,0,0" Padding="12" Background="#10161E" CornerRadius="5">
-            <TextBlock Text="Pending-reference algorithms (h-minima, directional Sobel, watershed) stay hidden until legacy output is captured." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-          </Border>
-        </StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="20">
+            <StackPanel IsEnabled="{Binding IsIdle}">
+            <TextBlock Text="OPERATION" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10" />
+            <ComboBox ItemsSource="{Binding Operations}" SelectedItem="{Binding SelectedOperation}" />
+            <TextBlock Text="Backend" Margin="0,12,0,5" />
+            <ComboBox ItemsSource="{Binding Backends}" SelectedItem="{Binding Backend}" />
+
+            <StackPanel Visibility="{Binding UsesThreshold, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <TextBlock Text="Threshold" Margin="0,12,0,5" />
+              <Slider Minimum="0" Maximum="1" Value="{Binding Threshold}" SmallChange="0.01" />
+              <TextBlock Text="{Binding Threshold, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding UsesRadius, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <TextBlock Text="Radius" Margin="0,12,0,5" />
+              <Slider Minimum="{Binding MinimumRadius}" Maximum="{Binding MaximumRadius}" Value="{Binding Radius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <TextBlock Text="{Binding Radius}" Foreground="{StaticResource AccentBrush}" />
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding IsDsltOperation, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <Separator Margin="0,16,0,12" Background="#354152" />
+              <TextBlock Text="DSLT" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <TextBlock Text="Direction subdivision level" Margin="0,10,0,5" />
+              <Slider Minimum="1" Maximum="10" Value="{Binding DirectionLevel}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <TextBlock Text="{Binding DirectionLevel}" Foreground="{StaticResource AccentBrush}" />
+              <TextBlock Text="Line kernel" Margin="0,10,0,5" />
+              <ComboBox ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding DsltKernel}" />
+              <TextBlock Text="Z correction factor" Margin="0,10,0,5" />
+              <Slider Minimum="0" Maximum="1" Value="{Binding ZCorrectionFactor}" SmallChange="0.01" />
+              <TextBlock Text="{Binding ZCorrectionFactor, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
+              <TextBlock Text="Preview offset C (legacy scale)" Margin="0,10,0,5" />
+              <Slider Minimum="0" Maximum="200" Value="{Binding PreviewOffset}" SmallChange="1" />
+              <TextBlock Text="{Binding PreviewOffset, StringFormat=F1}" Foreground="{StaticResource AccentBrush}" />
+
+              <StackPanel Visibility="{Binding IsDsltSegmentation, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="Core C minimum / maximum (capture pending)" Margin="0,12,0,5" />
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <TextBox Text="{Binding MinimumC, UpdateSourceTrigger=PropertyChanged}" />
+                  <TextBox Grid.Column="2" Text="{Binding MaximumC, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
+                <TextBlock Text="C interval" Margin="0,10,0,5" />
+                <TextBox Text="{Binding CInterval, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Text="Closing radius" Margin="0,10,0,5" />
+                <Slider Minimum="0" Maximum="50" Value="{Binding ClosingRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+                <TextBlock Text="{Binding ClosingRadius}" Foreground="{StaticResource AccentBrush}" />
+                <TextBlock Text="Minimum invalid-structure area" Margin="0,10,0,5" />
+                <TextBox Text="{Binding MinimumInvalidStructureArea, UpdateSourceTrigger=PropertyChanged}" />
+              </StackPanel>
+
+              <Button Content="Calculate work estimate" Command="{Binding EstimateCommand}" Margin="0,14,0,0" Background="#39475A" Foreground="White" />
+              <Border Padding="10" Background="#10161E" CornerRadius="5" Margin="0,4,0,0">
+                <TextBlock Text="{Binding WorkEstimateSummary}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+              </Border>
+            </StackPanel>
+
+            <TextBlock Text="Connectivity" Margin="0,14,0,5" />
+            <ComboBox ItemsSource="{Binding Connectivities}" SelectedItem="{Binding Connectivity}" />
+            <TextBlock Text="Exclusive minimum component size" Margin="0,10,0,5" />
+            <TextBox Text="{Binding MinimumComponentSize, UpdateSourceTrigger=PropertyChanged}" />
+            </StackPanel>
+
+            <ProgressBar Height="7" Margin="0,20,0,12" Minimum="0" Maximum="100" Value="{Binding Progress}" Foreground="{StaticResource AccentBrush}" />
+            <WrapPanel>
+              <Button Content="Run" Command="{Binding RunCommand}" MinWidth="100" />
+              <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="100" Background="#39475A" Foreground="White" />
+            </WrapPanel>
+            <Button Content="Export result + provenance" Command="{Binding SaveCommand}" Margin="0,4,0,0" Background="#39475A" Foreground="White" />
+          </StackPanel>
+        </ScrollViewer>
       </Border>
     </Grid>
 
     <Border Grid.Row="2" Background="#080C11" BorderBrush="#283241" BorderThickness="0,1,0,0">
       <Grid Margin="18,0">
         <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Foreground="#C8D2DE" TextTrimming="CharacterEllipsis" />
-        <TextBlock Text="Synthetic validation level" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
+        <TextBlock Text="Synthetic-data validated" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
       </Grid>
     </Border>
   </Grid>
