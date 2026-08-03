@@ -23,7 +23,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | 6/18/26 connectivity | `ConnectedComponents` | implemented | Touching-object fixtures |
 | Flood-fill segmentation | Connected-components request | implemented | Noise/min-size fixtures |
 | h-minima segmentation | `HMinima` | pending-reference | Legacy comparison required |
-| DSLT directional threshold contract | Ordered geodesic directions, multi-radius line response, directional C | scaffolded | Equations, boundaries, ties, and fixtures specified in `dslt-algorithm-spec.md`; CPU implementation pending |
+| DSLT directional threshold basis | Ordered geodesic directions, multi-radius line response, directional C | scaffolded | Scalar CPU operation and constant/tie ABI fixture implemented; full oracle matrix pending |
 | Sobel-like iterative segmentation | `SobelLike` | pending-reference | DSLT sweep workflow specified; legacy runtime comparison required |
 | Threshold sweep | `ThresholdSweep` | scaffolded | Legacy comparison required |
 | Watershed | `Watershed` | pending-reference | Legacy comparison required |

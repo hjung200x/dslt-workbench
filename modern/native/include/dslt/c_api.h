@@ -69,7 +69,8 @@ typedef enum dslt_operation {
     DSLT_OP_EXTRACT_XY = 15,
     DSLT_OP_EXTRACT_YZ = 16,
     DSLT_OP_EXTRACT_ZX = 17,
-    DSLT_OP_THRESHOLD_SWEEP = 18
+    DSLT_OP_THRESHOLD_SWEEP = 18,
+    DSLT_OP_DSLT_THRESHOLD = 19
 } dslt_operation;
 
 typedef struct dslt_calibration {
@@ -171,4 +172,3 @@ DSLT_API dslt_status DSLT_CALL dslt_get_last_error(
 #endif
 
 #endif
-

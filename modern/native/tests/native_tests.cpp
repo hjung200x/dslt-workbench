@@ -126,6 +126,30 @@ int main() {
     auto invalid = descriptor(2, 2, 2);
     require(dslt_set_volume_f32(handle, &invalid, objects.data(), 3), DSLT_INVALID_ARGUMENT);
 
+    auto dslt_desc = descriptor(3, 3, 3);
+    std::vector<float> constant(dslt_desc.element_count, 0.5F);
+    require(dslt_set_volume_f32(handle, &dslt_desc, constant.data(), constant.size()));
+    request = {};
+    request.operation = DSLT_OP_DSLT_THRESHOLD;
+    request.backend = DSLT_BACKEND_CPU;
+    request.radius = 1;
+    request.lanczos_order = 1; // DSLT direction level in the v1 common request.
+    request.connectivity = 1;  // DSLT mean kernel in the v1 common request.
+    request.constant_c = 0.0F;
+    request.target_spacing_z = 0.2F; // DSLT Z correction factor in the v1 common request.
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    std::vector<float> dslt_mask(result.element_count);
+    require(dslt_copy_output_f32(handle, dslt_mask.data(), dslt_mask.size()));
+    assert(std::count(dslt_mask.begin(), dslt_mask.end(), 0.0F) == static_cast<std::ptrdiff_t>(dslt_mask.size()));
+
+    request.constant_c = 0.1F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    require(dslt_copy_output_f32(handle, dslt_mask.data(), dslt_mask.size()));
+    assert(std::count(dslt_mask.begin(), dslt_mask.end(), 0.8F) == static_cast<std::ptrdiff_t>(dslt_mask.size()));
+
+    request.lanczos_order = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
     dslt_destroy(handle);
     lifecycle_stress_test();
     std::cout << "DSLT native synthetic tests passed\n";

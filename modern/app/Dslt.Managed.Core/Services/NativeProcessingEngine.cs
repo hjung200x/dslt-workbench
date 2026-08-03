@@ -137,15 +137,15 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         Operation = (int)value.Operation,
         Backend = (int)value.Backend,
         Radius = value.Radius,
-        Connectivity = value.Connectivity,
+        Connectivity = value.Operation == ProcessingOperation.DsltThreshold ? (int)value.DsltKernel : value.Connectivity,
         MinimumComponentSize = value.MinimumComponentSize,
         SliceIndex = value.SliceIndex,
-        LanczosOrder = value.LanczosOrder,
+        LanczosOrder = value.Operation == ProcessingOperation.DsltThreshold ? value.DirectionLevel : value.LanczosOrder,
         Threshold = value.Threshold,
         ConstantC = value.ConstantC,
         WindowMinimum = value.WindowMinimum,
         WindowMaximum = value.WindowMaximum,
-        TargetSpacingZ = value.TargetSpacingZ,
+        TargetSpacingZ = value.Operation == ProcessingOperation.DsltThreshold ? value.ZCorrectionFactor : value.TargetSpacingZ,
     };
 
     private static unsafe BackendInformation MapBackend(NativeBackendInfo value) => new(
