@@ -38,6 +38,14 @@ internal static class NativeMethods
         ulong heightMapElementCount);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern NativeStatus dslt_set_label_state_i32(
+        DsltSafeHandle handle,
+        [In] int[] labels,
+        ulong labelElementCount,
+        [In] int[] selectedLabels,
+        ulong selectedLabelCount);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern NativeStatus dslt_estimate_operation(
         DsltSafeHandle handle,
         in NativeOperationRequest request,

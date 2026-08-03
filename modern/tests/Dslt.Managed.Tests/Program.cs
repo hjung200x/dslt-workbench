@@ -75,6 +75,26 @@ if (engine.IsAvailable)
         CancellationToken.None);
     Equal(2, componentResult.ComponentCount, "Native ABI component count");
 
+    var watershedVolume = new VolumeData(
+        5, 1, 1, 1, 0, Calibration.Unit, new float[5]);
+    var watershedSeeds = new[] { 10, -1, -1, -1, 20 };
+    var watershedSelection = new[] { 10, 20 };
+    var watershedResult = await engine.RunAsync(
+        watershedVolume,
+        new OperationParameters(
+            ProcessingOperation.Watershed,
+            ProcessingBackend.Cpu,
+            MinimumComponentSize: 0,
+            SeedLabelsSha256: ProcessingProvenance.ComputeLabelSha256(watershedSeeds),
+            SelectedSeedLabels: watershedSelection),
+        null,
+        CancellationToken.None,
+        new ProcessingLabelState(5, 1, 1, watershedSeeds, watershedSelection));
+    Equal(2, watershedResult.ComponentCount, "Watershed component count");
+    Equal(256, watershedResult.CompletedPasses, "Watershed flood levels");
+    if (!watershedResult.Labels!.SequenceEqual(new[] { 10, 10, 10, 20, 20 }))
+        throw new InvalidOperationException("Watershed ABI output did not preserve legacy priority.");
+
     var adaptiveVolume = new VolumeData(
         1, 1, 3, 1, 0, Calibration.Unit, [0.0F, 1.0F, 0.0F]);
     var adaptive2D = await engine.RunAsync(
@@ -239,7 +259,7 @@ if (!File.Exists(rawPath) || !File.Exists(jsonPath))
 var json = await File.ReadAllTextAsync(jsonPath);
 if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance validation level is missing.");
-if (!json.Contains("\"schemaVersion\": \"1.5\"", StringComparison.Ordinal) ||
+if (!json.Contains("\"schemaVersion\": \"1.6\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputVoxelType\": \"Float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputContainer\": \"memory-float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"outputSha256\":", StringComparison.Ordinal))

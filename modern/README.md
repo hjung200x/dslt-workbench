@@ -83,6 +83,10 @@ The erosion-reconstruction marker, mask fitting, convergence, residual
 threshold, and hidden check-interval contract for H-minima are defined in
 `docs/h-minima-spec.md`.
 
+The selected-label seed contract, fixed flood schedule, legacy neighbor
+priority, per-level label opening, crop behavior, and provenance rules for
+Watershed are defined in `docs/watershed-spec.md`.
+
 The current WPF workflow, state-preservation guarantees, and the remaining
 orthogonal-view and label-editing UI work are tracked in
 `docs/ui-workflow.md`.

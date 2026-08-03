@@ -45,10 +45,11 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         VolumeData volume,
         OperationParameters parameters,
         IProgress<double>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ProcessingLabelState? labelState = null)
     {
         volume.Validate();
-        return Task.Run(() => Run(volume, parameters, progress, cancellationToken), cancellationToken);
+        return Task.Run(() => Run(volume, parameters, progress, cancellationToken, labelState), cancellationToken);
     }
 
     public void Dispose() => _handle.Dispose();
@@ -80,12 +81,25 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         VolumeData volume,
         OperationParameters parameters,
         IProgress<double>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ProcessingLabelState? labelState)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var descriptor = MapDescriptor(volume);
         ThrowIfFailed(NativeMethods.dslt_set_volume_f32(
             _handle, in descriptor, volume.Samples, (ulong)volume.Samples.LongLength));
+        if (parameters.Operation == ProcessingOperation.Watershed)
+        {
+            if (labelState is null)
+                throw new ArgumentException("Watershed requires a selected label seed state.", nameof(labelState));
+            labelState.Validate(volume);
+            ThrowIfFailed(NativeMethods.dslt_set_label_state_i32(
+                _handle,
+                labelState.Labels,
+                checked((ulong)labelState.Labels.LongLength),
+                labelState.SelectedLabels,
+                checked((ulong)labelState.SelectedLabels.LongLength)));
+        }
         var crop = MapCrop(parameters);
         var heightMap = parameters.CropEnabled && parameters.CropUseHeightMap
             ? parameters.CropHeightMap

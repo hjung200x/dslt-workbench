@@ -9,6 +9,8 @@
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace dslt::ops {
@@ -1185,6 +1187,152 @@ ComponentLabels dslt_segmentation(
     return dslt_segmentation_from_response(
         source, volume.descriptor(), response, parameters,
         mapped_progress(progress, 0.45F, 0.55F));
+}
+
+ComponentLabels watershed(
+    const Volume& volume,
+    std::span<const std::int32_t> seed_labels,
+    std::span<const std::int32_t> selected_labels,
+    int minimum_seed_size,
+    const CropParameters& crop,
+    const Engine::Progress& progress) {
+    if (minimum_seed_size < 0) {
+        throw std::invalid_argument("watershed minimum seed size must be non-negative");
+    }
+    if (seed_labels.size() != volume.voxel_count()) {
+        throw std::invalid_argument("watershed seed dimensions do not match the volume");
+    }
+    if (selected_labels.empty()) {
+        throw std::invalid_argument("watershed requires at least one selected seed label");
+    }
+
+    const auto& descriptor = volume.descriptor();
+    validate_crop(descriptor, crop);
+    auto intensity = selected_channel(volume);
+    apply_crop(intensity, descriptor, crop, std::numeric_limits<float>::max());
+
+    std::unordered_set<std::int32_t> selected;
+    selected.reserve(selected_labels.size());
+    for (const auto label : selected_labels) {
+        if (label < 0) throw std::invalid_argument("watershed selected seed labels must be non-negative");
+        selected.insert(label);
+    }
+    std::unordered_map<std::int32_t, std::size_t> seed_sizes;
+    for (const auto label : seed_labels) {
+        if (label < -1) throw std::invalid_argument("watershed seed labels must be -1 or non-negative");
+        if (label >= 0) ++seed_sizes[label];
+    }
+    for (const auto label : selected) {
+        if (!seed_sizes.contains(label)) {
+            throw std::invalid_argument("watershed selected seed label does not exist");
+        }
+    }
+
+    std::vector<std::int32_t> labels(seed_labels.size(), -1);
+    for (std::size_t index = 0; index < seed_labels.size(); ++index) {
+        const auto label = seed_labels[index];
+        if (label >= 0 && selected.contains(label) &&
+            seed_sizes[label] >= static_cast<std::size_t>(minimum_seed_size)) {
+            labels[index] = label;
+        }
+    }
+    if (std::none_of(labels.begin(), labels.end(), [](std::int32_t label) { return label >= 0; })) {
+        throw std::invalid_argument("watershed has no selected seeds at the requested minimum size");
+    }
+
+    constexpr std::array<std::array<int, 3>, 6> neighbor_priority{{
+        {{0, 0, -1}}, {{-1, 0, 0}}, {{0, -1, 0}},
+        {{1, 0, 0}}, {{0, 1, 0}}, {{0, 0, 1}},
+    }};
+    const auto neighbor = [&](std::size_t x, std::size_t y, std::size_t z,
+                              const std::array<int, 3>& delta) -> std::size_t {
+        const auto nx = static_cast<long long>(x) + delta[0];
+        const auto ny = static_cast<long long>(y) + delta[1];
+        const auto nz = static_cast<long long>(z) + delta[2];
+        if (nx < 0 || ny < 0 || nz < 0 ||
+            nx >= descriptor.width || ny >= descriptor.height || nz >= descriptor.depth) {
+            return labels.size();
+        }
+        return flat(static_cast<std::size_t>(nx), static_cast<std::size_t>(ny),
+                    static_cast<std::size_t>(nz), descriptor.width, descriptor.height);
+    };
+
+    auto next = labels;
+    for (std::size_t level = 1; level <= 256; ++level) {
+        const auto threshold_value = static_cast<float>(level) / 256.0F;
+        bool changed;
+        do {
+            changed = false;
+            next = labels;
+            for (std::size_t z = 0; z < descriptor.depth; ++z) {
+                for (std::size_t y = 0; y < descriptor.height; ++y) {
+                    for (std::size_t x = 0; x < descriptor.width; ++x) {
+                        const auto index = flat(x, y, z, descriptor.width, descriptor.height);
+                        if (labels[index] >= 0 || intensity[index] > threshold_value) continue;
+                        for (const auto& delta : neighbor_priority) {
+                            const auto candidate = neighbor(x, y, z, delta);
+                            if (candidate != labels.size() && labels[candidate] >= 0) {
+                                next[index] = labels[candidate];
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            labels.swap(next);
+            if (progress && !progress(static_cast<float>(level - 1) / 256.0F)) {
+                throw std::runtime_error("cancelled");
+            }
+        } while (changed);
+
+        // The legacy path applies a synchronous radius-one label opening after
+        // every flood level. Image borders are ignored, matching the CUDA guards.
+        next = labels;
+        for (std::size_t z = 0; z < descriptor.depth; ++z) {
+            for (std::size_t y = 0; y < descriptor.height; ++y) {
+                for (std::size_t x = 0; x < descriptor.width; ++x) {
+                    const auto index = flat(x, y, z, descriptor.width, descriptor.height);
+                    if (labels[index] < 0) continue;
+                    for (const auto& delta : neighbor_priority) {
+                        const auto candidate = neighbor(x, y, z, delta);
+                        if (candidate != labels.size() && labels[candidate] != labels[index]) {
+                            next[index] = -1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        labels.swap(next);
+        next = labels;
+        for (std::size_t z = 0; z < descriptor.depth; ++z) {
+            for (std::size_t y = 0; y < descriptor.height; ++y) {
+                for (std::size_t x = 0; x < descriptor.width; ++x) {
+                    const auto index = flat(x, y, z, descriptor.width, descriptor.height);
+                    if (labels[index] >= 0) continue;
+                    for (const auto& delta : neighbor_priority) {
+                        const auto candidate = neighbor(x, y, z, delta);
+                        if (candidate != labels.size() && labels[candidate] >= 0) {
+                            next[index] = labels[candidate];
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        labels.swap(next);
+        if (progress && !progress(static_cast<float>(level) / 256.0F)) {
+            throw std::runtime_error("cancelled");
+        }
+    }
+
+    std::unordered_set<std::int32_t> components;
+    for (const auto label : labels) {
+        if (label >= 0) components.insert(label);
+    }
+    report(progress, 1, 1);
+    return {std::move(labels), static_cast<std::uint32_t>(components.size()), 256};
 }
 
 std::vector<float> height_map(const Volume& volume, float threshold_value, const Engine::Progress& progress) {

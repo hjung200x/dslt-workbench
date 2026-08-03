@@ -75,7 +75,8 @@ typedef enum dslt_operation {
     DSLT_OP_DSLT_SEGMENTATION = 20,
     DSLT_OP_ADAPTIVE_THRESHOLD_2D = 21,
     DSLT_OP_ADAPTIVE_THRESHOLD_3D = 22,
-    DSLT_OP_H_MINIMA = 23
+    DSLT_OP_H_MINIMA = 23,
+    DSLT_OP_WATERSHED = 24
 } dslt_operation;
 
 typedef struct dslt_calibration {
@@ -176,6 +177,12 @@ DSLT_API dslt_status DSLT_CALL dslt_set_crop(
     const dslt_crop_options* options,
     const float* height_map,
     uint64_t height_map_element_count);
+DSLT_API dslt_status DSLT_CALL dslt_set_label_state_i32(
+    dslt_handle handle,
+    const int32_t* labels,
+    uint64_t label_element_count,
+    const int32_t* selected_labels,
+    uint64_t selected_label_count);
 DSLT_API dslt_status DSLT_CALL dslt_estimate_operation(
     dslt_handle handle,
     const dslt_operation_request* request,

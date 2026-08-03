@@ -33,6 +33,7 @@ public enum ProcessingOperation
     AdaptiveThreshold2D = 21,
     AdaptiveThreshold3D = 22,
     HMinima = 23,
+    Watershed = 24,
 }
 
 public enum OutputKind
@@ -159,7 +160,33 @@ public sealed record OperationParameters(
     int CropUpper = 0,
     int CropLower = 0,
     int CropBorderXy = 0,
-    float[]? CropHeightMap = null);
+    float[]? CropHeightMap = null,
+    string? SeedLabelsSha256 = null,
+    int[]? SelectedSeedLabels = null);
+
+public sealed record ProcessingLabelState(
+    int Width,
+    int Height,
+    int Depth,
+    int[] Labels,
+    int[] SelectedLabels)
+{
+    public void Validate(VolumeData volume)
+    {
+        ArgumentNullException.ThrowIfNull(volume);
+        if (Width != volume.Width || Height != volume.Height || Depth != volume.Depth)
+            throw new ArgumentException("Label state dimensions must match the source volume.");
+        if (Labels is null || Labels.Length != volume.VoxelCount)
+            throw new ArgumentException("Label state length must match the source volume.");
+        if (SelectedLabels is null || SelectedLabels.Length == 0)
+            throw new ArgumentException("At least one watershed seed label must be selected.");
+        if (Labels.Any(label => label < -1))
+            throw new ArgumentException("Labels must be -1 or non-negative.");
+        var available = Labels.Where(label => label >= 0).ToHashSet();
+        if (SelectedLabels.Any(label => label < 0 || !available.Contains(label)))
+            throw new ArgumentException("Every selected watershed seed must exist in the label state.");
+    }
+}
 
 public sealed record BackendInformation(
     bool CpuAvailable,

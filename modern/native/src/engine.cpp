@@ -97,6 +97,31 @@ void Engine::set_crop(const dslt_crop_options& options, std::span<const float> h
         : std::vector<float>{};
 }
 
+void Engine::set_label_state(
+    std::span<const std::int32_t> labels,
+    std::span<const std::int32_t> selected_labels) {
+    if (source_.empty()) throw std::invalid_argument("a volume must be loaded before label state");
+    if (labels.size() != source_.voxel_count()) {
+        throw std::invalid_argument("label state dimensions do not match the volume");
+    }
+    if (!std::all_of(labels.begin(), labels.end(), [](std::int32_t value) { return value >= -1; })) {
+        throw std::invalid_argument("label state values must be -1 or non-negative");
+    }
+    std::unordered_set<std::int32_t> available;
+    for (const auto label : labels) {
+        if (label >= 0) available.insert(label);
+    }
+    std::unordered_set<std::int32_t> replacement_selection;
+    for (const auto label : selected_labels) {
+        if (label < 0 || !available.contains(label)) {
+            throw std::invalid_argument("selected seed label does not exist in the label state");
+        }
+        replacement_selection.insert(label);
+    }
+    labels_.assign(labels.begin(), labels.end());
+    selection_ = std::move(replacement_selection);
+}
+
 dslt_status Engine::run(const dslt_operation_request& request, const Progress& progress) {
     if (source_.empty()) {
         set_error("no volume is loaded");
@@ -111,14 +136,22 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
         return cuda.available ? DSLT_NOT_IMPLEMENTED : DSLT_BACKEND_UNAVAILABLE;
     }
 
-    result_ = {};
-    result_.used_backend = DSLT_BACKEND_CPU;
-    result_.width = source_.descriptor().width;
-    result_.height = source_.descriptor().height;
-    result_.depth = source_.descriptor().depth;
-    labels_.clear();
-
     try {
+        auto seed_labels = request.operation == DSLT_OP_WATERSHED
+            ? labels_
+            : std::vector<std::int32_t>{};
+        auto selected_seed_labels = request.operation == DSLT_OP_WATERSHED
+            ? std::vector<std::int32_t>(selection_.begin(), selection_.end())
+            : std::vector<std::int32_t>{};
+
+        result_ = {};
+        result_.used_backend = DSLT_BACKEND_CPU;
+        result_.width = source_.descriptor().width;
+        result_.height = source_.descriptor().height;
+        result_.depth = source_.descriptor().depth;
+        labels_.clear();
+        selection_.clear();
+
         switch (request.operation) {
         case DSLT_OP_COPY:
             output_ = ops::selected_channel(source_);
@@ -139,6 +172,27 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
         case DSLT_OP_H_MINIMA:
             output_ = ops::h_minima(source_, request.threshold, request.radius, progress);
             break;
+        case DSLT_OP_WATERSHED: {
+            const ops::CropParameters crop{
+                crop_.options.enabled != 0,
+                crop_.options.use_height_map != 0,
+                crop_.options.upper,
+                crop_.options.lower,
+                crop_.options.border_xy,
+                crop_.height_map,
+            };
+            auto segmentation = ops::watershed(
+                source_, seed_labels, selected_seed_labels,
+                request.minimum_component_size, crop, progress);
+            labels_ = std::move(segmentation.labels);
+            output_.clear();
+            result_.component_count = segmentation.component_count;
+            result_.reserved = segmentation.passes_completed;
+            result_.output_kind = DSLT_OUTPUT_LABELS_INT32;
+            result_.element_count = labels_.size();
+            last_error_.clear();
+            return DSLT_OK;
+        }
         case DSLT_OP_SMOOTH_MEAN:
             output_ = ops::smooth(source_, request.radius, false, progress);
             break;
