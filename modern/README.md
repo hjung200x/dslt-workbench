@@ -87,6 +87,10 @@ The selected-label seed contract, fixed flood schedule, legacy neighbor
 priority, per-level label opening, crop behavior, and provenance rules for
 Watershed are defined in `docs/watershed-spec.md`.
 
+The source-derived height-map Z filter, crossing interpolation, XY smoothing,
+defaults, and legacy CPU/GPU path distinction are defined in
+`docs/height-map-spec.md`.
+
 The current WPF workflow, state-preservation guarantees, and the remaining
 orthogonal-view and label-editing UI work are tracked in
 `docs/ui-workflow.md`.

@@ -72,6 +72,28 @@ internal static class WorkflowViewModelTests
             }, "H-minima UI parameters were not preserved in the processing request.");
 
         target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.HeightMap);
+        Assert(target.IsHeightMap && Math.Abs(target.Threshold - 0.25F) < 1e-6F &&
+               target.HeightMapXyRadius == 0 && target.HeightMapZRadius == 4 &&
+               target.HeightMapKernel == DsltKernelType.Gaussian && target.HeightMapSmoothLevel == 1,
+            "Height-map legacy defaults were not exposed by the UI.");
+        target.HeightMapXyRadius = 2;
+        target.HeightMapZRadius = 3;
+        target.HeightMapKernel = DsltKernelType.Mean;
+        target.HeightMapSmoothLevel = 2;
+        target.Threshold = 0.4F;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.HeightMap,
+                HeightMapXyRadius: 2,
+                HeightMapZRadius: 3,
+                HeightMapKernel: DsltKernelType.Mean,
+                HeightMapSmoothLevel: 2,
+                Threshold: 0.4F,
+            }, "Height-map UI parameters were not preserved in the processing request.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.ThresholdSweep);
         Assert(target.MinimumThreshold == 0 && target.MaximumThreshold == 1 &&
                Math.Abs(target.ThresholdInterval - 0.02F) < 1e-6F &&

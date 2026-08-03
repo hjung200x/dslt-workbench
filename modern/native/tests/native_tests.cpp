@@ -175,6 +175,25 @@ int main() {
     request.radius = 0;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
+    auto height_desc = descriptor(1, 1, 5);
+    const std::vector<float> height_source{0.0F, 0.0F, 0.25F, 0.75F, 1.0F};
+    require(dslt_set_volume_f32(
+        handle, &height_desc, height_source.data(), height_source.size()));
+    request = {};
+    request.operation = DSLT_OP_HEIGHT_MAP;
+    request.backend = DSLT_BACKEND_CPU;
+    request.radius = 0;        // XY smoothing radius.
+    request.lanczos_order = 0; // Z filter radius.
+    request.connectivity = 0;  // Gaussian kernel.
+    request.slice_index = 0;   // XY smoothing passes.
+    request.threshold = 0.5F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.output_kind == DSLT_OUTPUT_IMAGE_FLOAT32);
+    assert(result.width == 1 && result.height == 1 && result.depth == 1);
+    std::vector<float> height_result(result.element_count);
+    require(dslt_copy_output_f32(handle, height_result.data(), height_result.size()));
+    assert(height_result.size() == 1 && std::abs(height_result[0] - 2.5F) < 1.0e-6F);
+
     request = {};
     request.operation = DSLT_OP_SMOOTH_MEAN;
     request.backend = DSLT_BACKEND_CPU;

@@ -204,18 +204,23 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         var isAdaptiveThreshold = value.Operation is
             ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
         var isHMinima = value.Operation == ProcessingOperation.HMinima;
+        var isHeightMap = value.Operation == ProcessingOperation.HeightMap;
         return new NativeOperationRequest
         {
             Operation = (int)value.Operation,
             Backend = (int)value.Backend,
-            Radius = isHMinima ? value.HMinimaCheckInterval : value.Radius,
+            Radius = isHMinima ? value.HMinimaCheckInterval :
+                isHeightMap ? value.HeightMapXyRadius : value.Radius,
             Connectivity = isDslt ? (int)value.DsltKernel :
-                isAdaptiveThreshold ? (int)value.AdaptiveThresholdKernel : value.Connectivity,
+                isAdaptiveThreshold ? (int)value.AdaptiveThresholdKernel :
+                isHeightMap ? (int)value.HeightMapKernel : value.Connectivity,
             MinimumComponentSize = isThresholdSweep
                 ? value.ThresholdSweepMinimumComponentSize
                 : value.MinimumComponentSize,
-            SliceIndex = isSegmentation || isThresholdSweep ? value.ClosingRadius : value.SliceIndex,
-            LanczosOrder = isDslt ? value.DirectionLevel : value.LanczosOrder,
+            SliceIndex = isSegmentation || isThresholdSweep ? value.ClosingRadius :
+                isHeightMap ? value.HeightMapSmoothLevel : value.SliceIndex,
+            LanczosOrder = isDslt ? value.DirectionLevel :
+                isHeightMap ? value.HeightMapZRadius : value.LanczosOrder,
             Threshold = isSegmentation ? value.MinimumInvalidStructureArea :
                 isThresholdSweep ? value.ThresholdSweepMinimumInvalidStructureArea :
                 isHMinima ? value.HMinimaHeight : value.Threshold,
