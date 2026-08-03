@@ -555,6 +555,51 @@ void cuda_pointwise_parity_test() {
     (void)run_float_operation_result(
         handle, automatic_dslt_request, DSLT_BACKEND_CUDA);
 
+    dslt_operation_request dslt_segmentation_request{};
+    dslt_segmentation_request.operation = DSLT_OP_DSLT_SEGMENTATION;
+    dslt_segmentation_request.radius = 1;
+    dslt_segmentation_request.lanczos_order = 1;
+    dslt_segmentation_request.connectivity = 1;
+    dslt_segmentation_request.minimum_component_size = 0;
+    dslt_segmentation_request.slice_index = 0;
+    dslt_segmentation_request.threshold = 0.0F;
+    dslt_segmentation_request.constant_c = -0.03F;
+    dslt_segmentation_request.window_min = 0.03F;
+    dslt_segmentation_request.window_max = 0.03F;
+    dslt_segmentation_request.target_spacing_z = 0.5F;
+    dslt_segmentation_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_dslt_segmentation = run_label_operation_result(
+        handle, dslt_segmentation_request, DSLT_BACKEND_CPU);
+    dslt_segmentation_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_dslt_segmentation = run_label_operation_result(
+        handle, dslt_segmentation_request, DSLT_BACKEND_CUDA);
+    assert(cpu_dslt_segmentation.values == cuda_dslt_segmentation.values);
+    assert(cpu_dslt_segmentation.result.component_count ==
+        cuda_dslt_segmentation.result.component_count);
+    assert(cpu_dslt_segmentation.result.reserved ==
+        cuda_dslt_segmentation.result.reserved);
+    assert(cuda_dslt_segmentation.result.reserved > 0);
+
+    auto closing_dslt_segmentation_request = dslt_segmentation_request;
+    closing_dslt_segmentation_request.slice_index = 1;
+    closing_dslt_segmentation_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_closing_dslt_segmentation = run_label_operation_result(
+        handle, closing_dslt_segmentation_request, DSLT_BACKEND_CPU);
+    closing_dslt_segmentation_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_closing_dslt_segmentation = run_label_operation_result(
+        handle, closing_dslt_segmentation_request, DSLT_BACKEND_CUDA);
+    assert(cpu_closing_dslt_segmentation.values == cuda_closing_dslt_segmentation.values);
+    assert(cpu_closing_dslt_segmentation.result.component_count ==
+        cuda_closing_dslt_segmentation.result.component_count);
+    assert(cpu_closing_dslt_segmentation.result.reserved ==
+        cuda_closing_dslt_segmentation.result.reserved);
+
+    auto automatic_dslt_segmentation_request = dslt_segmentation_request;
+    automatic_dslt_segmentation_request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic_dslt_segmentation = run_label_operation_result(
+        handle, automatic_dslt_segmentation_request, DSLT_BACKEND_CUDA);
+    assert(automatic_dslt_segmentation.values == cuda_dslt_segmentation.values);
+
     auto threshold_sweep_desc = descriptor(9, 5, 1);
     std::vector<float> threshold_sweep_source(threshold_sweep_desc.element_count, 1.0F);
     const auto threshold_sweep_index = [&threshold_sweep_desc](std::size_t x, std::size_t y) {
@@ -957,6 +1002,14 @@ void cuda_pointwise_parity_test() {
 
     require(dslt_set_volume_f32(
         handle, &dslt_cuda_desc, dslt_cuda_source.data(), dslt_cuda_source.size()));
+    request = dslt_segmentation_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    const auto cancel_dslt_segmentation = [](float progress, void*) -> std::int32_t {
+        return progress > 0.25F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_dslt_segmentation, nullptr, &result), DSLT_CANCELLED);
+
     request = dslt_threshold_requests[2];
     request.backend = DSLT_BACKEND_CUDA;
     const auto cancel_dslt_threshold = [](float progress, void*) -> std::int32_t {
@@ -986,10 +1039,26 @@ void cuda_pointwise_parity_test() {
     request.radius = 65;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
-    request = {};
-    request.operation = DSLT_OP_DSLT_SEGMENTATION;
+    request = dslt_segmentation_request;
     request.backend = DSLT_BACKEND_CUDA;
-    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
+    request.window_min = request.constant_c - 0.1F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_segmentation_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.window_max = 0.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_segmentation_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.slice_index = 65;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_segmentation_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.minimum_component_size = -1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_segmentation_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.threshold = 0.5F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
     request.operation = DSLT_OP_SMOOTH_MEAN;
@@ -1066,11 +1135,14 @@ void cuda_pointwise_parity_test() {
     auto memory_threshold_sweep = threshold_sweep_request;
     memory_threshold_sweep.backend = DSLT_BACKEND_CUDA;
     (void)run_label_operation_result(handle, memory_threshold_sweep, DSLT_BACKEND_CUDA);
+    auto memory_dslt_segmentation = dslt_segmentation_request;
+    memory_dslt_segmentation.backend = DSLT_BACKEND_CUDA;
+    (void)run_label_operation_result(handle, memory_dslt_segmentation, DSLT_BACKEND_CUDA);
 
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        switch (iteration % 9) {
+        switch (iteration % 10) {
         case 0:
             (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
             break;
@@ -1100,6 +1172,9 @@ void cuda_pointwise_parity_test() {
             break;
         case 8:
             (void)run_label_operation_result(handle, memory_threshold_sweep, DSLT_BACKEND_CUDA);
+            break;
+        case 9:
+            (void)run_label_operation_result(handle, memory_dslt_segmentation, DSLT_BACKEND_CUDA);
             break;
         default:
             (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);

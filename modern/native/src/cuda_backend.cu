@@ -1209,6 +1209,7 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_H_MINIMA ||
         operation == DSLT_OP_WATERSHED ||
         operation == DSLT_OP_DSLT_THRESHOLD ||
+        operation == DSLT_OP_DSLT_SEGMENTATION ||
         operation == DSLT_OP_THRESHOLD_SWEEP;
 }
 
@@ -1238,9 +1239,12 @@ CudaRunResult run_cuda_operation(
     const auto connected_components = request.operation == DSLT_OP_CONNECTED_COMPONENTS;
     const auto watershed = request.operation == DSLT_OP_WATERSHED;
     const auto threshold_sweep = request.operation == DSLT_OP_THRESHOLD_SWEEP;
-    const auto labeling = connected_components || watershed || threshold_sweep;
+    const auto dslt_segmentation = request.operation == DSLT_OP_DSLT_SEGMENTATION;
+    const auto segmentation_sweep = threshold_sweep || dslt_segmentation;
+    const auto labeling = connected_components || watershed || segmentation_sweep;
     const auto h_minima = request.operation == DSLT_OP_H_MINIMA;
     const auto dslt_threshold_operation = request.operation == DSLT_OP_DSLT_THRESHOLD;
+    const auto dslt_response_operation = dslt_threshold_operation || dslt_segmentation;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
     }
@@ -1312,16 +1316,16 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "watershed minimum seed size must be non-negative"};
     }
-    if (dslt_threshold_operation && (request.radius < 1 || request.radius > 127)) {
+    if (dslt_response_operation && (request.radius < 1 || request.radius > 127)) {
         return {CudaRunStatus::invalid_argument, {},
             "DSLT radius must be between 1 and 127"};
     }
-    if (dslt_threshold_operation &&
+    if (dslt_response_operation &&
         (request.lanczos_order < 1 || request.lanczos_order > 5)) {
         return {CudaRunStatus::invalid_argument, {},
             "DSLT direction level must be between 1 and 5"};
     }
-    if (dslt_threshold_operation &&
+    if (dslt_response_operation &&
         request.connectivity != 0 && request.connectivity != 1) {
         return {CudaRunStatus::invalid_argument, {},
             "DSLT kernel type must be 0 (Gaussian) or 1 (mean)"};
@@ -1329,7 +1333,7 @@ CudaRunResult run_cuda_operation(
     if (dslt_threshold_operation && !std::isfinite(request.constant_c)) {
         return {CudaRunStatus::invalid_argument, {}, "DSLT C must be finite"};
     }
-    if (dslt_threshold_operation &&
+    if (dslt_response_operation &&
         (!std::isfinite(request.target_spacing_z) || request.target_spacing_z < 0.0F)) {
         return {CudaRunStatus::invalid_argument, {},
             "DSLT Z correction factor must be finite and non-negative"};
@@ -1350,6 +1354,22 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "minimum invalid-structure area must be a non-negative integer"};
     }
+    if (dslt_segmentation && (request.slice_index < 0 || request.slice_index > 64)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "DSLT closing radius must be between 0 and 64"};
+    }
+    if (dslt_segmentation && request.minimum_component_size < 0) {
+        return {CudaRunStatus::invalid_argument, {},
+            "DSLT component limit must be non-negative"};
+    }
+    if (dslt_segmentation &&
+        (!std::isfinite(request.threshold) || request.threshold < 0.0F ||
+         std::floor(request.threshold) != request.threshold ||
+         static_cast<double>(request.threshold) >
+            static_cast<double>(std::numeric_limits<int>::max()))) {
+        return {CudaRunStatus::invalid_argument, {},
+            "minimum invalid-structure area must be a non-negative integer"};
+    }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height = static_cast<std::size_t>(descriptor.height);
     const auto depth = static_cast<std::size_t>(descriptor.depth);
@@ -1360,7 +1380,7 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {}, "CUDA source dimensions do not match the selected channel"};
     }
     const auto plane_count = width * height;
-    if (threshold_sweep && std::max({width, height, depth}) >
+    if (segmentation_sweep && std::max({width, height, depth}) >
         static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         return {CudaRunStatus::invalid_argument, {},
             "volume dimensions exceed wall-thickness limits"};
@@ -1396,7 +1416,7 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "watershed requires at least one selected seed label"};
     }
-    const auto crop_operation = watershed || threshold_sweep;
+    const auto crop_operation = watershed || segmentation_sweep;
     if (crop_operation && crop_state.options.enabled != 0 &&
         (crop_state.options.upper > crop_state.options.lower ||
          crop_state.options.border_xy < 0)) {
@@ -1502,14 +1522,18 @@ CudaRunResult run_cuda_operation(
     std::vector<float> threshold_sweep_values;
     try {
         if (!report(progress, 0.0F)) return cancelled();
-        if (dslt_threshold_operation) {
+        if (dslt_response_operation) {
             const auto work = ops::estimate_dslt_work(
-                descriptor, request.radius, request.lanczos_order, false);
+                descriptor, request.radius, request.lanczos_order, dslt_segmentation,
+                request.constant_c, request.window_min, request.window_max);
             ops::enforce_dslt_work_limits(work);
             dslt_directions = ops::geodesic_directions(request.lanczos_order);
         }
         if (threshold_sweep) {
             threshold_sweep_values = ops::threshold_sweep_schedule(
+                request.constant_c, request.window_min, request.window_max);
+        } else if (dslt_segmentation) {
+            threshold_sweep_values = ops::dslt_c_schedule(
                 request.constant_c, request.window_min, request.window_max);
         }
         if (source.size() > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
@@ -1523,21 +1547,22 @@ CudaRunResult run_cuda_operation(
             return {CudaRunStatus::out_of_memory, {},
                 "CUDA depth-map workspace overflows addressable memory"};
         }
-        const auto scratch_count = height_processing || h_minima || watershed || threshold_sweep ||
-            dslt_threshold_operation
+        const auto scratch_count = height_processing || h_minima || watershed || segmentation_sweep ||
+            dslt_response_operation
             ? std::max(
                 source.size(),
                 request.operation == DSLT_OP_DEPTH_MAP ? plane_count * 2 : source.size())
             : 0;
-        const auto auxiliary_count = watershed || threshold_sweep || dslt_threshold_operation
+        const auto auxiliary_count = watershed || segmentation_sweep || dslt_response_operation
             ? source.size()
             : request.operation == DSLT_OP_DEPTH_MAP ||
                 request.operation == DSLT_OP_HEIGHT_PROJECTION
                 ? plane_count
                 : 0;
-        const auto dslt_weight_count = dslt_threshold_operation
+        const auto dslt_weight_count = dslt_response_operation
             ? static_cast<std::size_t>(request.radius) * 2 + 1
             : 0;
+        const auto dslt_response_count = dslt_segmentation ? source.size() : 0;
         const auto add_required_buffer = [&](std::size_t count, std::size_t element_size) {
             if (count > std::numeric_limits<std::size_t>::max() / element_size) return false;
             const auto bytes = count * element_size;
@@ -1549,12 +1574,14 @@ CudaRunResult run_cuda_operation(
             !add_required_buffer(output_count, sizeof(float)) ||
             !add_required_buffer(scratch_count, sizeof(float)) ||
             !add_required_buffer(auxiliary_count, sizeof(float)) ||
+            !add_required_buffer(dslt_response_count, sizeof(float)) ||
+            !add_required_buffer(dslt_response_count, sizeof(float)) ||
             !add_required_buffer(dslt_weight_count, sizeof(float)) ||
-            ((h_minima || watershed || threshold_sweep) &&
+            ((h_minima || watershed || segmentation_sweep) &&
              !add_required_buffer(1, sizeof(int))) ||
             (crop_height_map_count != 0 &&
              !add_required_buffer(crop_height_map_count, sizeof(float))) ||
-            ((connected_components || threshold_sweep) &&
+            ((connected_components || segmentation_sweep) &&
              (!add_required_buffer(source.size(), sizeof(unsigned long long)) ||
               !add_required_buffer(source.size(), sizeof(unsigned long long))))) {
             return {CudaRunStatus::out_of_memory, {},
@@ -1579,19 +1606,21 @@ CudaRunResult run_cuda_operation(
         std::unique_ptr<DeviceBuffer<int>> device_convergence_flag;
         std::unique_ptr<DeviceBuffer<float>> device_crop_height_map;
         std::unique_ptr<DeviceBuffer<float>> device_dslt_weights;
+        std::unique_ptr<DeviceBuffer<float>> device_dslt_response_minimum;
+        std::unique_ptr<DeviceBuffer<float>> device_dslt_response_alpha;
         if (scratch_count != 0) {
             device_scratch = std::make_unique<DeviceBuffer<float>>(scratch_count);
         }
         if (auxiliary_count != 0) {
             device_auxiliary = std::make_unique<DeviceBuffer<float>>(auxiliary_count);
         }
-        if (connected_components || threshold_sweep) {
+        if (connected_components || segmentation_sweep) {
             device_component_roots_a =
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
             device_component_roots_b =
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
         }
-        if (h_minima || watershed || threshold_sweep) {
+        if (h_minima || watershed || segmentation_sweep) {
             device_convergence_flag = std::make_unique<DeviceBuffer<int>>(1);
         }
         if (crop_height_map_count != 0) {
@@ -1600,6 +1629,12 @@ CudaRunResult run_cuda_operation(
         }
         if (dslt_weight_count != 0) {
             device_dslt_weights = std::make_unique<DeviceBuffer<float>>(dslt_weight_count);
+        }
+        if (dslt_response_count != 0) {
+            device_dslt_response_minimum =
+                std::make_unique<DeviceBuffer<float>>(dslt_response_count);
+            device_dslt_response_alpha =
+                std::make_unique<DeviceBuffer<float>>(dslt_response_count);
         }
         std::vector<float> output(labeling ? 0 : output_count);
 
@@ -2060,7 +2095,47 @@ CudaRunResult run_cuda_operation(
             cuda_passes_completed = 256;
             break;
         }
-        case DSLT_OP_THRESHOLD_SWEEP: {
+        case DSLT_OP_THRESHOLD_SWEEP:
+        case DSLT_OP_DSLT_SEGMENTATION: {
+            if (dslt_segmentation) {
+                initialize_dslt_response_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_dslt_response_minimum->get(), device_dslt_response_alpha->get(),
+                    source.size(), std::numeric_limits<float>::max());
+                check_cuda(cudaGetLastError(),
+                    "launching CUDA DSLT segmentation response initialization");
+
+                const auto direction_steps =
+                    static_cast<std::size_t>(request.radius) * dslt_directions.size();
+                std::size_t completed_steps = 0;
+                for (int current_radius = request.radius; current_radius > 0; --current_radius) {
+                    const auto weights = ops::line_weights(
+                        current_radius, request.connectivity == 0);
+                    check_cuda(cudaMemcpyAsync(
+                        device_dslt_weights->get(), weights.data(),
+                        weights.size() * sizeof(float), cudaMemcpyHostToDevice, stream.get()),
+                        "copying CUDA DSLT segmentation line weights");
+                    for (const auto& direction : dslt_directions) {
+                        const auto xy_length = std::sqrt(
+                            direction.x * direction.x + direction.y * direction.y);
+                        const auto latitude = std::acos(std::clamp(xy_length, 0.0F, 1.0F));
+                        const auto direction_alpha = std::abs(
+                            2.0F * latitude / std::numbers::pi_v<float>);
+                        dslt_direction_response_kernel<<<blocks, threads, 0, stream.get()>>>(
+                            device_source.get(), device_dslt_response_minimum->get(),
+                            device_dslt_response_alpha->get(), width, height, depth,
+                            device_dslt_weights->get(), current_radius,
+                            direction.x, direction.y, direction.z, direction_alpha);
+                        check_cuda(cudaGetLastError(),
+                            "launching CUDA DSLT segmentation direction response");
+                        check_cuda(cudaStreamSynchronize(stream.get()),
+                            "synchronizing CUDA DSLT segmentation direction response");
+                        const auto step_progress = 0.25F + 0.25F *
+                            static_cast<float>(++completed_steps) /
+                            static_cast<float>(direction_steps);
+                        if (!report(progress, step_progress)) return cancelled();
+                    }
+                }
+            }
             if (device_crop_height_map) {
                 check_cuda(cudaMemcpyAsync(
                     device_crop_height_map->get(), crop_state.height_map.data(),
@@ -2077,30 +2152,45 @@ CudaRunResult run_cuda_operation(
             auto previous_thickness = 0;
             const auto pass_length = 1.0F /
                 static_cast<float>(threshold_sweep_values.size());
+            const auto sweep_progress_start = dslt_segmentation ? 0.50F : 0.25F;
+            const auto sweep_progress_length = dslt_segmentation ? 0.45F : 0.70F;
+            const auto mask_phase_end = dslt_segmentation ? 0.15F : 0.10F;
+            const auto closing_midpoint = mask_phase_end + (0.35F - mask_phase_end) * 0.5F;
 
             for (std::size_t pass = 0; pass < threshold_sweep_values.size(); ++pass) {
                 const auto pass_start = static_cast<float>(pass) * pass_length;
                 const auto pass_progress = [&](float phase) {
-                    return 0.25F + 0.70F * (pass_start + pass_length * phase);
+                    return sweep_progress_start + sweep_progress_length *
+                        (pass_start + pass_length * phase);
                 };
 
-                threshold_sweep_mask_kernel<<<blocks, threads, 0, stream.get()>>>(
-                    device_source.get(), device_scratch->get(), source.size(),
-                    threshold_sweep_values[pass]);
-                check_cuda(cudaGetLastError(), "launching CUDA threshold-sweep mask");
+                if (dslt_segmentation) {
+                    apply_dslt_threshold_kernel<<<blocks, threads, 0, stream.get()>>>(
+                        device_source.get(), device_dslt_response_minimum->get(),
+                        device_dslt_response_alpha->get(), device_scratch->get(),
+                        source.size(), threshold_sweep_values[pass],
+                        threshold_sweep_values[pass] * request.target_spacing_z);
+                    check_cuda(cudaGetLastError(),
+                        "launching CUDA DSLT segmentation mask");
+                } else {
+                    threshold_sweep_mask_kernel<<<blocks, threads, 0, stream.get()>>>(
+                        device_source.get(), device_scratch->get(), source.size(),
+                        threshold_sweep_values[pass]);
+                    check_cuda(cudaGetLastError(), "launching CUDA threshold-sweep mask");
+                }
                 check_cuda(cudaStreamSynchronize(stream.get()),
-                    "synchronizing CUDA threshold-sweep mask");
-                if (!report(progress, pass_progress(0.10F))) return cancelled();
+                    "synchronizing CUDA segmentation mask");
+                if (!report(progress, pass_progress(mask_phase_end))) return cancelled();
 
                 if (request.slice_index > 0) {
                     if (!run_morphology_step(
                             device_scratch->get(), device_auxiliary->get(),
                             request.slice_index, true,
-                            pass_progress(0.10F), pass_progress(0.225F)) ||
+                            pass_progress(mask_phase_end), pass_progress(closing_midpoint)) ||
                         !run_morphology_step(
                             device_auxiliary->get(), device_scratch->get(),
                             request.slice_index, false,
-                            pass_progress(0.225F), pass_progress(0.35F))) {
+                            pass_progress(closing_midpoint), pass_progress(0.35F))) {
                         return cancelled();
                     }
                 } else if (!report(progress, pass_progress(0.35F))) {
