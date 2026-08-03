@@ -14,8 +14,11 @@ shape, and output kind as CPU.
 - Invalid parameters, cancellation, insufficient memory, and kernel/runtime
   failures are returned to the caller. They do not silently rerun on CPU.
 
-The currently ported group is `Copy`, `WindowLevel`, `Threshold2D`, and
-`Threshold3D`.
+The currently ported groups are:
+
+- `Copy`, `WindowLevel`, `Threshold2D`, and `Threshold3D`;
+- mean/Gaussian smoothing; and
+- cubic/spherical dilation and erosion.
 
 ## Resource ownership and execution
 
@@ -30,8 +33,9 @@ launch is checked with `cudaGetLastError`, and the stream is synchronized
 before host output is published.
 
 Progress is reported at start, input transfer, execution, and completion.
-Cancellation before a completed synchronization drains the owned stream and
-discards the partial result.
+Smoothing and morphology synchronize and report after every output Z slice so
+longer filters can be cancelled between slices. Cancellation drains the owned
+stream and discards the partial result.
 
 ## Validation gates
 

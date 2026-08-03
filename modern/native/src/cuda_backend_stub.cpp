@@ -10,11 +10,18 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
     return operation == DSLT_OP_COPY ||
         operation == DSLT_OP_WINDOW_LEVEL ||
         operation == DSLT_OP_THRESHOLD_2D ||
-        operation == DSLT_OP_THRESHOLD_3D;
+        operation == DSLT_OP_THRESHOLD_3D ||
+        operation == DSLT_OP_SMOOTH_MEAN ||
+        operation == DSLT_OP_SMOOTH_GAUSSIAN ||
+        operation == DSLT_OP_DILATE_CUBE ||
+        operation == DSLT_OP_ERODE_CUBE ||
+        operation == DSLT_OP_DILATE_SPHERE ||
+        operation == DSLT_OP_ERODE_SPHERE;
 }
 
 CudaRunResult run_cuda_operation(
     std::span<const float>,
+    const dslt_volume_descriptor&,
     const dslt_operation_request&,
     const Engine::Progress&) noexcept {
     return {CudaRunStatus::unavailable, {}, "CUDA backend is not compiled"};

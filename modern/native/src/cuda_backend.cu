@@ -115,6 +115,94 @@ __global__ void threshold_kernel(
     }
 }
 
+__device__ std::size_t flat_index(
+    std::size_t x,
+    std::size_t y,
+    std::size_t z,
+    std::size_t width,
+    std::size_t height) {
+    return z * width * height + y * width + x;
+}
+
+__device__ std::size_t clamp_coordinate(long long value, std::size_t length) {
+    if (value < 0) return 0;
+    const auto converted = static_cast<std::size_t>(value);
+    return converted >= length ? length - 1 : converted;
+}
+
+__global__ void smooth_slice_kernel(
+    const float* source,
+    float* output,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    std::size_t z,
+    int radius,
+    bool gaussian) {
+    const auto plane = width * height;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto plane_index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         plane_index < plane;
+         plane_index += stride) {
+        const auto x = plane_index % width;
+        const auto y = plane_index / width;
+        const float sigma = fmaxf(0.5F, static_cast<float>(radius) / 2.0F);
+        const float denominator = 2.0F * sigma * sigma;
+        double sum = 0.0;
+        double weight_sum = 0.0;
+        for (int dz = -radius; dz <= radius; ++dz) {
+            const auto zz = clamp_coordinate(static_cast<long long>(z) + dz, depth);
+            for (int dy = -radius; dy <= radius; ++dy) {
+                const auto yy = clamp_coordinate(static_cast<long long>(y) + dy, height);
+                for (int dx = -radius; dx <= radius; ++dx) {
+                    const auto xx = clamp_coordinate(static_cast<long long>(x) + dx, width);
+                    const auto squared_distance = dx * dx + dy * dy + dz * dz;
+                    const double weight = gaussian
+                        ? static_cast<double>(expf(-static_cast<float>(squared_distance) / denominator))
+                        : 1.0;
+                    sum += static_cast<double>(source[flat_index(xx, yy, zz, width, height)]) * weight;
+                    weight_sum += weight;
+                }
+            }
+        }
+        output[flat_index(x, y, z, width, height)] = static_cast<float>(sum / weight_sum);
+    }
+}
+
+__global__ void morphology_slice_kernel(
+    const float* source,
+    float* output,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    std::size_t z,
+    int radius,
+    bool dilate,
+    bool spherical) {
+    const auto plane = width * height;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto plane_index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         plane_index < plane;
+         plane_index += stride) {
+        const auto x = plane_index % width;
+        const auto y = plane_index / width;
+        auto chosen = dilate ? -CUDART_INF_F : CUDART_INF_F;
+        for (int dz = -radius; dz <= radius; ++dz) {
+            const auto zz = clamp_coordinate(static_cast<long long>(z) + dz, depth);
+            for (int dy = -radius; dy <= radius; ++dy) {
+                const auto yy = clamp_coordinate(static_cast<long long>(y) + dy, height);
+                for (int dx = -radius; dx <= radius; ++dx) {
+                    if (spherical && dx * dx + dy * dy + dz * dz > radius * radius) continue;
+                    const auto xx = clamp_coordinate(static_cast<long long>(x) + dx, width);
+                    const auto value = source[flat_index(xx, yy, zz, width, height)];
+                    if (dilate ? value > chosen : value < chosen) chosen = value;
+                }
+            }
+        }
+        output[flat_index(x, y, z, width, height)] = chosen;
+    }
+}
+
 [[nodiscard]] unsigned int block_count(std::size_t count) noexcept {
     constexpr std::size_t threads = 256;
     constexpr std::size_t maximum_blocks = 65535;
@@ -144,11 +232,18 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
     return operation == DSLT_OP_COPY ||
         operation == DSLT_OP_WINDOW_LEVEL ||
         operation == DSLT_OP_THRESHOLD_2D ||
-        operation == DSLT_OP_THRESHOLD_3D;
+        operation == DSLT_OP_THRESHOLD_3D ||
+        operation == DSLT_OP_SMOOTH_MEAN ||
+        operation == DSLT_OP_SMOOTH_GAUSSIAN ||
+        operation == DSLT_OP_DILATE_CUBE ||
+        operation == DSLT_OP_ERODE_CUBE ||
+        operation == DSLT_OP_DILATE_SPHERE ||
+        operation == DSLT_OP_ERODE_SPHERE;
 }
 
 CudaRunResult run_cuda_operation(
     std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
     const dslt_operation_request& request,
     const Engine::Progress& progress) noexcept {
     if (!cuda_supports_operation(request.operation)) {
@@ -156,6 +251,27 @@ CudaRunResult run_cuda_operation(
     }
     if (request.operation == DSLT_OP_WINDOW_LEVEL && !(request.window_max > request.window_min)) {
         return {CudaRunStatus::invalid_argument, {}, "window maximum must be greater than minimum"};
+    }
+    const auto smoothing = request.operation == DSLT_OP_SMOOTH_MEAN ||
+        request.operation == DSLT_OP_SMOOTH_GAUSSIAN;
+    const auto morphology = request.operation == DSLT_OP_DILATE_CUBE ||
+        request.operation == DSLT_OP_ERODE_CUBE ||
+        request.operation == DSLT_OP_DILATE_SPHERE ||
+        request.operation == DSLT_OP_ERODE_SPHERE;
+    if (smoothing && (request.radius < 0 || request.radius > 64)) {
+        return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
+    }
+    if (morphology && (request.radius < 0 || request.radius > 64)) {
+        return {CudaRunStatus::invalid_argument, {}, "morphology radius must be between 0 and 64"};
+    }
+    const auto width = static_cast<std::size_t>(descriptor.width);
+    const auto height = static_cast<std::size_t>(descriptor.height);
+    const auto depth = static_cast<std::size_t>(descriptor.depth);
+    if (width == 0 || height == 0 || depth == 0 ||
+        width > std::numeric_limits<std::size_t>::max() / height ||
+        width * height > std::numeric_limits<std::size_t>::max() / depth ||
+        source.size() != width * height * depth) {
+        return {CudaRunStatus::invalid_argument, {}, "CUDA source dimensions do not match the selected channel"};
     }
 
     std::size_t required_bytes = 0;
@@ -191,6 +307,7 @@ CudaRunResult run_cuda_operation(
 
         constexpr unsigned int threads = 256;
         const auto blocks = block_count(source.size());
+        const auto zero_radius_filter = (smoothing || morphology) && request.radius == 0;
         switch (request.operation) {
         case DSLT_OP_COPY:
             check_cuda(cudaMemcpyAsync(
@@ -209,11 +326,45 @@ CudaRunResult run_cuda_operation(
                 device_source.get(), device_output.get(), source.size(), request.threshold);
             check_cuda(cudaGetLastError(), "launching CUDA threshold kernel");
             break;
+        case DSLT_OP_SMOOTH_MEAN:
+        case DSLT_OP_SMOOTH_GAUSSIAN:
+        case DSLT_OP_DILATE_CUBE:
+        case DSLT_OP_ERODE_CUBE:
+        case DSLT_OP_DILATE_SPHERE:
+        case DSLT_OP_ERODE_SPHERE:
+            if (zero_radius_filter) {
+                check_cuda(cudaMemcpyAsync(
+                    device_output.get(), device_source.get(), buffer_bytes,
+                    cudaMemcpyDeviceToDevice, stream.get()), "copying zero-radius CUDA filter output");
+                break;
+            }
+            for (std::size_t z = 0; z < depth; ++z) {
+                if (smoothing) {
+                    smooth_slice_kernel<<<block_count(width * height), threads, 0, stream.get()>>>(
+                        device_source.get(), device_output.get(), width, height, depth, z,
+                        request.radius, request.operation == DSLT_OP_SMOOTH_GAUSSIAN);
+                    check_cuda(cudaGetLastError(), "launching CUDA smoothing kernel");
+                } else {
+                    const auto dilate = request.operation == DSLT_OP_DILATE_CUBE ||
+                        request.operation == DSLT_OP_DILATE_SPHERE;
+                    const auto spherical = request.operation == DSLT_OP_DILATE_SPHERE ||
+                        request.operation == DSLT_OP_ERODE_SPHERE;
+                    morphology_slice_kernel<<<block_count(width * height), threads, 0, stream.get()>>>(
+                        device_source.get(), device_output.get(), width, height, depth, z,
+                        request.radius, dilate, spherical);
+                    check_cuda(cudaGetLastError(), "launching CUDA morphology kernel");
+                }
+                check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA filter slice");
+                const auto slice_progress = 0.25F + 0.5F *
+                    static_cast<float>(z + 1) / static_cast<float>(depth);
+                if (!report(progress, slice_progress)) return cancelled();
+            }
+            break;
         default:
             return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
         }
 
-        if (!report(progress, 0.75F)) {
+        if ((zero_radius_filter || (!smoothing && !morphology)) && !report(progress, 0.75F)) {
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing cancelled CUDA operation");
             return cancelled();
         }
