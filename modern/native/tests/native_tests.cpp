@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -59,6 +60,107 @@ void lifecycle_stress_test() {
         dslt_destroy(handle);
     }
 }
+
+#ifdef DSLT_TEST_CUDA
+std::vector<float> run_float_operation(
+    dslt_handle handle,
+    dslt_operation_request request,
+    dslt_backend expected_backend) {
+    dslt_operation_result result{};
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.used_backend == expected_backend);
+    assert(result.output_kind == DSLT_OUTPUT_VOLUME_FLOAT32);
+    std::vector<float> output(result.element_count);
+    require(dslt_copy_output_f32(handle, output.data(), output.size()));
+    return output;
+}
+
+void cuda_pointwise_parity_test() {
+    dslt_handle handle = nullptr;
+    require(dslt_create(&handle));
+    dslt_backend_info backend{};
+    require(dslt_get_backend_info(handle, &backend));
+    assert(backend.cuda_compiled == 1);
+    assert(backend.cuda_available == 1);
+
+    auto desc = descriptor(8, 2, 1);
+    const std::vector<float> source{
+        -1.0F, -0.25F, 0.0F, 0.24F, 0.25F, 0.5F, 1.0F, 2.0F,
+        2.0F, 1.0F, 0.5F, 0.25F, 0.24F, 0.0F, -0.25F, -1.0F,
+    };
+    desc.channels = 2;
+    desc.selected_channel = 1;
+    desc.element_count = source.size() * 2;
+    std::vector<float> multichannel(source.size(), 99.0F);
+    multichannel.insert(multichannel.end(), source.begin(), source.end());
+    require(dslt_set_volume_f32(handle, &desc, multichannel.data(), multichannel.size()));
+
+    for (const auto operation : {
+             DSLT_OP_COPY,
+             DSLT_OP_WINDOW_LEVEL,
+             DSLT_OP_THRESHOLD_2D,
+             DSLT_OP_THRESHOLD_3D}) {
+        dslt_operation_request request{};
+        request.operation = operation;
+        request.window_min = -0.25F;
+        request.window_max = 1.0F;
+        request.threshold = 0.25F;
+        request.backend = DSLT_BACKEND_CPU;
+        const auto cpu = run_float_operation(handle, request, DSLT_BACKEND_CPU);
+        request.backend = DSLT_BACKEND_CUDA;
+        const auto cuda = run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+        assert(cpu.size() == cuda.size());
+        for (std::size_t index = 0; index < cpu.size(); ++index) {
+            assert(std::abs(cpu[index] - cuda[index]) <= 1.0e-6F);
+        }
+    }
+
+    dslt_operation_request request{};
+    request.operation = DSLT_OP_COPY;
+    request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic = run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+    assert(automatic == source);
+
+    request = {};
+    request.operation = DSLT_OP_SMOOTH_MEAN;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.radius = 1;
+    dslt_operation_result result{};
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
+
+    request = {};
+    request.operation = DSLT_OP_WINDOW_LEVEL;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.window_min = 1.0F;
+    request.window_max = 1.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_THRESHOLD_3D;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.threshold = 0.25F;
+    const auto cancel = [](float progress, void*) -> std::int32_t { return progress >= 0.75F ? 1 : 0; };
+    require(dslt_run_operation(handle, &request, cancel, nullptr, &result), DSLT_CANCELLED);
+
+    request = {};
+    request.operation = DSLT_OP_WINDOW_LEVEL;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.window_min = -0.25F;
+    request.window_max = 1.0F;
+    (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA); // Load kernels before the baseline.
+    dslt_backend_info before{};
+    require(dslt_get_backend_info(handle, &before));
+    for (int iteration = 0; iteration < 100; ++iteration) {
+        (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+    }
+    dslt_backend_info after{};
+    require(dslt_get_backend_info(handle, &after));
+    constexpr std::uint64_t measurement_tolerance = 1024ULL * 1024ULL;
+    assert(after.device_memory_bytes + measurement_tolerance >= before.device_memory_bytes);
+
+    dslt_destroy(handle);
+}
+#endif
 
 } // namespace
 
@@ -255,7 +357,12 @@ int main() {
     request.operation = DSLT_OP_COPY;
     request.backend = DSLT_BACKEND_CUDA;
     const auto cuda_status = dslt_run_operation(handle, &request, nullptr, nullptr, &result);
+#ifdef DSLT_TEST_CUDA
+    require(cuda_status);
+    assert(result.used_backend == DSLT_BACKEND_CUDA);
+#else
     assert(cuda_status == DSLT_BACKEND_UNAVAILABLE || cuda_status == DSLT_NOT_IMPLEMENTED);
+#endif
 
     auto invalid = descriptor(2, 2, 2);
     require(dslt_set_volume_f32(handle, &invalid, objects.data(), 3), DSLT_INVALID_ARGUMENT);
@@ -365,6 +472,9 @@ int main() {
 
     dslt_destroy(handle);
     lifecycle_stress_test();
+#ifdef DSLT_TEST_CUDA
+    cuda_pointwise_parity_test();
+#endif
     std::cout << "DSLT native synthetic tests passed\n";
     return 0;
 }

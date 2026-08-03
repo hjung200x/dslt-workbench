@@ -34,16 +34,29 @@ target_compile_definitions(dslt_core PRIVATE DSLT_CORE_EXPORTS)
 dslt_enable_address_sanitizer(dslt_core)
 
 if(MSVC)
-    target_compile_options(dslt_core PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(dslt_core PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/W4>
+        $<$<COMPILE_LANGUAGE:CXX>:/permissive->
+        $<$<COMPILE_LANGUAGE:CXX>:/EHsc>
+        $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+    )
 else()
-    target_compile_options(dslt_core PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(dslt_core PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>
+    )
 endif()
 
 if(DSLT_ENABLE_CUDA)
     enable_language(CUDA)
     target_sources(dslt_core PRIVATE src/cuda_backend.cu)
     target_compile_definitions(dslt_core PRIVATE DSLT_HAS_CUDA=1)
-    set_target_properties(dslt_core PROPERTIES CUDA_STANDARD 20)
+    set_target_properties(dslt_core PROPERTIES
+        CUDA_STANDARD 20
+        CUDA_STANDARD_REQUIRED ON
+        CUDA_EXTENSIONS OFF
+    )
 else()
     target_sources(dslt_core PRIVATE src/cuda_backend_stub.cpp)
 endif()
@@ -53,6 +66,9 @@ if(DSLT_BUILD_TESTS)
     add_executable(dslt_native_tests tests/native_tests.cpp)
     target_compile_features(dslt_native_tests PRIVATE cxx_std_20)
     target_link_libraries(dslt_native_tests PRIVATE dslt_core)
+    if(DSLT_ENABLE_CUDA)
+        target_compile_definitions(dslt_native_tests PRIVATE DSLT_TEST_CUDA=1)
+    endif()
     dslt_enable_address_sanitizer(dslt_native_tests)
     if(MSVC)
         target_compile_options(dslt_native_tests PRIVATE /UNDEBUG)

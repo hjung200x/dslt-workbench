@@ -12,8 +12,10 @@ DSLT Demo while preserving its processing behavior. The original Visual Studio
 - `tests/`: synthetic data and cross-layer smoke tests
 - `docs/`: compatibility matrix, validation policy, and provenance
 
-The CPU backend is the reference implementation. CUDA is an optional backend;
-when it is unavailable, `Auto` always selects CPU and reports the fallback.
+The CPU backend is the reference implementation. CUDA is an optional backend.
+`Auto` selects CUDA for operations that have passed CPU parity validation and
+falls back to CPU when CUDA is unavailable or the operation is not yet ported.
+CUDA execution failures are reported instead of being silently retried on CPU.
 
 ## Build
 
@@ -36,7 +38,8 @@ ctest --preset windows-cpu
 ```
 
 Use the `windows-cuda` preset after installing CUDA 13.2. The CUDA target is
-optional and never changes CPU semantics.
+optional and never changes CPU semantics. The first validated CUDA group is
+copy, window/level, and global 2D/3D threshold; see `docs/cuda-backend.md`.
 
 ## Preview package
 
