@@ -50,6 +50,13 @@ jobs:
       - name: Compile CUDA backend and native tests
         working-directory: modern/native
         run: cmake --build --preset windows-cuda-release --target dslt_core dslt_native_tests --parallel
+      - name: Upload CUDA runtime test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: dslt-cuda-tests-win-x64-${{ github.sha }}
+          path: modern/native/out/build/windows-cuda/Release/*
+          if-no-files-found: error
+          retention-days: 7
 
   cuda-parity:
     name: cuda-runtime-parity

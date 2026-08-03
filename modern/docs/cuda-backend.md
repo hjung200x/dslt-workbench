@@ -39,7 +39,20 @@ discards the partial result.
 the minimal official CUDA 13.2 compiler/runtime packages with NVIDIA's silent
 network installer, then compiles the CUDA DLL and CUDA-enabled native tests.
 This gate proves NVCC/MSVC/CMake compatibility but cannot execute kernels
-because the hosted runner has no NVIDIA device.
+because the hosted runner has no NVIDIA device. A successful job uploads the
+DLL and native test executable as `dslt-cuda-tests-win-x64-<commit>` for seven
+days. The bundle can be downloaded to a trusted Windows NVIDIA host and run
+without installing a compiler:
+
+```powershell
+gh run download <run-id> --name dslt-cuda-tests-win-x64-<commit> --dir .run/cuda-tests
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  ./modern/scripts/run-cuda-artifact-tests.ps1 -ArtifactDirectory .run/cuda-tests
+```
+
+Only bundles produced from the repository's own reviewed commit should be
+executed. The script requires `nvidia-smi`, verifies the expected DLL/executable
+layout, reports the selected GPU, and propagates any native test failure.
 
 `cuda-runtime-parity` uses the `windows-cuda` preset on a self-hosted runner
 with the `Windows`, `X64`, and `NVIDIA` labels. It defines `DSLT_TEST_CUDA` and
@@ -58,3 +71,22 @@ checks:
 Pointwise float parity uses an absolute tolerance of `1e-6`, which is stricter
 than the project-wide float gate (`abs <= 1e-5` or `rel <= 1e-4`). Binary
 threshold results are therefore voxel-exact on the test fixture.
+
+## Recorded pointwise runtime evidence
+
+The first pointwise runtime gate was completed on 2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `5235fbb749ed65b7f89135e731d3e9761dcf7a59` |
+| Hosted build | GitHub Actions run `30847841411`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `8CE96CB790BC61984D8C306ACCCCF73CFC4822FB26790B432A4D431C7B8A9250` |
+| `dslt_native_tests.exe` SHA-256 | `6940375001A44C5E107B1B3FDF9C2194785E2FE462019842F54213FAB84CDF83` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+This proves the ported pointwise group on one Ada GPU and driver combination.
+It does not replace the required coverage of the remaining CUDA operations or
+future repeated validation on the registered CI GPU fleet.
