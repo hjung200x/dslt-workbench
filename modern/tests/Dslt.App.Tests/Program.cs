@@ -45,6 +45,7 @@ internal static class Program
             RunSignedInt32BigEndianRoundTripTest();
             RunMalformedInt32StripTest();
             RunImageJHyperStackTest();
+            RunLsmMetadataAndThumbnailTest();
             await WorkflowViewModelTests.RunAsync();
             Console.WriteLine("DSLT WPF TIFF, metadata, hyperstack, and workflow tests passed.");
         }
@@ -311,10 +312,11 @@ internal static class Program
         ushort tag,
         uint count,
         uint offset,
-        bool littleEndian)
+        bool littleEndian,
+        ushort type = 4)
     {
         WriteUInt16(stream, tag, littleEndian);
-        WriteUInt16(stream, 4, littleEndian);
+        WriteUInt16(stream, type, littleEndian);
         WriteUInt32(stream, count, littleEndian);
         WriteUInt32(stream, offset, littleEndian);
     }
@@ -402,5 +404,118 @@ internal static class Program
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    private static void RunLsmMetadataAndThumbnailTest()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-lsm-{Guid.NewGuid():N}.lsm");
+        try
+        {
+            WriteSyntheticLsm(path, validMagic: true);
+            var volume = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+            volume.Validate();
+            if (volume.Width != 1 || volume.Height != 1 || volume.Depth != 2 || volume.Channels != 2)
+                throw new InvalidOperationException("CZ_LSMINFO dimensions were not reconstructed.");
+            if (volume.Source?.Container != "LSM")
+                throw new InvalidOperationException("LSM container identity was not preserved.");
+            if (!volume.Source.ChannelPlanarRawSamples.SequenceEqual(new byte[] { 10, 20, 100, 200 }))
+                throw new InvalidOperationException("LSM thumbnail IFDs were not excluded from channel-planar pixels.");
+            if (Math.Abs(volume.Calibration.SpacingX - 0.25) > 1e-12 ||
+                Math.Abs(volume.Calibration.SpacingY - 0.5) > 1e-12 ||
+                Math.Abs(volume.Calibration.SpacingZ - 1.5) > 1e-12 ||
+                volume.Calibration.UnitName != "um")
+                throw new InvalidOperationException("CZ_LSMINFO meter voxel sizes were not converted to micrometers.");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+
+        var malformedPath = Path.Combine(Path.GetTempPath(), $"dslt-lsm-invalid-{Guid.NewGuid():N}.lsm");
+        try
+        {
+            WriteSyntheticLsm(malformedPath, validMagic: false);
+            try
+            {
+                _ = WpfWorkspaceFileService.ReadStack(malformedPath, CancellationToken.None);
+                throw new InvalidOperationException("Invalid CZ_LSMINFO magic was accepted.");
+            }
+            catch (InvalidDataException)
+            {
+                // Expected.
+            }
+        }
+        finally { if (File.Exists(malformedPath)) File.Delete(malformedPath); }
+    }
+
+    private static void WriteSyntheticLsm(string path, bool validMagic)
+    {
+        const int pageCount = 8;
+        var fullValues = new byte[] { 10, 100, 20, 200 };
+        var ifdOffsets = new uint[pageCount];
+        var pixelOffsets = new uint[pageCount];
+        uint cursor = 8;
+        for (var page = 0; page < pageCount; page++)
+        {
+            var entryCount = page == 0 ? 14u : 13u;
+            var ifdBytes = checked(2u + entryCount * 12u + 4u);
+            ifdOffsets[page] = cursor;
+            pixelOffsets[page] = checked(cursor + ifdBytes + (page == 0 ? 64u : 0u));
+            cursor = checked(pixelOffsets[page] + 1u);
+        }
+
+        using var stream = File.Create(path);
+        stream.WriteByte((byte)'I');
+        stream.WriteByte((byte)'I');
+        WriteUInt16(stream, 42, littleEndian: true);
+        WriteUInt32(stream, ifdOffsets[0], littleEndian: true);
+        for (var page = 0; page < pageCount; page++)
+        {
+            var reduced = page % 2 == 1;
+            var entryCount = page == 0 ? (ushort)14 : (ushort)13;
+            WriteUInt16(stream, entryCount, littleEndian: true);
+            WriteLongEntry(stream, 254, reduced ? 1u : 0u, littleEndian: true);
+            WriteLongEntry(stream, 256, 1, littleEndian: true);
+            WriteLongEntry(stream, 257, 1, littleEndian: true);
+            WriteShortEntry(stream, 258, 8, littleEndian: true);
+            WriteShortEntry(stream, 259, 1, littleEndian: true);
+            WriteShortEntry(stream, 262, 1, littleEndian: true);
+            WriteLongEntry(stream, 273, pixelOffsets[page], littleEndian: true);
+            WriteShortEntry(stream, 274, 1, littleEndian: true);
+            WriteShortEntry(stream, 277, 1, littleEndian: true);
+            WriteLongEntry(stream, 278, 1, littleEndian: true);
+            WriteLongEntry(stream, 279, 1, littleEndian: true);
+            WriteShortEntry(stream, 284, 1, littleEndian: true);
+            WriteShortEntry(stream, 339, 1, littleEndian: true);
+            if (page == 0)
+                WriteArrayOffsetEntry(stream, 34412, 64, pixelOffsets[page] - 64, littleEndian: true, type: 1);
+            WriteUInt32(stream, page + 1 < pageCount ? ifdOffsets[page + 1] : 0, littleEndian: true);
+            if (page == 0)
+            {
+                WriteUInt32(stream, validMagic ? 50350412u : 0u, littleEndian: true);
+                WriteInt32(stream, 64, littleEndian: true);
+                WriteInt32(stream, 1, littleEndian: true);
+                WriteInt32(stream, 1, littleEndian: true);
+                WriteInt32(stream, 2, littleEndian: true);
+                WriteInt32(stream, 2, littleEndian: true);
+                WriteInt32(stream, 1, littleEndian: true);
+                WriteInt32(stream, 1, littleEndian: true);
+                WriteInt32(stream, 1, littleEndian: true);
+                WriteInt32(stream, 1, littleEndian: true);
+                WriteDouble(stream, 0.25e-6, littleEndian: true);
+                WriteDouble(stream, 0.5e-6, littleEndian: true);
+                WriteDouble(stream, 1.5e-6, littleEndian: true);
+            }
+            stream.WriteByte(reduced ? (byte)255 : fullValues[page / 2]);
+        }
+    }
+
+    private static void WriteInt32(Stream stream, int value, bool littleEndian) =>
+        WriteUInt32(stream, unchecked((uint)value), littleEndian);
+
+    private static void WriteDouble(Stream stream, double value, bool littleEndian)
+    {
+        var bits = unchecked((ulong)BitConverter.DoubleToInt64Bits(value));
+        Span<byte> bytes = stackalloc byte[sizeof(double)];
+        if (littleEndian) BinaryPrimitives.WriteUInt64LittleEndian(bytes, bits);
+        else BinaryPrimitives.WriteUInt64BigEndian(bytes, bits);
+        stream.Write(bytes);
     }
 }
