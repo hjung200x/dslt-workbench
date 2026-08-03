@@ -474,10 +474,45 @@ void cuda_pointwise_parity_test() {
     request.window_min = -0.25F;
     request.window_max = 1.0F;
     (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA); // Load kernels before the baseline.
+
+    auto memory_height = depth_request;
+    memory_height.operation = DSLT_OP_HEIGHT_MAP;
+    memory_height.backend = DSLT_BACKEND_CUDA;
+    (void)run_float_operation_result(
+        handle, memory_height, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+    auto memory_depth = depth_request;
+    memory_depth.backend = DSLT_BACKEND_CUDA;
+    (void)run_float_operation(handle, memory_depth, DSLT_BACKEND_CUDA);
+    auto memory_projection = memory_height;
+    memory_projection.operation = DSLT_OP_HEIGHT_PROJECTION;
+    memory_projection.target_spacing_z = 0.0F;
+    memory_projection.minimum_component_size = 2;
+    memory_projection.constant_c = 0.1F;
+    memory_projection.window_min = 0.0F;
+    memory_projection.window_max = 0.0F;
+    (void)run_float_operation_result(
+        handle, memory_projection, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+        switch (iteration % 4) {
+        case 0:
+            (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+            break;
+        case 1:
+            (void)run_float_operation_result(
+                handle, memory_height, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+            break;
+        case 2:
+            (void)run_float_operation(handle, memory_depth, DSLT_BACKEND_CUDA);
+            break;
+        default:
+            memory_projection.target_spacing_z = iteration % 8 == 3 ? 0.0F : 1.0F;
+            (void)run_float_operation_result(
+                handle, memory_projection, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+            break;
+        }
     }
     dslt_backend_info after{};
     require(dslt_get_backend_info(handle, &after));

@@ -166,5 +166,8 @@ The height/depth projection fixture compares Gaussian and mean height surfaces,
 normal and Z projections, and volumetric depth values against CPU at the
 project float tolerance. It also covers variable image metadata, `Auto`
 selection, parameter rejection, and cancellation during depth-slice execution.
+After kernel warm-up, the memory fixture cycles pointwise execution, height
+maps, depth maps, and both projection modes across 100 requests and permits at
+most 1 MiB of apparent free-memory drift.
 Runtime evidence for this newly ported group is pending a successful hosted
 build and NVIDIA-device execution.
