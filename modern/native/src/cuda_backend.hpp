@@ -29,6 +29,7 @@ struct CudaRunResult final {
 
 [[nodiscard]] CudaRunResult run_cuda_operation(
     std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
     const dslt_operation_request& request,
     const Engine::Progress& progress) noexcept;
 

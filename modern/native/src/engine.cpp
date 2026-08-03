@@ -144,7 +144,7 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
     if (request.backend != DSLT_BACKEND_CPU && cuda.available && supports_cuda) {
         const auto channel_offset = source_.voxel_count() * source_.descriptor().selected_channel;
         const auto channel = source_.data().subspan(channel_offset, source_.voxel_count());
-        auto cuda_result = run_cuda_operation(channel, request, progress);
+        auto cuda_result = run_cuda_operation(channel, source_.descriptor(), request, progress);
         if (cuda_result.status == CudaRunStatus::success) {
             result_ = {};
             result_.used_backend = DSLT_BACKEND_CUDA;

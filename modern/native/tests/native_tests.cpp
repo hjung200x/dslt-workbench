@@ -121,12 +121,79 @@ void cuda_pointwise_parity_test() {
     const auto automatic = run_float_operation(handle, request, DSLT_BACKEND_CUDA);
     assert(automatic == source);
 
+    auto filter_desc = descriptor(5, 4, 3);
+    std::vector<float> filter_source(filter_desc.element_count);
+    for (std::size_t index = 0; index < filter_source.size(); ++index) {
+        const auto pattern = static_cast<int>((index * 37U) % 101U) - 50;
+        filter_source[index] = static_cast<float>(pattern) / 25.0F;
+    }
+    filter_source[0] = 8.0F;
+    filter_source[filter_source.size() / 2] = -7.0F;
+    require(dslt_set_volume_f32(
+        handle, &filter_desc, filter_source.data(), filter_source.size()));
+
+    for (const auto operation : {
+             DSLT_OP_SMOOTH_MEAN,
+             DSLT_OP_SMOOTH_GAUSSIAN,
+             DSLT_OP_DILATE_CUBE,
+             DSLT_OP_ERODE_CUBE,
+             DSLT_OP_DILATE_SPHERE,
+             DSLT_OP_ERODE_SPHERE}) {
+        dslt_operation_request filter_request{};
+        filter_request.operation = operation;
+        filter_request.radius = 1;
+        filter_request.backend = DSLT_BACKEND_CPU;
+        const auto cpu = run_float_operation(handle, filter_request, DSLT_BACKEND_CPU);
+        filter_request.backend = DSLT_BACKEND_CUDA;
+        const auto cuda = run_float_operation(handle, filter_request, DSLT_BACKEND_CUDA);
+        assert(cpu.size() == cuda.size());
+        const auto smooth_operation = operation == DSLT_OP_SMOOTH_MEAN ||
+            operation == DSLT_OP_SMOOTH_GAUSSIAN;
+        for (std::size_t index = 0; index < cpu.size(); ++index) {
+            const auto difference = std::abs(cpu[index] - cuda[index]);
+            if (smooth_operation) {
+                assert(difference <= 1.0e-5F ||
+                    difference <= std::abs(cpu[index]) * 1.0e-4F);
+            } else {
+                assert(difference == 0.0F);
+            }
+        }
+    }
+
+    request = {};
+    request.operation = DSLT_OP_SMOOTH_GAUSSIAN;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.radius = 0;
+    const auto zero_radius = run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+    assert(zero_radius == filter_source);
+
+    request = {};
+    request.operation = DSLT_OP_SMOOTH_GAUSSIAN;
+    request.backend = DSLT_BACKEND_AUTO;
+    request.radius = 1;
+    (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
+
+    request = {};
+    request.operation = DSLT_OP_DILATE_SPHERE;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.radius = 65;
+    dslt_operation_result result{};
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_RESAMPLE_Z_AREA;
+    request.backend = DSLT_BACKEND_CUDA;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
+
     request = {};
     request.operation = DSLT_OP_SMOOTH_MEAN;
     request.backend = DSLT_BACKEND_CUDA;
-    request.radius = 1;
-    dslt_operation_result result{};
-    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
+    request.radius = 2;
+    const auto cancel_filter = [](float progress, void*) -> std::int32_t {
+        return progress >= 0.4F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_filter, nullptr, &result), DSLT_CANCELLED);
 
     request = {};
     request.operation = DSLT_OP_WINDOW_LEVEL;
