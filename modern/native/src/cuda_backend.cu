@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <numeric>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -939,6 +940,131 @@ __global__ void watershed_dilate_labels_kernel(
     }
 }
 
+__global__ void threshold_sweep_mask_kernel(
+    const float* source,
+    float* mask,
+    std::size_t count,
+    float threshold) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        mask[index] = source[index] >= threshold ? 0.8F : 0.0F;
+    }
+}
+
+__global__ void exclude_existing_labels_kernel(
+    float* mask,
+    const std::int32_t* labels,
+    std::size_t count) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        if (labels[index] >= 0) mask[index] = 0.0F;
+    }
+}
+
+__global__ void apply_mask_crop_kernel(
+    float* mask,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    bool crop_enabled,
+    bool use_height_map,
+    const float* height_map,
+    int upper,
+    int lower,
+    int border_xy,
+    float outside_value) {
+    if (!crop_enabled) return;
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto border = static_cast<std::size_t>(border_xy);
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        const auto z = index / plane;
+        const auto remainder = index % plane;
+        const auto y = remainder / width;
+        const auto x = remainder % width;
+        const auto outside_border =
+            border >= width || border >= height ||
+            x < border || x >= width - border ||
+            y < border || y >= height - border;
+        const auto outside_depth = use_height_map
+            ? static_cast<float>(z) < height_map[y * width + x] + static_cast<float>(upper) ||
+                static_cast<float>(z) > height_map[y * width + x] + static_cast<float>(lower)
+            : static_cast<long long>(z) < upper || static_cast<long long>(z) > lower;
+        if (outside_border || outside_depth) mask[index] = outside_value;
+    }
+}
+
+__global__ void initialize_low_component_roots_kernel(
+    const float* mask,
+    const std::int32_t* existing_labels,
+    unsigned long long* roots,
+    std::size_t count,
+    float maximum_value) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        roots[index] = mask[index] <= maximum_value && existing_labels[index] < 0
+            ? static_cast<unsigned long long>(index)
+            : ~0ULL;
+    }
+}
+
+__global__ void propagate_low_component_roots_kernel(
+    const unsigned long long* current,
+    unsigned long long* next,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    int* changed) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        auto minimum = current[index];
+        if (minimum == ~0ULL) {
+            next[index] = minimum;
+            continue;
+        }
+        const auto z = index / plane;
+        const auto remainder = index % plane;
+        const auto y = remainder / width;
+        const auto x = remainder % width;
+        for (int priority = 0; priority < 6; ++priority) {
+            std::size_t neighbor = 0;
+            if (watershed_neighbor(
+                    x, y, z, width, height, depth, priority, neighbor) &&
+                current[neighbor] < minimum) {
+                minimum = current[neighbor];
+            }
+        }
+        next[index] = minimum;
+        if (minimum != current[index]) atomicExch(changed, 1);
+    }
+}
+
+__global__ void component_mask_kernel(
+    const std::int32_t* candidate_labels,
+    float* mask,
+    std::size_t count,
+    std::int32_t component) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        mask[index] = candidate_labels[index] == component ? 1.0F : 0.0F;
+    }
+}
+
 __global__ void initialize_component_roots_kernel(
     const float* source,
     unsigned long long* roots,
@@ -1082,7 +1208,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_CONNECTED_COMPONENTS ||
         operation == DSLT_OP_H_MINIMA ||
         operation == DSLT_OP_WATERSHED ||
-        operation == DSLT_OP_DSLT_THRESHOLD;
+        operation == DSLT_OP_DSLT_THRESHOLD ||
+        operation == DSLT_OP_THRESHOLD_SWEEP;
 }
 
 CudaRunResult run_cuda_operation(
@@ -1110,7 +1237,8 @@ CudaRunResult run_cuda_operation(
         request.operation == DSLT_OP_HEIGHT_PROJECTION;
     const auto connected_components = request.operation == DSLT_OP_CONNECTED_COMPONENTS;
     const auto watershed = request.operation == DSLT_OP_WATERSHED;
-    const auto labeling = connected_components || watershed;
+    const auto threshold_sweep = request.operation == DSLT_OP_THRESHOLD_SWEEP;
+    const auto labeling = connected_components || watershed || threshold_sweep;
     const auto h_minima = request.operation == DSLT_OP_H_MINIMA;
     const auto dslt_threshold_operation = request.operation == DSLT_OP_DSLT_THRESHOLD;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
@@ -1206,6 +1334,22 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "DSLT Z correction factor must be finite and non-negative"};
     }
+    if (threshold_sweep && (request.slice_index < 0 || request.slice_index > 64)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "threshold sweep closing radius must be between 0 and 64"};
+    }
+    if (threshold_sweep && request.minimum_component_size < 0) {
+        return {CudaRunStatus::invalid_argument, {},
+            "threshold sweep component limit must be non-negative"};
+    }
+    if (threshold_sweep &&
+        (!std::isfinite(request.threshold) || request.threshold < 0.0F ||
+         std::floor(request.threshold) != request.threshold ||
+         static_cast<double>(request.threshold) >
+            static_cast<double>(std::numeric_limits<int>::max()))) {
+        return {CudaRunStatus::invalid_argument, {},
+            "minimum invalid-structure area must be a non-negative integer"};
+    }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height = static_cast<std::size_t>(descriptor.height);
     const auto depth = static_cast<std::size_t>(descriptor.depth);
@@ -1216,6 +1360,11 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {}, "CUDA source dimensions do not match the selected channel"};
     }
     const auto plane_count = width * height;
+    if (threshold_sweep && std::max({width, height, depth}) >
+        static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        return {CudaRunStatus::invalid_argument, {},
+            "volume dimensions exceed wall-thickness limits"};
+    }
     if (h_minima && !std::all_of(source.begin(), source.end(), [](float value) {
             return std::isfinite(value);
         })) {
@@ -1247,21 +1396,22 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "watershed requires at least one selected seed label"};
     }
-    if (watershed && crop_state.options.enabled != 0 &&
+    const auto crop_operation = watershed || threshold_sweep;
+    if (crop_operation && crop_state.options.enabled != 0 &&
         (crop_state.options.upper > crop_state.options.lower ||
          crop_state.options.border_xy < 0)) {
         return {CudaRunStatus::invalid_argument, {}, "crop bounds are invalid"};
     }
-    const auto watershed_height_map_count = watershed &&
+    const auto crop_height_map_count = crop_operation &&
         crop_state.options.enabled != 0 && crop_state.options.use_height_map != 0
         ? plane_count
         : 0;
-    if (watershed && watershed_height_map_count != 0 &&
+    if (crop_operation && crop_height_map_count != 0 &&
         crop_state.height_map.size() != plane_count) {
         return {CudaRunStatus::invalid_argument, {},
             "crop height map dimensions do not match"};
     }
-    if (watershed && watershed_height_map_count != 0 &&
+    if (crop_operation && crop_height_map_count != 0 &&
         !std::all_of(crop_state.height_map.begin(), crop_state.height_map.end(),
             [](float value) { return std::isfinite(value); })) {
         return {CudaRunStatus::invalid_argument, {},
@@ -1349,6 +1499,7 @@ CudaRunResult run_cuda_operation(
     std::size_t required_bytes = 0;
     std::size_t available_bytes = 0;
     std::vector<ops::Vec3> dslt_directions;
+    std::vector<float> threshold_sweep_values;
     try {
         if (!report(progress, 0.0F)) return cancelled();
         if (dslt_threshold_operation) {
@@ -1356,6 +1507,10 @@ CudaRunResult run_cuda_operation(
                 descriptor, request.radius, request.lanczos_order, false);
             ops::enforce_dslt_work_limits(work);
             dslt_directions = ops::geodesic_directions(request.lanczos_order);
+        }
+        if (threshold_sweep) {
+            threshold_sweep_values = ops::threshold_sweep_schedule(
+                request.constant_c, request.window_min, request.window_max);
         }
         if (source.size() > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
             output_count > std::numeric_limits<std::size_t>::max() / sizeof(float)) {
@@ -1368,13 +1523,13 @@ CudaRunResult run_cuda_operation(
             return {CudaRunStatus::out_of_memory, {},
                 "CUDA depth-map workspace overflows addressable memory"};
         }
-        const auto scratch_count = height_processing || h_minima || watershed ||
+        const auto scratch_count = height_processing || h_minima || watershed || threshold_sweep ||
             dslt_threshold_operation
             ? std::max(
                 source.size(),
                 request.operation == DSLT_OP_DEPTH_MAP ? plane_count * 2 : source.size())
             : 0;
-        const auto auxiliary_count = watershed || dslt_threshold_operation
+        const auto auxiliary_count = watershed || threshold_sweep || dslt_threshold_operation
             ? source.size()
             : request.operation == DSLT_OP_DEPTH_MAP ||
                 request.operation == DSLT_OP_HEIGHT_PROJECTION
@@ -1395,10 +1550,11 @@ CudaRunResult run_cuda_operation(
             !add_required_buffer(scratch_count, sizeof(float)) ||
             !add_required_buffer(auxiliary_count, sizeof(float)) ||
             !add_required_buffer(dslt_weight_count, sizeof(float)) ||
-            ((h_minima || watershed) && !add_required_buffer(1, sizeof(int))) ||
-            (watershed_height_map_count != 0 &&
-             !add_required_buffer(watershed_height_map_count, sizeof(float))) ||
-            (connected_components &&
+            ((h_minima || watershed || threshold_sweep) &&
+             !add_required_buffer(1, sizeof(int))) ||
+            (crop_height_map_count != 0 &&
+             !add_required_buffer(crop_height_map_count, sizeof(float))) ||
+            ((connected_components || threshold_sweep) &&
              (!add_required_buffer(source.size(), sizeof(unsigned long long)) ||
               !add_required_buffer(source.size(), sizeof(unsigned long long))))) {
             return {CudaRunStatus::out_of_memory, {},
@@ -1429,18 +1585,18 @@ CudaRunResult run_cuda_operation(
         if (auxiliary_count != 0) {
             device_auxiliary = std::make_unique<DeviceBuffer<float>>(auxiliary_count);
         }
-        if (connected_components) {
+        if (connected_components || threshold_sweep) {
             device_component_roots_a =
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
             device_component_roots_b =
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
         }
-        if (h_minima || watershed) {
+        if (h_minima || watershed || threshold_sweep) {
             device_convergence_flag = std::make_unique<DeviceBuffer<int>>(1);
         }
-        if (watershed_height_map_count != 0) {
+        if (crop_height_map_count != 0) {
             device_crop_height_map =
-                std::make_unique<DeviceBuffer<float>>(watershed_height_map_count);
+                std::make_unique<DeviceBuffer<float>>(crop_height_map_count);
         }
         if (dslt_weight_count != 0) {
             device_dslt_weights = std::make_unique<DeviceBuffer<float>>(dslt_weight_count);
@@ -1490,6 +1646,68 @@ CudaRunResult run_cuda_operation(
                 if (!report(progress, pass_progress)) return false;
             }
             return request.slice_index != 0 || report(progress, final_progress);
+        };
+        const auto run_morphology_step = [&] (
+            const float* input,
+            float* output,
+            int radius,
+            bool dilate,
+            float progress_start,
+            float progress_end) {
+            for (std::size_t z = 0; z < depth; ++z) {
+                morphology_slice_kernel<<<block_count(plane_count), threads, 0, stream.get()>>>(
+                    input, output, width, height, depth, z, radius, dilate, true);
+                check_cuda(cudaGetLastError(), "launching CUDA sweep morphology slice");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA sweep morphology slice");
+                const auto slice_progress = progress_start + (progress_end - progress_start) *
+                    static_cast<float>(z + 1) / static_cast<float>(depth);
+                if (!report(progress, slice_progress)) return false;
+            }
+            return true;
+        };
+        const auto run_chunked_morphology = [&] (
+            const float* input,
+            float* first,
+            float* second,
+            int radius,
+            bool opening,
+            float progress_start,
+            float progress_end) -> float* {
+            check_cuda(cudaMemcpyAsync(
+                first, input, source.size() * sizeof(float),
+                cudaMemcpyDeviceToDevice, stream.get()),
+                "copying CUDA chunked morphology input");
+            if (radius == 0) {
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing zero-radius CUDA chunked morphology");
+                return report(progress, progress_end) ? first : nullptr;
+            }
+            const auto chunks = static_cast<std::size_t>((radius + 3) / 4);
+            const auto total_steps = chunks * 2;
+            std::size_t step = 0;
+            auto* current = first;
+            auto* next = second;
+            const auto run_sequence = [&](bool dilate) {
+                auto remaining = radius;
+                while (remaining > 0) {
+                    const auto current_radius = std::min(remaining, 4);
+                    const auto step_start = progress_start + (progress_end - progress_start) *
+                        static_cast<float>(step) / static_cast<float>(total_steps);
+                    const auto step_end = progress_start + (progress_end - progress_start) *
+                        static_cast<float>(step + 1) / static_cast<float>(total_steps);
+                    if (!run_morphology_step(
+                            current, next, current_radius, dilate, step_start, step_end)) {
+                        return false;
+                    }
+                    std::swap(current, next);
+                    remaining -= current_radius;
+                    ++step;
+                }
+                return true;
+            };
+            if (!run_sequence(!opening) || !run_sequence(opening)) return nullptr;
+            return current;
         };
         switch (request.operation) {
         case DSLT_OP_COPY:
@@ -1759,7 +1977,7 @@ CudaRunResult run_cuda_operation(
             if (device_crop_height_map) {
                 check_cuda(cudaMemcpyAsync(
                     device_crop_height_map->get(), crop_state.height_map.data(),
-                    watershed_height_map_count * sizeof(float),
+                    crop_height_map_count * sizeof(float),
                     cudaMemcpyHostToDevice, stream.get()),
                     "copying CUDA watershed crop height map");
             }
@@ -1840,6 +2058,296 @@ CudaRunResult run_cuda_operation(
                     "copying CUDA watershed final labels");
             }
             cuda_passes_completed = 256;
+            break;
+        }
+        case DSLT_OP_THRESHOLD_SWEEP: {
+            if (device_crop_height_map) {
+                check_cuda(cudaMemcpyAsync(
+                    device_crop_height_map->get(), crop_state.height_map.data(),
+                    crop_height_map_count * sizeof(float),
+                    cudaMemcpyHostToDevice, stream.get()),
+                    "copying CUDA threshold-sweep crop height map");
+            }
+
+            std::vector<std::int32_t> result_labels(source.size(), -1);
+            std::vector<std::int32_t> candidate_labels(source.size(), -1);
+            std::vector<float> host_morphology(source.size());
+            const auto maximum_dimension = std::max({width, height, depth});
+            const auto maximum_radius = static_cast<int>(maximum_dimension);
+            auto previous_thickness = 0;
+            const auto pass_length = 1.0F /
+                static_cast<float>(threshold_sweep_values.size());
+
+            for (std::size_t pass = 0; pass < threshold_sweep_values.size(); ++pass) {
+                const auto pass_start = static_cast<float>(pass) * pass_length;
+                const auto pass_progress = [&](float phase) {
+                    return 0.25F + 0.70F * (pass_start + pass_length * phase);
+                };
+
+                threshold_sweep_mask_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_source.get(), device_scratch->get(), source.size(),
+                    threshold_sweep_values[pass]);
+                check_cuda(cudaGetLastError(), "launching CUDA threshold-sweep mask");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA threshold-sweep mask");
+                if (!report(progress, pass_progress(0.10F))) return cancelled();
+
+                if (request.slice_index > 0) {
+                    if (!run_morphology_step(
+                            device_scratch->get(), device_auxiliary->get(),
+                            request.slice_index, true,
+                            pass_progress(0.10F), pass_progress(0.225F)) ||
+                        !run_morphology_step(
+                            device_auxiliary->get(), device_scratch->get(),
+                            request.slice_index, false,
+                            pass_progress(0.225F), pass_progress(0.35F))) {
+                        return cancelled();
+                    }
+                } else if (!report(progress, pass_progress(0.35F))) {
+                    return cancelled();
+                }
+
+                check_cuda(cudaMemcpyAsync(
+                    reinterpret_cast<std::int32_t*>(device_output.get()),
+                    result_labels.data(), result_labels.size() * sizeof(std::int32_t),
+                    cudaMemcpyHostToDevice, stream.get()),
+                    "copying existing CUDA sweep labels");
+                exclude_existing_labels_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_scratch->get(),
+                    reinterpret_cast<std::int32_t*>(device_output.get()), source.size());
+                check_cuda(cudaGetLastError(), "launching CUDA sweep label exclusion");
+                apply_mask_crop_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_scratch->get(), width, height, depth,
+                    crop_state.options.enabled != 0,
+                    crop_state.options.use_height_map != 0,
+                    device_crop_height_map ? device_crop_height_map->get() : nullptr,
+                    crop_state.options.upper, crop_state.options.lower,
+                    crop_state.options.border_xy, 0.0F);
+                check_cuda(cudaGetLastError(), "launching CUDA sweep lower crop");
+                check_cuda(cudaMemcpyAsync(
+                    host_morphology.data(), device_scratch->get(), input_bytes,
+                    cudaMemcpyDeviceToHost, stream.get()),
+                    "copying CUDA sweep wall mask");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA sweep wall mask");
+
+                const auto source_sum = std::accumulate(
+                    host_morphology.begin(), host_morphology.end(), 0.0,
+                    [](double sum, float value) {
+                        return sum + std::abs(static_cast<double>(value));
+                    });
+                auto radius = previous_thickness / 2 > 1
+                    ? previous_thickness / 2
+                    : 1;
+                radius = std::min(radius, maximum_radius);
+                const auto attempts = static_cast<std::size_t>(maximum_radius - radius + 1);
+                auto thickness = maximum_radius * 2;
+                for (std::size_t attempt = 0; attempt < attempts; ++attempt, ++radius) {
+                    const auto attempt_start = pass_progress(
+                        0.35F + 0.25F * static_cast<float>(attempt) /
+                            static_cast<float>(attempts));
+                    const auto attempt_end = pass_progress(
+                        0.35F + 0.25F * static_cast<float>(attempt + 1) /
+                            static_cast<float>(attempts));
+                    auto* opened = run_chunked_morphology(
+                        device_scratch->get(), device_auxiliary->get(), device_output.get(),
+                        radius, true, attempt_start, attempt_end);
+                    if (opened == nullptr) return cancelled();
+                    check_cuda(cudaMemcpyAsync(
+                        host_morphology.data(), opened, input_bytes,
+                        cudaMemcpyDeviceToHost, stream.get()),
+                        "copying CUDA sweep opened wall mask");
+                    check_cuda(cudaStreamSynchronize(stream.get()),
+                        "synchronizing CUDA sweep opened wall mask");
+                    const auto opened_sum = std::accumulate(
+                        host_morphology.begin(), host_morphology.end(), 0.0,
+                        [](double sum, float value) {
+                            return sum + std::abs(static_cast<double>(value));
+                        });
+                    if (opened_sum <= source_sum * 0.5) {
+                        thickness = radius * 2;
+                        break;
+                    }
+                }
+                previous_thickness = thickness;
+
+                check_cuda(cudaMemcpyAsync(
+                    reinterpret_cast<std::int32_t*>(device_output.get()),
+                    result_labels.data(), result_labels.size() * sizeof(std::int32_t),
+                    cudaMemcpyHostToDevice, stream.get()),
+                    "restoring existing CUDA sweep labels");
+                apply_mask_crop_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_scratch->get(), width, height, depth,
+                    crop_state.options.enabled != 0,
+                    crop_state.options.use_height_map != 0,
+                    device_crop_height_map ? device_crop_height_map->get() : nullptr,
+                    crop_state.options.upper, crop_state.options.lower,
+                    crop_state.options.border_xy, 0.8F);
+                check_cuda(cudaGetLastError(), "launching CUDA sweep upper crop");
+
+                auto* current_roots = device_component_roots_a->get();
+                auto* next_roots = device_component_roots_b->get();
+                initialize_low_component_roots_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_scratch->get(),
+                    reinterpret_cast<std::int32_t*>(device_output.get()),
+                    current_roots, source.size(), 0.1F);
+                check_cuda(cudaGetLastError(),
+                    "launching CUDA sweep component-root initialization");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA sweep component-root initialization");
+                if (!report(progress, pass_progress(0.60F))) return cancelled();
+
+                auto converged = false;
+                for (std::size_t propagation = 0; propagation < source.size(); ++propagation) {
+                    check_cuda(cudaMemsetAsync(
+                        device_convergence_flag->get(), 0, sizeof(int), stream.get()),
+                        "resetting CUDA sweep convergence flag");
+                    propagate_low_component_roots_kernel<<<blocks, threads, 0, stream.get()>>>(
+                        current_roots, next_roots, width, height, depth,
+                        device_convergence_flag->get());
+                    check_cuda(cudaGetLastError(),
+                        "launching CUDA sweep component-root propagation");
+                    int host_changed = 0;
+                    check_cuda(cudaMemcpyAsync(
+                        &host_changed, device_convergence_flag->get(), sizeof(int),
+                        cudaMemcpyDeviceToHost, stream.get()),
+                        "copying CUDA sweep convergence flag");
+                    check_cuda(cudaStreamSynchronize(stream.get()),
+                        "synchronizing CUDA sweep component-root propagation");
+                    std::swap(current_roots, next_roots);
+                    const auto propagation_progress = pass_progress(
+                        0.60F + 0.10F * static_cast<float>(propagation + 1) /
+                            static_cast<float>(source.size()));
+                    if (!report(progress, propagation_progress)) return cancelled();
+                    if (host_changed == 0) {
+                        converged = true;
+                        break;
+                    }
+                }
+                if (!converged) {
+                    return {CudaRunStatus::internal_error, {},
+                        "CUDA threshold-sweep components did not converge"};
+                }
+
+                check_cuda(cudaMemsetAsync(
+                    next_roots, 0, source.size() * sizeof(unsigned long long), stream.get()),
+                    "clearing CUDA sweep component sizes");
+                count_component_sizes_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    current_roots, next_roots, source.size());
+                check_cuda(cudaGetLastError(), "launching CUDA sweep component sizes");
+                std::vector<unsigned long long> component_sizes(source.size());
+                check_cuda(cudaMemcpyAsync(
+                    component_sizes.data(), next_roots,
+                    component_sizes.size() * sizeof(unsigned long long),
+                    cudaMemcpyDeviceToHost, stream.get()),
+                    "copying CUDA sweep component sizes");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA sweep component sizes");
+
+                std::vector<std::int32_t> mapping(source.size(), -1);
+                std::uint32_t candidate_count = 0;
+                for (std::size_t root = 0; root < component_sizes.size(); ++root) {
+                    if (component_sizes[root] <=
+                        static_cast<unsigned long long>(request.minimum_component_size)) {
+                        continue;
+                    }
+                    if (candidate_count >=
+                        static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+                        throw std::overflow_error("component label count exceeds int32 capacity");
+                    }
+                    mapping[root] = static_cast<std::int32_t>(candidate_count++);
+                }
+                auto* device_mapping = reinterpret_cast<std::int32_t*>(next_roots);
+                check_cuda(cudaMemcpyAsync(
+                    device_mapping, mapping.data(), mapping.size() * sizeof(std::int32_t),
+                    cudaMemcpyHostToDevice, stream.get()),
+                    "copying CUDA sweep component mapping");
+                compact_component_labels_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    current_roots, device_mapping,
+                    reinterpret_cast<std::int32_t*>(device_output.get()), source.size());
+                check_cuda(cudaGetLastError(), "launching CUDA sweep component compaction");
+                check_cuda(cudaMemcpyAsync(
+                    candidate_labels.data(),
+                    reinterpret_cast<std::int32_t*>(device_output.get()),
+                    candidate_labels.size() * sizeof(std::int32_t),
+                    cudaMemcpyDeviceToHost, stream.get()),
+                    "copying CUDA sweep candidate labels");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA sweep candidate labels");
+                if (!report(progress, pass_progress(0.75F))) return cancelled();
+
+                const auto final_pass = pass + 1 == threshold_sweep_values.size();
+                const auto invalid_limit =
+                    static_cast<std::uint64_t>(static_cast<int>(request.threshold)) *
+                    static_cast<std::uint64_t>(thickness);
+                std::uint32_t invalid_components = 0;
+                if (!final_pass && candidate_count != 0) {
+                    check_cuda(cudaMemcpyAsync(
+                        reinterpret_cast<std::int32_t*>(device_component_roots_a->get()),
+                        candidate_labels.data(),
+                        candidate_labels.size() * sizeof(std::int32_t),
+                        cudaMemcpyHostToDevice, stream.get()),
+                        "copying CUDA sweep candidates for structure checks");
+                }
+                for (std::uint32_t component = 0; component < candidate_count; ++component) {
+                    const auto component_start = pass_progress(
+                        0.75F + 0.25F * static_cast<float>(component) /
+                            static_cast<float>(std::max(candidate_count, 1U)));
+                    const auto component_end = pass_progress(
+                        0.75F + 0.25F * static_cast<float>(component + 1) /
+                            static_cast<float>(std::max(candidate_count, 1U)));
+                    std::size_t invalid_voxels = 0;
+                    if (!final_pass) {
+                        component_mask_kernel<<<blocks, threads, 0, stream.get()>>>(
+                            reinterpret_cast<std::int32_t*>(device_component_roots_a->get()),
+                            device_scratch->get(), source.size(),
+                            static_cast<std::int32_t>(component));
+                        check_cuda(cudaGetLastError(),
+                            "launching CUDA sweep invalid-structure mask");
+                        auto* closed = run_chunked_morphology(
+                            device_scratch->get(), device_auxiliary->get(), device_output.get(),
+                            thickness / 2, false, component_start, component_end);
+                        if (closed == nullptr) return cancelled();
+                        check_cuda(cudaMemcpyAsync(
+                            host_morphology.data(), closed, input_bytes,
+                            cudaMemcpyDeviceToHost, stream.get()),
+                            "copying CUDA sweep invalid-structure closing");
+                        check_cuda(cudaStreamSynchronize(stream.get()),
+                            "synchronizing CUDA sweep invalid-structure closing");
+                        for (std::size_t index = 0; index < host_morphology.size(); ++index) {
+                            if (host_morphology[index] > 0.0F &&
+                                candidate_labels[index] < 0 && result_labels[index] < 0) {
+                                ++invalid_voxels;
+                            }
+                        }
+                    } else if (!report(progress, component_end)) {
+                        return cancelled();
+                    }
+                    if (!final_pass && invalid_voxels > invalid_limit) {
+                        ++invalid_components;
+                        continue;
+                    }
+                    if (cuda_component_count >=
+                        static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+                        throw std::overflow_error("component label count exceeds int32 capacity");
+                    }
+                    const auto label = static_cast<std::int32_t>(cuda_component_count++);
+                    for (std::size_t index = 0; index < candidate_labels.size(); ++index) {
+                        if (candidate_labels[index] == static_cast<std::int32_t>(component)) {
+                            result_labels[index] = label;
+                        }
+                    }
+                }
+                if (!report(progress, pass_progress(1.0F))) return cancelled();
+                cuda_passes_completed = static_cast<std::uint32_t>(pass + 1);
+                if (invalid_components == 0) break;
+            }
+
+            check_cuda(cudaMemcpyAsync(
+                reinterpret_cast<std::int32_t*>(device_output.get()),
+                result_labels.data(), result_labels.size() * sizeof(std::int32_t),
+                cudaMemcpyHostToDevice, stream.get()),
+                "copying CUDA threshold-sweep final labels");
             break;
         }
         case DSLT_OP_DSLT_THRESHOLD: {
@@ -1946,6 +2454,8 @@ CudaRunResult run_cuda_operation(
             return {CudaRunStatus::unavailable, {}, error.what()};
         }
         return {CudaRunStatus::internal_error, {}, error.what()};
+    } catch (const std::invalid_argument& error) {
+        return {CudaRunStatus::invalid_argument, {}, error.what()};
     } catch (const std::bad_alloc&) {
         return {CudaRunStatus::out_of_memory, {}, "not enough host memory for CUDA output"};
     } catch (const std::overflow_error& error) {

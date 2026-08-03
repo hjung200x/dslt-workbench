@@ -555,6 +555,99 @@ void cuda_pointwise_parity_test() {
     (void)run_float_operation_result(
         handle, automatic_dslt_request, DSLT_BACKEND_CUDA);
 
+    auto threshold_sweep_desc = descriptor(9, 5, 1);
+    std::vector<float> threshold_sweep_source(threshold_sweep_desc.element_count, 1.0F);
+    const auto threshold_sweep_index = [&threshold_sweep_desc](std::size_t x, std::size_t y) {
+        return y * threshold_sweep_desc.width + x;
+    };
+    threshold_sweep_source[threshold_sweep_index(0, 2)] = 0.0F;
+    for (std::size_t y = 1; y <= 3; ++y) {
+        for (std::size_t x = 4; x <= 6; ++x) {
+            if (x != 5 || y != 2) threshold_sweep_source[threshold_sweep_index(x, y)] = 0.0F;
+        }
+    }
+    require(dslt_set_volume_f32(
+        handle, &threshold_sweep_desc,
+        threshold_sweep_source.data(), threshold_sweep_source.size()));
+    dslt_operation_request threshold_sweep_request{};
+    threshold_sweep_request.operation = DSLT_OP_THRESHOLD_SWEEP;
+    threshold_sweep_request.constant_c = 0.4F;
+    threshold_sweep_request.window_min = 0.8F;
+    threshold_sweep_request.window_max = 0.4F;
+    threshold_sweep_request.slice_index = 0;
+    threshold_sweep_request.minimum_component_size = 0;
+    threshold_sweep_request.threshold = 0.0F;
+    threshold_sweep_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_threshold_sweep = run_label_operation_result(
+        handle, threshold_sweep_request, DSLT_BACKEND_CPU);
+    threshold_sweep_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_threshold_sweep = run_label_operation_result(
+        handle, threshold_sweep_request, DSLT_BACKEND_CUDA);
+    assert(cpu_threshold_sweep.values == cuda_threshold_sweep.values);
+    assert(cuda_threshold_sweep.result.component_count == 2);
+    assert(cuda_threshold_sweep.result.reserved == 2);
+    assert(cuda_threshold_sweep.values[threshold_sweep_index(0, 2)] == 0);
+    assert(cuda_threshold_sweep.values[threshold_sweep_index(5, 2)] == -1);
+
+    auto closing_sweep_request = threshold_sweep_request;
+    closing_sweep_request.slice_index = 1;
+    closing_sweep_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_closing_sweep = run_label_operation_result(
+        handle, closing_sweep_request, DSLT_BACKEND_CPU);
+    closing_sweep_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_closing_sweep = run_label_operation_result(
+        handle, closing_sweep_request, DSLT_BACKEND_CUDA);
+    assert(cpu_closing_sweep.values == cuda_closing_sweep.values);
+    assert(cpu_closing_sweep.result.component_count ==
+        cuda_closing_sweep.result.component_count);
+    assert(cpu_closing_sweep.result.reserved == cuda_closing_sweep.result.reserved);
+
+    auto automatic_sweep_request = threshold_sweep_request;
+    automatic_sweep_request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic_threshold_sweep = run_label_operation_result(
+        handle, automatic_sweep_request, DSLT_BACKEND_CUDA);
+    assert(automatic_threshold_sweep.values == cuda_threshold_sweep.values);
+
+    auto crop_sweep_desc = descriptor(9, 5, 3);
+    std::vector<float> crop_sweep_source(crop_sweep_desc.element_count, 1.0F);
+    for (std::size_t z = 0; z < crop_sweep_desc.depth; ++z) {
+        std::copy(
+            threshold_sweep_source.begin(), threshold_sweep_source.end(),
+            crop_sweep_source.begin() + static_cast<std::ptrdiff_t>(
+                z * threshold_sweep_source.size()));
+    }
+    require(dslt_set_volume_f32(
+        handle, &crop_sweep_desc, crop_sweep_source.data(), crop_sweep_source.size()));
+    dslt_crop_options sweep_crop{};
+    sweep_crop.enabled = 1;
+    sweep_crop.upper = 1;
+    sweep_crop.lower = 1;
+    require(dslt_set_crop(handle, &sweep_crop, nullptr, 0));
+    threshold_sweep_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_fixed_crop_sweep = run_label_operation_result(
+        handle, threshold_sweep_request, DSLT_BACKEND_CPU);
+    threshold_sweep_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_fixed_crop_sweep = run_label_operation_result(
+        handle, threshold_sweep_request, DSLT_BACKEND_CUDA);
+    assert(cpu_fixed_crop_sweep.values == cuda_fixed_crop_sweep.values);
+
+    require(dslt_set_volume_f32(
+        handle, &crop_sweep_desc, crop_sweep_source.data(), crop_sweep_source.size()));
+    sweep_crop.use_height_map = 1;
+    sweep_crop.upper = 0;
+    sweep_crop.lower = 0;
+    const std::vector<float> sweep_height_map(
+        static_cast<std::size_t>(crop_sweep_desc.width) * crop_sweep_desc.height, 1.0F);
+    require(dslt_set_crop(
+        handle, &sweep_crop, sweep_height_map.data(), sweep_height_map.size()));
+    threshold_sweep_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_height_crop_sweep = run_label_operation_result(
+        handle, threshold_sweep_request, DSLT_BACKEND_CPU);
+    threshold_sweep_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_height_crop_sweep = run_label_operation_result(
+        handle, threshold_sweep_request, DSLT_BACKEND_CUDA);
+    assert(cpu_height_crop_sweep.values == cuda_height_crop_sweep.values);
+
     auto watershed_desc = descriptor(5, 1, 1);
     const std::vector<float> watershed_source(watershed_desc.element_count, 0.0F);
     const std::vector<std::int32_t> watershed_seeds{10, -1, -1, -1, 20};
@@ -695,6 +788,32 @@ void cuda_pointwise_parity_test() {
     request.lanczos_order = 5;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_RESOURCE_LIMIT);
 
+    require(dslt_set_volume_f32(
+        handle, &threshold_sweep_desc,
+        threshold_sweep_source.data(), threshold_sweep_source.size()));
+    request = threshold_sweep_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.constant_c = 0.9F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = threshold_sweep_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.window_max = 0.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = threshold_sweep_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.slice_index = 65;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = threshold_sweep_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.minimum_component_size = -1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = threshold_sweep_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.threshold = 0.5F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request.threshold = static_cast<float>(std::numeric_limits<int>::max());
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
     request.backend = DSLT_BACKEND_CUDA;
@@ -711,7 +830,7 @@ void cuda_pointwise_parity_test() {
     request = {};
     request.operation = DSLT_OP_EXTRACT_YZ;
     request.backend = DSLT_BACKEND_CUDA;
-    request.slice_index = static_cast<std::int32_t>(dslt_limit_desc.width);
+    request.slice_index = static_cast<std::int32_t>(threshold_sweep_desc.width);
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
@@ -826,6 +945,17 @@ void cuda_pointwise_parity_test() {
         handle, &request, cancel_h_minima, nullptr, &result), DSLT_CANCELLED);
 
     require(dslt_set_volume_f32(
+        handle, &threshold_sweep_desc,
+        threshold_sweep_source.data(), threshold_sweep_source.size()));
+    request = threshold_sweep_request;
+    request.backend = DSLT_BACKEND_CUDA;
+    const auto cancel_threshold_sweep = [](float progress, void*) -> std::int32_t {
+        return progress > 0.25F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_threshold_sweep, nullptr, &result), DSLT_CANCELLED);
+
+    require(dslt_set_volume_f32(
         handle, &dslt_cuda_desc, dslt_cuda_source.data(), dslt_cuda_source.size()));
     request = dslt_threshold_requests[2];
     request.backend = DSLT_BACKEND_CUDA;
@@ -933,11 +1063,14 @@ void cuda_pointwise_parity_test() {
     auto memory_dslt_threshold = dslt_threshold_requests[0];
     memory_dslt_threshold.backend = DSLT_BACKEND_CUDA;
     (void)run_float_operation(handle, memory_dslt_threshold, DSLT_BACKEND_CUDA);
+    auto memory_threshold_sweep = threshold_sweep_request;
+    memory_threshold_sweep.backend = DSLT_BACKEND_CUDA;
+    (void)run_label_operation_result(handle, memory_threshold_sweep, DSLT_BACKEND_CUDA);
 
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        switch (iteration % 8) {
+        switch (iteration % 9) {
         case 0:
             (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
             break;
@@ -964,6 +1097,9 @@ void cuda_pointwise_parity_test() {
             break;
         case 7:
             (void)run_float_operation(handle, memory_dslt_threshold, DSLT_BACKEND_CUDA);
+            break;
+        case 8:
+            (void)run_label_operation_result(handle, memory_threshold_sweep, DSLT_BACKEND_CUDA);
             break;
         default:
             (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);
