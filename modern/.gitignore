@@ -1,0 +1,6 @@
+native/out/
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+

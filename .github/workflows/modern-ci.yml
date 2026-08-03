@@ -1,0 +1,49 @@
+name: DSLT Workbench CI
+
+on:
+  push:
+    branches: [ master, 'codex/**' ]
+    paths:
+      - 'modern/**'
+      - '.github/workflows/modern-ci.yml'
+  pull_request:
+    paths:
+      - 'modern/**'
+      - '.github/workflows/modern-ci.yml'
+
+jobs:
+  managed:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build WPF application
+        run: dotnet build modern/app/Dslt.App/Dslt.App.csproj --configuration Release
+      - name: Run managed contract tests
+        run: dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release
+      - name: Run WPF TIFF smoke test
+        run: dotnet run --project modern/tests/Dslt.App.Tests/Dslt.App.Tests.csproj --configuration Release
+
+  native-cpu:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Configure native core
+        working-directory: modern/native
+        run: cmake --preset windows-cpu
+      - name: Build native core
+        working-directory: modern/native
+        run: cmake --build --preset windows-cpu-release
+      - name: Run native synthetic tests
+        working-directory: modern/native
+        run: ctest --preset windows-cpu
+      - name: Run managed-to-native ABI integration tests
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD\modern\native\out\build\windows-cpu\Release;$env:PATH"
+          dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release

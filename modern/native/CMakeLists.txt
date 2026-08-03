@@ -1,0 +1,41 @@
+cmake_minimum_required(VERSION 3.30)
+project(dslt_workbench_native VERSION 0.1.0 LANGUAGES CXX)
+
+option(DSLT_ENABLE_CUDA "Build the optional CUDA backend" OFF)
+option(DSLT_BUILD_TESTS "Build native tests" ON)
+
+add_library(dslt_core SHARED
+    src/c_api.cpp
+    src/engine.cpp
+    src/operations.cpp
+    src/tiff_io_stub.cpp
+)
+
+target_compile_features(dslt_core PUBLIC cxx_std_20)
+target_include_directories(dslt_core
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_definitions(dslt_core PRIVATE DSLT_CORE_EXPORTS)
+
+if(MSVC)
+    target_compile_options(dslt_core PRIVATE /W4 /permissive- /EHsc /utf-8)
+else()
+    target_compile_options(dslt_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(DSLT_ENABLE_CUDA)
+    enable_language(CUDA)
+    target_sources(dslt_core PRIVATE src/cuda_backend.cu)
+    target_compile_definitions(dslt_core PRIVATE DSLT_HAS_CUDA=1)
+    set_target_properties(dslt_core PROPERTIES CUDA_STANDARD 20)
+else()
+    target_sources(dslt_core PRIVATE src/cuda_backend_stub.cpp)
+endif()
+
+if(DSLT_BUILD_TESTS)
+    enable_testing()
+    add_executable(dslt_native_tests tests/native_tests.cpp)
+    target_compile_features(dslt_native_tests PRIVATE cxx_std_20)
+    target_link_libraries(dslt_native_tests PRIVATE dslt_core)
+    add_test(NAME dslt_native_tests COMMAND dslt_native_tests)
+endif()

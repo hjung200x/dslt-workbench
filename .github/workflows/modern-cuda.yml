@@ -1,0 +1,24 @@
+name: DSLT Workbench CUDA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master, 'codex/**' ]
+    paths:
+      - 'modern/native/**'
+      - '.github/workflows/modern-cuda.yml'
+
+jobs:
+  cuda-parity:
+    runs-on: [self-hosted, Windows, X64, NVIDIA]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure CUDA backend
+        working-directory: modern/native
+        run: cmake --preset windows-cuda
+      - name: Build CUDA backend
+        working-directory: modern/native
+        run: cmake --build --preset windows-cuda-release
+      - name: Run CPU reference and CUDA availability tests
+        working-directory: modern/native
+        run: ctest --preset windows-cuda

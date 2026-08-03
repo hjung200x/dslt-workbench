@@ -1,0 +1,30 @@
+<Application x:Class="Dslt.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#151A22" />
+    <SolidColorBrush x:Key="RaisedBrush" Color="#1C2430" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#58C6B5" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#8B98AA" />
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="Margin" Value="0,0,8,8" />
+      <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+      <Setter Property="Foreground" Value="#08110F" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="Background" Value="#0E131A" />
+      <Setter Property="Foreground" Value="#EEF3F8" />
+      <Setter Property="BorderBrush" Value="#354152" />
+      <Setter Property="Padding" Value="8,5" />
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="Background" Value="#0E131A" />
+      <Setter Property="Foreground" Value="#EEF3F8" />
+      <Setter Property="Padding" Value="8,5" />
+    </Style>
+  </Application.Resources>
+</Application>
+

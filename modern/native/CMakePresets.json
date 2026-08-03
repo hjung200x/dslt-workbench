@@ -1,0 +1,53 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-cpu",
+      "displayName": "Windows x64 CPU",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/out/build/windows-cpu",
+      "architecture": "x64",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "20",
+        "DSLT_ENABLE_CUDA": "OFF",
+        "DSLT_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-cuda",
+      "displayName": "Windows x64 CPU + CUDA",
+      "inherits": "windows-cpu",
+      "binaryDir": "${sourceDir}/out/build/windows-cuda",
+      "cacheVariables": {
+        "DSLT_ENABLE_CUDA": "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "75;86;89;100"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-cpu-release",
+      "configurePreset": "windows-cpu",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-cuda-release",
+      "configurePreset": "windows-cuda",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-cpu",
+      "configurePreset": "windows-cpu",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-cuda",
+      "configurePreset": "windows-cuda",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

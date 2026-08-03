@@ -1,0 +1,121 @@
+using System.Runtime.InteropServices;
+using Dslt.Managed.Core.Interop;
+using Dslt.Managed.Core.Models;
+using Dslt.Managed.Core.Services;
+using Dslt.Managed.Core.Synthetic;
+using Dslt.Managed.Core.Provenance;
+using Dslt.Managed.Core.Segmentation;
+
+static void Equal<T>(T expected, T actual, string message) where T : IEquatable<T>
+{
+    if (!expected.Equals(actual))
+        throw new InvalidOperationException($"{message}: expected {expected}, actual {actual}");
+}
+
+Equal(32, Marshal.SizeOf<NativeCalibration>(), "NativeCalibration ABI size");
+Equal(64, Marshal.SizeOf<NativeVolumeDescriptor>(), "NativeVolumeDescriptor ABI size");
+Equal(48, Marshal.SizeOf<NativeOperationRequest>(), "NativeOperationRequest ABI size");
+Equal(40, Marshal.SizeOf<NativeOperationResult>(), "NativeOperationResult ABI size");
+Equal(144, Marshal.SizeOf<NativeBackendInfo>(), "NativeBackendInfo ABI size");
+
+var sphere = SyntheticVolumes.Sphere(width: 32, height: 24, depth: 16, radius: 7, channels: 2);
+sphere.Validate();
+Equal(32 * 24 * 16 * 2, sphere.Samples.Length, "Multichannel fixture size");
+Equal(2.0, sphere.Calibration.SpacingZ, "Anisotropic Z calibration");
+
+var touching = SyntheticVolumes.TouchingObjects();
+touching.Validate();
+Equal(3, touching.Samples.Count(value => value > 0.5f), "Touching-object foreground count");
+
+var impulse = SyntheticVolumes.Impulse();
+Equal(1, impulse.Samples.Count(value => value == 1), "Impulse foreground count");
+var ramp = SyntheticVolumes.Ramp();
+Equal(0f, ramp.Samples[0], "Ramp origin");
+Equal(1f, ramp.Samples[^1], "Ramp endpoint");
+var shell = SyntheticVolumes.Shell();
+if (shell.Samples.Count(value => value > 0.5f) <= 0) throw new InvalidOperationException("Shell fixture is empty.");
+var noiseA = SyntheticVolumes.Noise(seed: 42);
+var noiseB = SyntheticVolumes.Noise(seed: 42);
+if (!noiseA.Samples.SequenceEqual(noiseB.Samples)) throw new InvalidOperationException("Noise fixture is not deterministic.");
+var composite = SyntheticVolumes.MultiChannelComposite();
+composite.Validate();
+Equal(3, composite.Channels, "Composite channel count");
+
+using var engine = ProcessingEngineFactory.Create();
+if (!engine.IsAvailable && !engine.Status.Contains("Native core unavailable", StringComparison.Ordinal))
+    throw new InvalidOperationException("Unavailable native core did not provide an actionable status.");
+
+Console.WriteLine("DSLT managed contract and synthetic fixture tests passed.");
+Console.WriteLine(engine.Status);
+
+if (engine.IsAvailable)
+{
+    var nativeImpulse = SyntheticVolumes.Impulse(5, 5, 3);
+    var thresholdResult = await engine.RunAsync(
+        nativeImpulse,
+        new OperationParameters(ProcessingOperation.Threshold3D, ProcessingBackend.Cpu, Threshold: 0.5f),
+        null,
+        CancellationToken.None);
+    Equal(1, thresholdResult.FloatData!.Count(value => value == 1), "Native ABI threshold output");
+
+    var componentResult = await engine.RunAsync(
+        touching,
+        new OperationParameters(
+            ProcessingOperation.ConnectedComponents,
+            ProcessingBackend.Cpu,
+            Connectivity: 6,
+            MinimumComponentSize: 1,
+            Threshold: 0.5f),
+        null,
+        CancellationToken.None);
+    Equal(2, componentResult.ComponentCount, "Native ABI component count");
+    Console.WriteLine("DSLT native ABI integration tests passed.");
+}
+
+var temporaryBase = Path.Combine(Path.GetTempPath(), $"dslt-test-{Guid.NewGuid():N}");
+var syntheticResult = new ProcessingResult(
+    ProcessingBackend.Cpu,
+    OutputKind.VolumeFloat32,
+    sphere.Width,
+    sphere.Height,
+    sphere.Depth,
+    0,
+    sphere.Samples[..sphere.VoxelCount],
+    null);
+var operation = new OperationParameters(ProcessingOperation.Copy, ProcessingBackend.Cpu);
+await ResultPackageWriter.WriteAsync(temporaryBase, sphere, operation, syntheticResult);
+var rawPath = temporaryBase + ".f32.raw";
+var jsonPath = temporaryBase + ".json";
+if (!File.Exists(rawPath) || !File.Exists(jsonPath))
+    throw new InvalidOperationException("Result package files were not created.");
+var json = await File.ReadAllTextAsync(jsonPath);
+if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
+    throw new InvalidOperationException("Provenance validation level is missing.");
+File.Delete(rawPath);
+File.Delete(jsonPath);
+Console.WriteLine("DSLT provenance export test passed.");
+
+var disconnected = Enumerable.Repeat(LabelEditingSession.Background, 5 * 3).ToArray();
+disconnected[0] = 4;
+disconnected[1] = 4;
+disconnected[^1] = 4;
+var editing = new LabelEditingSession(5, 3, 1, disconnected);
+editing.Select([4]);
+Equal(1, editing.SplitSelected(), "Disconnected label split count");
+Equal(2, editing.Selection.Count, "Split selection count");
+var cropped = editing.CropToSelection();
+Equal(5, cropped.Width, "Selected crop width");
+editing.MergeSelected();
+Equal(1, editing.Labels.Span.ToArray().Where(label => label >= 0).Distinct().Count(), "Merged label count");
+if (!editing.Undo()) throw new InvalidOperationException("Label edit undo was not recorded.");
+Equal(2, editing.Labels.Span.ToArray().Where(label => label >= 0).Distinct().Count(), "Undo label count");
+
+var center = Enumerable.Repeat(LabelEditingSession.Background, 27).ToArray();
+center[13] = 2;
+var morphology = new LabelEditingSession(3, 3, 3, center);
+morphology.Select([2]);
+morphology.DilateSelected();
+Equal(7, morphology.Labels.Span.Count(2), "6-connected label dilation");
+morphology.ErodeSelected();
+Equal(1, morphology.Labels.Span.Count(2), "6-connected label erosion");
+Console.WriteLine("DSLT label editing tests passed.");

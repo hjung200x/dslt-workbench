@@ -1,0 +1,61 @@
+# Functional specification and traceability
+
+This document separates confirmed legacy behavior from the Workbench preview
+contract. Legacy evidence comes from `WpfApplication/MainWindow.xaml`,
+`WpfApplication/MainWindow.xaml.cs`, `3DFilter_CLR_Interface/3DFilter_CLR_Interface.h`,
+`3DFilter/filter3d.h`, and `MultiTiffIO/multi_tiff.cpp` at the pinned baseline.
+
+## Input and navigation
+
+| Capability | Legacy evidence | Confirmed default/range | Workbench preview contract |
+|---|---|---|---|
+| Multi-page TIFF | `set3DImage_MultiTIFF`; `MultiTiffIO::GetImageData` | Channel defaults to 0 | Frames must have equal X/Y size; failed load preserves the active volume |
+| ImageJ/LSM metadata | `TiffDecoder` metadata and calibration members | Not fully established | Pending real metadata fixtures; no equivalence claim |
+| Channel selection | `ch_slider`; `setChannel` | 0 through channel count - 1 | `SelectedChannel` must be within `[0, Channels)` |
+| Z interpolation | `SC_AREA_AVE`, `SC_LANCZOS2`, `SC_LANCZOS3` | Area average selected in the legacy UI | Area average or Lanczos order 2/3; target spacing must be positive |
+| Orthogonal planes | `getImageDataArrayXY/YZ/ZX` | Coordinates start at 0 | Out-of-range plane indices return an invalid-argument error |
+| Brightness/contrast | `BC_min_slider`, `BC_max_slider` | Min 0, max 1 | Window maximum must be greater than minimum |
+
+## Processing and segmentation
+
+| Capability | Legacy parameter evidence | Legacy UI default | Workbench validation |
+|---|---|---:|---|
+| Global binary threshold | `thresholding(float th)` | Tool-specific | Float threshold; output is 0 or 1 |
+| Adaptive 2D/3D threshold | block size, constant C, threshold type | Varies by tool | Pending legacy boundary capture |
+| Mean/Gaussian smoothing | filter type, block/radius | Mean is selected in relevant panel | Radius 0-64 in native core |
+| Cube/sphere morphology | radius, filter shape | Radius 1 in segment edit panels | Radius 0-64 in native core |
+| Flood fill/components | threshold, 6/18/26 connectivity, minimum size | Threshold 0.1, connectivity 6, minimum size 0 | Connectivity is exactly 6, 18, or 26; preview minimum size is at least 1 |
+| Height map | XY/Z block, threshold, threshold type, smooth level | Z block 4, threshold 0.25, smooth level 1 | Simplified first-hit height map is synthetic-validated; full legacy parameterization is pending |
+| Depth map/projection | height map, offset, range, depth-code settings | Depth code off | Simplified calibrated Z depth is synthetic-validated; projection parity is pending |
+| H-minima | h, check interval | h 0.1, interval 50 (hidden) | Not exposed until legacy result capture |
+| DSLT/Sobel-like | block, angle/level, Z factor, C sweep, kernel | block 14, level 2, Z factor 0.2 | Not exposed until directional-kernel parity fixtures exist |
+| Threshold sweep | min, max, interval, minimum volumes, closing | interval 0.02, closing 2 | ABI ID reserved; returns `not implemented` |
+| Watershed | stride, minimum segment volume | stride 0.001 (hidden) | Not exposed until seed and tie-breaking behavior is captured |
+
+Several legacy XAML controls contain defaults outside their declared slider
+ranges (for example a maximum of 1 with a value of 20). Those values are
+recorded as source facts, not copied as valid Workbench defaults. A legacy runtime
+capture is required to determine whether WPF coercion or code-behind supplied
+the effective value.
+
+## Segment editing and persistence
+
+The Workbench label model uses signed 32-bit values with `-1` as background.
+`LabelEditingSession` provides label selection, deterministic merge, 6/18/26
+connected-component split, crop, dilation, erosion, and bounded undo. Legacy
+signed-16-bit TIFF persistence and extended signed-32-bit TIFF persistence are
+still gated on bit-exact TIFF fixtures. The preview result package therefore
+uses an explicit `.i32.raw` payload plus JSON provenance and does not masquerade
+as a compatibility TIFF.
+
+## Common error and state rules
+
+- Shape multiplication is checked before managed allocation; native dimensions
+  are checked before copying.
+- Loading or processing failure does not replace the last valid source/result.
+- Native exceptions never cross the C ABI; callers receive a status and UTF-8
+  error text.
+- Progress callbacks can cancel long CPU operations. Cancellation returns the
+  dedicated cancelled status.
+- Explicit CUDA requests fail when CUDA is unavailable. `Auto` currently uses
+  the CPU reference path until individual CUDA operations pass parity tests.
