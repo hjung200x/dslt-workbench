@@ -37,3 +37,15 @@ Window/level must satisfy absolute error `<= 1e-5`. One hundred repeated
 threshold invocations must leave reported free device memory within a 64 MiB
 runner-noise allowance. The broader project tolerance remains absolute
 `<= 1e-5` or relative `<= 1e-4` for future floating-point kernels.
+
+The CUDA CMake configuration defines `DSLT_TEST_REQUIRE_CUDA` for the native
+contract test. A CUDA build therefore fails if the library was compiled without
+CUDA support or if CUDA runtime initialization cannot see a device; it cannot
+pass by exercising the normal unavailable-backend contract.
+
+The self-hosted runner must carry `self-hosted`, `Windows`, `X64`, and `NVIDIA`
+labels and provide an NVIDIA GPU/driver, CUDA Toolkit 13.2, Visual Studio 2022
+C++ tools, CMake 3.30 or newer, and .NET 10. Its workflow records the GPU,
+driver, toolchain, and source commit in the run summary. Only after parity and
+memory-lifetime tests succeed does it build, verify, and upload a self-contained
+CUDA preview ZIP with its SHA-256 checksum.

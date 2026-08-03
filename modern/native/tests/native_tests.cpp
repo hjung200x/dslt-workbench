@@ -69,6 +69,15 @@ int main() {
     dslt_backend_info backend{};
     require(dslt_get_backend_info(handle, &backend));
     assert(backend.cpu_available == 1);
+    std::cout << "CUDA backend: compiled=" << backend.cuda_compiled
+              << " available=" << backend.cuda_available
+              << " free_device_bytes=" << backend.device_memory_bytes << '\n';
+#ifdef DSLT_TEST_REQUIRE_CUDA
+    if (backend.cuda_compiled == 0 || backend.cuda_available == 0) {
+        std::cerr << "CUDA-enabled test build requires an initialized NVIDIA backend\n";
+        std::abort();
+    }
+#endif
 
     auto desc = descriptor(5, 5, 3);
     std::vector<float> impulse(desc.element_count, 0.0F);
