@@ -15,14 +15,16 @@ the compatibility behavior where it is unambiguous. Any behavior marked
 `capture-required` must be measured with the legacy executable before
 Workbench may claim legacy equivalence.
 
-Implementation status: **scalar CPU threshold basis and reusable segmentation
-primitives implemented; iterative segmentation pending**. The operation covers
+Implementation status: **scalar CPU threshold basis and iterative C sweep
+implemented; crop integration and legacy-runtime comparison pending**. The operation covers
 ordered directions, every-radius response, trilinear clamp sampling,
 direction-dependent C, and strict binarization. The response and C application
-are separate internal operations so one response can be reused throughout the
-future C sweep. Buffer-based spherical closing and low-valued 6-connected
-component extraction are also implemented. Crop and invalid-structure
-validation, append-only labeling, and C-sweep control remain in Stage 7.
+are separate internal operations so one response is reused throughout the C
+sweep. Buffer-based spherical closing, low-valued 6-connected component
+extraction, wall-thickness estimation, invalid-structure rejection,
+append-only labeling, final-pass acceptance, and early termination are wired
+to `DSLT_OP_DSLT_SEGMENTATION`. The operation currently runs without a crop
+configuration; crop state remains the last Stage 7 core contract.
 
 ## Terminology and coordinates
 
@@ -237,7 +239,9 @@ The native `dslt_algorithm_tests` target currently fixes the 21/81/321
 direction counts and antipodal uniqueness, mean/Gaussian formulae for radii
 1/2/14, oblique and clamp-to-edge interpolation, constant-response tie order,
 strict threshold boundary, spherical closing, and the legacy-exclusive
-low-component size rule. Ramp response oracles, staged sweep defects, work
+low-component size rule. It also uses a staged defect fixture to verify
+append-only labels, invalid-component deferral, final-pass acceptance, exact C
+pass count, and cancellation. Ramp response oracles, crop fixtures, work
 limits, and archived-binary comparisons are still outstanding.
 
 Until the same fixtures can be run through an archived legacy binary, the
@@ -261,3 +265,25 @@ The .NET `OperationParameters` adapter exposes these as `Radius`,
 `DirectionLevel`, `DsltKernel`, `ConstantC`, and `ZCorrectionFactor`; callers do
 not need to know the C-field reuse. The planned UI-facing positive threshold
 offset adapter is not exposed yet.
+
+For `DSLT_OP_DSLT_SEGMENTATION`, the same ABI-stable request is interpreted as:
+
+| C ABI field | Iterative DSLT meaning |
+|---|---|
+| `radius` | Maximum line radius |
+| `lanczos_order` | Geodesic direction level |
+| `connectivity` | Kernel type: 0 Gaussian, 1 mean |
+| `minimum_component_size` | Exclusive minimum low-component size |
+| `slice_index` | Spherical closing radius |
+| `threshold` | Minimum invalid-structure area; must be a non-negative integer |
+| `constant_c` | Minimum core `Cxy` |
+| `window_min` | Maximum core `Cxy` |
+| `window_max` | Positive C interval |
+| `target_spacing_z` | Z correction factor |
+
+The native result's reserved word records completed sweep passes and is exposed
+as `.NET ProcessingResult.CompletedPasses`. This adds no fields and preserves
+the ABI v1 structure sizes. The .NET adapter exposes semantic properties
+`MinimumC`, `MaximumC`, `CInterval`, `ClosingRadius`, and
+`MinimumInvalidStructureArea` so application code does not depend on field
+reuse.

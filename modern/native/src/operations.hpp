@@ -21,6 +21,20 @@ struct DsltResponse final {
 struct ComponentLabels final {
     std::vector<std::int32_t> labels;
     std::uint32_t component_count;
+    std::uint32_t passes_completed{};
+};
+
+struct DsltSegmentationParameters final {
+    int radius;
+    int direction_level;
+    int kernel_type;
+    float minimum_c;
+    float maximum_c;
+    float c_interval;
+    float z_correction_factor;
+    int closing_radius;
+    int minimum_component_size;
+    int minimum_invalid_structure_area;
 };
 
 std::vector<float> selected_channel(const Volume& volume);
@@ -66,6 +80,17 @@ ComponentLabels connected_components_low_6(
     const dslt_volume_descriptor& descriptor,
     float maximum_value,
     int minimum_size_exclusive,
+    std::span<const std::int32_t> excluded_labels,
+    const Engine::Progress& progress);
+ComponentLabels dslt_segmentation(
+    const Volume& volume,
+    const DsltSegmentationParameters& parameters,
+    const Engine::Progress& progress);
+ComponentLabels dslt_segmentation_from_response(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    const DsltResponse& response,
+    const DsltSegmentationParameters& parameters,
     const Engine::Progress& progress);
 std::vector<std::int32_t> connected_components(
     const Volume& volume,

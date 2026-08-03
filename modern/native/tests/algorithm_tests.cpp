@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -108,10 +110,53 @@ void closing_and_component_fixture() {
 
     const auto component_desc = descriptor(5, 1, 1);
     const std::vector<float> mask{0.0F, 0.0F, 0.8F, 0.0F, 0.8F};
-    const auto components = dslt::ops::connected_components_low_6(mask, component_desc, 0.1F, 1, {});
+    const auto components = dslt::ops::connected_components_low_6(mask, component_desc, 0.1F, 1, {}, {});
     assert(components.component_count == 1);
     assert(components.labels[0] == 0 && components.labels[1] == 0);
     assert(components.labels[3] == -1);
+}
+
+void iterative_sweep_fixture() {
+    const auto desc = descriptor(9, 5, 1);
+    std::vector<float> source(desc.element_count, 0.0F);
+    dslt::ops::DsltResponse response{
+        std::vector<float>(source.size(), -1.0F),
+        std::vector<float>(source.size(), 0.0F),
+    };
+    const auto index = [&desc](std::size_t x, std::size_t y) { return y * desc.width + x; };
+    response.minimum[index(0, 2)] = 1.0F;
+    for (std::size_t y = 1; y <= 3; ++y) {
+        for (std::size_t x = 4; x <= 6; ++x) {
+            if (x != 5 || y != 2) response.minimum[index(x, y)] = 1.0F;
+        }
+    }
+
+    const dslt::ops::DsltSegmentationParameters parameters{
+        1, 1, 1,
+        0.0F, 0.1F, 0.1F, 0.2F,
+        0, 0, 0,
+    };
+    const auto segmented = dslt::ops::dslt_segmentation_from_response(
+        source, desc, response, parameters, {});
+    assert(segmented.passes_completed == 2);
+    assert(segmented.component_count == 2);
+    assert(segmented.labels[index(0, 2)] == 0);
+    for (std::size_t y = 1; y <= 3; ++y) {
+        for (std::size_t x = 4; x <= 6; ++x) {
+            if (x == 5 && y == 2) assert(segmented.labels[index(x, y)] == -1);
+            else assert(segmented.labels[index(x, y)] == 1);
+        }
+    }
+
+    bool cancelled = false;
+    try {
+        static_cast<void>(dslt::ops::dslt_segmentation_from_response(
+            source, desc, response, parameters,
+            [](float progress) { return progress < 0.5F; }));
+    } catch (const std::runtime_error& error) {
+        cancelled = std::string_view(error.what()) == "cancelled";
+    }
+    assert(cancelled);
 }
 
 } // namespace
@@ -122,5 +167,6 @@ int main() {
     interpolation_fixture();
     response_and_boundary_fixture();
     closing_and_component_fixture();
+    iterative_sweep_fixture();
     return 0;
 }

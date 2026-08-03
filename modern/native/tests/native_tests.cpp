@@ -150,6 +150,30 @@ int main() {
     request.lanczos_order = 0;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
+    request = {};
+    request.operation = DSLT_OP_DSLT_SEGMENTATION;
+    request.backend = DSLT_BACKEND_CPU;
+    request.radius = 1;
+    request.lanczos_order = 1;
+    request.connectivity = 1;
+    request.minimum_component_size = 0;
+    request.slice_index = 0;
+    request.threshold = 0.0F;
+    request.constant_c = 0.0F;
+    request.window_min = 0.0F;
+    request.window_max = 0.1F;
+    request.target_spacing_z = 0.2F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.output_kind == DSLT_OUTPUT_LABELS_INT32);
+    assert(result.component_count == 1);
+    assert(result.reserved == 1);
+    labels.assign(result.element_count, -1);
+    require(dslt_copy_labels_i32(handle, labels.data(), labels.size()));
+    assert(std::all_of(labels.begin(), labels.end(), [](std::int32_t label) { return label == 0; }));
+
+    request.window_max = 0.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
     dslt_destroy(handle);
     lifecycle_stress_test();
     std::cout << "DSLT native synthetic tests passed\n";

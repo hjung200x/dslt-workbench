@@ -86,7 +86,8 @@ public sealed class NativeProcessingEngine : IProcessingEngine
             checked((int)result.Depth),
             checked((int)result.ComponentCount),
             floats,
-            labels);
+            labels,
+            checked((int)result.Reserved));
     }
 
     private void ThrowIfFailed(NativeStatus status)
@@ -132,21 +133,26 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         },
     };
 
-    private static NativeOperationRequest MapRequest(OperationParameters value) => new()
+    private static NativeOperationRequest MapRequest(OperationParameters value)
     {
-        Operation = (int)value.Operation,
-        Backend = (int)value.Backend,
-        Radius = value.Radius,
-        Connectivity = value.Operation == ProcessingOperation.DsltThreshold ? (int)value.DsltKernel : value.Connectivity,
-        MinimumComponentSize = value.MinimumComponentSize,
-        SliceIndex = value.SliceIndex,
-        LanczosOrder = value.Operation == ProcessingOperation.DsltThreshold ? value.DirectionLevel : value.LanczosOrder,
-        Threshold = value.Threshold,
-        ConstantC = value.ConstantC,
-        WindowMinimum = value.WindowMinimum,
-        WindowMaximum = value.WindowMaximum,
-        TargetSpacingZ = value.Operation == ProcessingOperation.DsltThreshold ? value.ZCorrectionFactor : value.TargetSpacingZ,
-    };
+        var isDslt = value.Operation is ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation;
+        var isSegmentation = value.Operation == ProcessingOperation.DsltSegmentation;
+        return new NativeOperationRequest
+        {
+            Operation = (int)value.Operation,
+            Backend = (int)value.Backend,
+            Radius = value.Radius,
+            Connectivity = isDslt ? (int)value.DsltKernel : value.Connectivity,
+            MinimumComponentSize = value.MinimumComponentSize,
+            SliceIndex = isSegmentation ? value.ClosingRadius : value.SliceIndex,
+            LanczosOrder = isDslt ? value.DirectionLevel : value.LanczosOrder,
+            Threshold = isSegmentation ? value.MinimumInvalidStructureArea : value.Threshold,
+            ConstantC = isSegmentation ? value.MinimumC : value.ConstantC,
+            WindowMinimum = isSegmentation ? value.MaximumC : value.WindowMinimum,
+            WindowMaximum = isSegmentation ? value.CInterval : value.WindowMaximum,
+            TargetSpacingZ = isDslt ? value.ZCorrectionFactor : value.TargetSpacingZ,
+        };
+    }
 
     private static unsafe BackendInformation MapBackend(NativeBackendInfo value) => new(
         value.CpuAvailable != 0,
