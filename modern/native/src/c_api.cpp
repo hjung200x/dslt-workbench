@@ -110,6 +110,37 @@ dslt_status DSLT_CALL dslt_set_crop(
     }
 }
 
+dslt_status DSLT_CALL dslt_set_label_state_i32(
+    dslt_handle handle,
+    const int32_t* labels,
+    uint64_t label_element_count,
+    const int32_t* selected_labels,
+    uint64_t selected_label_count) {
+    auto* instance = engine(handle);
+    if (instance == nullptr || labels == nullptr ||
+        (selected_labels == nullptr && selected_label_count != 0)) return DSLT_INVALID_ARGUMENT;
+    if (label_element_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()) ||
+        selected_label_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return fail(instance, DSLT_INVALID_ARGUMENT, "label state count exceeds addressable memory");
+    }
+    try {
+        const auto selection = selected_labels == nullptr
+            ? std::span<const std::int32_t>{}
+            : std::span<const std::int32_t>(selected_labels, static_cast<std::size_t>(selected_label_count));
+        instance->set_label_state(
+            std::span<const std::int32_t>(labels, static_cast<std::size_t>(label_element_count)),
+            selection);
+        return DSLT_OK;
+    } catch (const std::bad_alloc&) {
+        return fail(instance, DSLT_OUT_OF_MEMORY, "not enough memory to configure label state");
+    } catch (const std::exception& error) {
+        instance->set_error(error.what());
+        return DSLT_INVALID_ARGUMENT;
+    } catch (...) {
+        return fail(instance, DSLT_INTERNAL_ERROR, "unexpected native error while configuring label state");
+    }
+}
+
 dslt_status DSLT_CALL dslt_estimate_operation(
     dslt_handle handle,
     const dslt_operation_request* request,

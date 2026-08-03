@@ -199,6 +199,18 @@ public sealed class LabelEditingSession
         return true;
     }
 
+    public void ReplaceLabels(ReadOnlySpan<int> labels)
+    {
+        if (labels.Length != _labels.Length)
+            throw new ArgumentException("Replacement labels must preserve the current dimensions.", nameof(labels));
+        foreach (var label in labels)
+            if (label < Background)
+                throw new ArgumentException("Labels must be -1 or non-negative.", nameof(labels));
+        SaveUndo();
+        _labels = labels.ToArray();
+        _selection.RemoveWhere(label => !_labels.Contains(label));
+    }
+
     private void SaveUndo()
     {
         _undo.Push(new Snapshot(Width, Height, Depth, (int[])_labels.Clone(), [.. _selection]));

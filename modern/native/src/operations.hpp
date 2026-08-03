@@ -149,6 +149,13 @@ ComponentLabels threshold_sweep(
     const Volume& volume,
     const ThresholdSweepParameters& parameters,
     const Engine::Progress& progress);
+ComponentLabels watershed(
+    const Volume& volume,
+    std::span<const std::int32_t> seed_labels,
+    std::span<const std::int32_t> selected_labels,
+    int minimum_seed_size,
+    const CropParameters& crop,
+    const Engine::Progress& progress);
 std::vector<std::int32_t> connected_components(
     const Volume& volume,
     float threshold,

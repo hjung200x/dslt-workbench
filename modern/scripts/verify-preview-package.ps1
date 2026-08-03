@@ -74,6 +74,7 @@ try {
         'docs\tiff-io-spec.md',
         'docs\ui-workflow.md',
         'docs\validation-policy.md',
+        'docs\watershed-spec.md',
         'BUILD-INFO.json'
     )
     foreach ($relativePath in $requiredFiles) {

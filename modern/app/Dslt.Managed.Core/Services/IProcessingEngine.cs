@@ -17,5 +17,6 @@ public interface IProcessingEngine : IDisposable
         VolumeData volume,
         OperationParameters parameters,
         IProgress<double>? progress,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        ProcessingLabelState? labelState = null);
 }

@@ -209,6 +209,13 @@
               <TextBox Text="{Binding HMinimaCheckInterval, UpdateSourceTrigger=PropertyChanged}" />
             </StackPanel>
 
+            <StackPanel Visibility="{Binding IsWatershed, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <Separator Margin="0,16,0,12" Background="#354152" />
+              <TextBlock Text="WATERSHED" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <TextBlock Text="Uses the current selected labels as seeds. Flooding is fixed to 256 normalized intensity levels and 6-neighbor legacy priority." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+              <TextBlock Text="Select one or more labels in the Edit stage before running." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+            </StackPanel>
+
             <StackPanel Visibility="{Binding IsThresholdSweep, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="THRESHOLD SWEEP" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
@@ -266,7 +273,7 @@
 
             <TextBlock Text="Connectivity" Margin="0,14,0,5" />
             <ComboBox ItemsSource="{Binding Connectivities}" SelectedItem="{Binding Connectivity}" />
-            <TextBlock Text="Exclusive minimum component size" Margin="0,10,0,5" />
+            <TextBlock Text="{Binding MinimumComponentSizeLabel}" Margin="0,10,0,5" />
             <TextBox Text="{Binding MinimumComponentSize, UpdateSourceTrigger=PropertyChanged}" />
 
             <StackPanel Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">

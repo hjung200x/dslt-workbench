@@ -56,6 +56,9 @@ public:
 
     void set_volume(const dslt_volume_descriptor& descriptor, std::span<const float> samples);
     void set_crop(const dslt_crop_options& options, std::span<const float> height_map);
+    void set_label_state(
+        std::span<const std::int32_t> labels,
+        std::span<const std::int32_t> selected_labels);
     [[nodiscard]] const Volume& volume() const noexcept { return source_; }
     [[nodiscard]] const std::vector<float>& output() const noexcept { return output_; }
     [[nodiscard]] const std::vector<std::int32_t>& labels() const noexcept { return labels_; }

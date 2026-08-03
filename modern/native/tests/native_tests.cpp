@@ -103,6 +103,32 @@ int main() {
     assert(labels[0] == labels[1]);
     assert(labels[0] != labels.back());
 
+    auto watershed_desc = descriptor(5, 1, 1);
+    const std::vector<float> watershed_source(5, 0.0F);
+    const std::vector<std::int32_t> watershed_seeds{10, -1, -1, -1, 20};
+    const std::vector<std::int32_t> watershed_selected{10, 20};
+    require(dslt_set_volume_f32(
+        handle, &watershed_desc, watershed_source.data(), watershed_source.size()));
+    require(dslt_set_label_state_i32(
+        handle, watershed_seeds.data(), watershed_seeds.size() - 1,
+        watershed_selected.data(), watershed_selected.size()), DSLT_INVALID_ARGUMENT);
+    require(dslt_set_label_state_i32(
+        handle, watershed_seeds.data(), watershed_seeds.size(),
+        watershed_selected.data(), watershed_selected.size()));
+    request = {};
+    request.operation = DSLT_OP_WATERSHED;
+    request.backend = DSLT_BACKEND_CPU;
+    request.minimum_component_size = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.output_kind == DSLT_OUTPUT_LABELS_INT32);
+    assert(result.component_count == 2);
+    assert(result.reserved == 256);
+    labels.assign(result.element_count, -1);
+    require(dslt_copy_labels_i32(handle, labels.data(), labels.size()));
+    assert((labels == std::vector<std::int32_t>{10, 10, 10, 20, 20}));
+
+    require(dslt_set_volume_f32(handle, &desc, objects.data(), objects.size()));
+
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
     request.backend = DSLT_BACKEND_CPU;

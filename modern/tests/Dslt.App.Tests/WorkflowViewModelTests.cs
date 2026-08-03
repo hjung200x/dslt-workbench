@@ -95,6 +95,25 @@ internal static class WorkflowViewModelTests
         Assert(target.SelectedStage == WorkflowStage.Edit,
             "Threshold sweep labels did not advance the workflow to editing.");
 
+        target.SelectAtCursorCommand.Execute(null);
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.Watershed);
+        Assert(target.IsWatershed && target.RunCommand.CanExecute(null),
+            "Watershed was not enabled for the selected label seed.");
+        await target.RunCommand.ExecuteAsync();
+        Assert(engine.LastLabelState is { SelectedLabels.Length: 1 } &&
+               engine.LastLabelState.SelectedLabels[0] == 0,
+            "Watershed did not pass the selected label seed to the processing engine.");
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.Watershed,
+                SeedLabelsSha256: not null,
+                SelectedSeedLabels.Length: 1,
+            }, "Watershed seed provenance was not captured.");
+        target.UndoEditCommand.Execute(null);
+        Assert(target.HasSelection,
+            "Watershed undo did not preserve the selected seed state.");
+
         target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.DsltSegmentation);
 
@@ -328,6 +347,7 @@ internal static class WorkflowViewModelTests
         public BackendInformation Backend { get; } = new(true, false, false, 0, string.Empty);
         public int EstimateCallCount { get; private set; }
         public FakeRunBehavior RunBehavior { get; set; }
+        public ProcessingLabelState? LastLabelState { get; private set; }
         public TaskCompletionSource RunStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -354,9 +374,11 @@ internal static class WorkflowViewModelTests
             VolumeData volume,
             OperationParameters parameters,
             IProgress<double>? progress,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ProcessingLabelState? labelState = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            LastLabelState = labelState;
             if (RunBehavior == FakeRunBehavior.WaitForCancellation)
             {
                 RunStarted.TrySetResult();

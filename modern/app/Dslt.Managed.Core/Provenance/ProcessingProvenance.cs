@@ -48,7 +48,7 @@ public sealed record ProcessingProvenance(
             : input.Source.ChannelPlanarRawSamples;
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         return new ProcessingProvenance(
-            "1.5",
+            "1.6",
             "synthetic-data-validated",
             DateTimeOffset.UtcNow,
             hash,

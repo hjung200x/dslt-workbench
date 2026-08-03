@@ -39,9 +39,12 @@ equivalence; that remains gated by representative datasets.
 - Treat crop dimensions, source-coordinate origin, labels, and selection as one
   undoable transaction. Shared source/result coordinates remain meaningful
   after crop.
+- Run Watershed only when one or more full-volume labels are selected. The
+  current labels are passed as seeds, the result is installed as an undoable
+  label edit, and cancellation or failure preserves the seed result.
 - Store successful label-edit actions and structured output origin fields in
-  provenance schema 1.5 so an exported result distinguishes processing output
-  from subsequent manual edits.
+  provenance schema 1.6 so an exported result distinguishes processing output
+  from subsequent manual edits and records Watershed seed hash/selection.
 
 ## Automated state checks
 
@@ -63,6 +66,8 @@ equivalence; that remains gated by representative datasets.
     sized WPF viewports without feedback recursion.
 11. crop and undo restore dimensions, source-coordinate origin, and labels
     bit-exactly, and exported provenance retains the cropped output origin.
+12. Watershed is enabled only with a selected full-volume seed, passes seed
+    state to the engine, records seed provenance, and remains undoable.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.

@@ -95,13 +95,14 @@ public sealed class MainWindowViewModel : ObservableObject
             new("Threshold sweep segmentation", ProcessingOperation.ThresholdSweep, WorkflowStage.Segment),
             new("DSLT threshold preview", ProcessingOperation.DsltThreshold, WorkflowStage.Segment),
             new("DSLT iterative segmentation", ProcessingOperation.DsltSegmentation, WorkflowStage.Segment),
+            new("Watershed from selected labels", ProcessingOperation.Watershed, WorkflowStage.Segment),
         ];
         _selectedOperation = Operations[1];
         GenerateSyntheticCommand = new RelayCommand(GenerateSynthetic, () => !IsBusy);
         OpenCommand = new AsyncRelayCommand(OpenAsync, () => !IsBusy);
         EstimateCommand = new AsyncRelayCommand(EstimateSelectedOperationAsync, CanEstimate);
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasResult && !IsBusy);
-        RunCommand = new AsyncRelayCommand(RunSelectedOperationAsync, () => HasVolume && _engine.IsAvailable && !IsBusy);
+        RunCommand = new AsyncRelayCommand(RunSelectedOperationAsync, CanRun);
         CancelCommand = new RelayCommand(() => _cancellation?.Cancel(), () => _cancellation is not null);
         SelectAtCursorCommand = new RelayCommand(SelectAtCursor, () => CanEdit && !IsBusy);
         ClearSelectionCommand = new RelayCommand(ClearSelection, () => HasSelection && !IsBusy);
@@ -136,6 +137,8 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsThresholdSweep));
             OnPropertyChanged(nameof(IsAdaptiveThreshold));
             OnPropertyChanged(nameof(IsHMinima));
+            OnPropertyChanged(nameof(IsWatershed));
+            OnPropertyChanged(nameof(MinimumComponentSizeLabel));
             OnPropertyChanged(nameof(MinimumInvalidStructureArea));
             OnPropertyChanged(nameof(MinimumComponentSize));
             OnPropertyChanged(nameof(UsesThreshold));
@@ -491,6 +494,10 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsAdaptiveThreshold => SelectedOperation.Operation is
         ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
     public bool IsHMinima => SelectedOperation.Operation == ProcessingOperation.HMinima;
+    public bool IsWatershed => SelectedOperation.Operation == ProcessingOperation.Watershed;
+    public string MinimumComponentSizeLabel => IsWatershed
+        ? "Minimum selected seed size"
+        : "Exclusive minimum component size";
     public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
         ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap;
     public bool UsesRadius => SelectedOperation.Operation is ProcessingOperation.SmoothMean or ProcessingOperation.SmoothGaussian or
@@ -577,7 +584,21 @@ public sealed class MainWindowViewModel : ObservableObject
         var progress = new Progress<double>(value => Progress = Math.Clamp(value * 100, 0, 100));
         try
         {
-            var parameters = BuildParameters();
+            ProcessingLabelState? labelState = null;
+            var previousEditingSession = IsWatershed ? _editingSession : null;
+            if (IsWatershed)
+            {
+                if (_editingSession is null || _editingSession.Selection.Count == 0)
+                    throw new InvalidOperationException("Watershed requires at least one selected label seed.");
+                labelState = new ProcessingLabelState(
+                    _editingSession.Width,
+                    _editingSession.Height,
+                    _editingSession.Depth,
+                    _editingSession.Labels.ToArray(),
+                    _editingSession.Selection.Order().ToArray());
+                labelState.Validate(_volume);
+            }
+            var parameters = BuildParameters(labelState);
             if (IsDsltOperation)
             {
                 var estimate = await _engine.EstimateAsync(_volume, parameters, _cancellation.Token);
@@ -585,20 +606,34 @@ public sealed class MainWindowViewModel : ObservableObject
                 if (!estimate.WithinLimits)
                     throw new InvalidOperationException("The DSLT request exceeds the native CPU safety limits.");
             }
-            var result = await _engine.RunAsync(_volume, parameters, progress, _cancellation.Token);
+            var result = await _engine.RunAsync(
+                _volume, parameters, progress, _cancellation.Token, labelState);
+            if (IsWatershed && previousEditingSession is not null && result.Labels is not null)
+            {
+                previousEditingSession.ReplaceLabels(result.Labels);
+                _editingSession = previousEditingSession;
+                result = result with { Labels = previousEditingSession.Labels.ToArray() };
+                _editHistory.Add("watershed");
+            }
+            else
+            {
+                _editHistory.Clear();
+                _editingSession = result.Labels is null
+                    ? null
+                    : new LabelEditingSession(result.Width, result.Height, result.Depth, result.Labels);
+            }
             _lastResult = result;
             _lastParameters = parameters;
-            _editHistory.Clear();
             ResetResultGeometry();
-            _editingSession = result.Labels is null
-                ? null
-                : new LabelEditingSession(result.Width, result.Height, result.Depth, result.Labels);
             UpdateSelectionState();
             RefreshResultImage();
             SelectedStage = result.OutputKind == OutputKind.LabelsInt32 ? WorkflowStage.Edit : SelectedOperation.Stage;
-            var passName = parameters.Operation == ProcessingOperation.ThresholdSweep
-                ? "threshold passes"
-                : "C passes";
+            var passName = parameters.Operation switch
+            {
+                ProcessingOperation.ThresholdSweep => "threshold passes",
+                ProcessingOperation.Watershed => "flood levels",
+                _ => "C passes",
+            };
             Status = result.CompletedPasses > 0
                 ? $"Completed on {result.UsedBackend} · {result.ComponentCount} components · {result.CompletedPasses} {passName}"
                 : $"Completed on {result.UsedBackend} · {result.ComponentCount} components";
@@ -653,7 +688,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
     }
 
-    private OperationParameters BuildParameters() => new(
+    private OperationParameters BuildParameters(ProcessingLabelState? labelState = null) => new(
         Operation: SelectedOperation.Operation,
         Backend: Backend,
         Radius: Radius,
@@ -685,7 +720,11 @@ public sealed class MainWindowViewModel : ObservableObject
         HMinimaHeight: HMinimaHeight,
         HMinimaCheckInterval: HMinimaCheckInterval,
         ClosingRadius: ClosingRadius,
-        MinimumInvalidStructureArea: MinimumInvalidStructureArea);
+        MinimumInvalidStructureArea: MinimumInvalidStructureArea,
+        SeedLabelsSha256: labelState is null
+            ? null
+            : ProcessingProvenance.ComputeLabelSha256(labelState.Labels),
+        SelectedSeedLabels: labelState?.SelectedLabels);
 
     private void ReplaceVolume(VolumeData replacement, string status)
     {
@@ -930,6 +969,11 @@ public sealed class MainWindowViewModel : ObservableObject
     }
 
     private bool CanEstimate() => HasVolume && _engine.IsAvailable && IsDsltOperation && !IsBusy;
+
+    private bool CanRun() => HasVolume && _engine.IsAvailable && !IsBusy &&
+        (!IsWatershed || (_editingSession is not null && _editingSession.Selection.Count > 0 &&
+            _volume is not null && _editingSession.Width == _volume.Width &&
+            _editingSession.Height == _volume.Height && _editingSession.Depth == _volume.Depth));
 
     private void NotifyCommandStates()
     {

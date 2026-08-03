@@ -18,7 +18,8 @@ public sealed class UnavailableProcessingEngine(string reason) : IProcessingEngi
         VolumeData volume,
         OperationParameters parameters,
         IProgress<double>? progress,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        ProcessingLabelState? labelState = null) =>
         Task.FromException<ProcessingResult>(new InvalidOperationException(Status));
 
     public void Dispose()

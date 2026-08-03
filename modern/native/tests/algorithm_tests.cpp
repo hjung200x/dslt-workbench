@@ -521,6 +521,45 @@ void h_minima_fixture() {
     assert(cancelled);
 }
 
+void watershed_fixture() {
+    const auto desc = descriptor(5, 1, 1);
+    const std::vector<float> source(5, 0.0F);
+    const dslt::Volume volume(desc, source);
+    const std::vector<std::int32_t> seeds{10, -1, -1, -1, 20};
+    const std::vector<std::int32_t> selected{10, 20};
+    const auto result = dslt::ops::watershed(
+        volume, seeds, selected, 0, {}, {});
+    assert((result.labels == std::vector<std::int32_t>{10, 10, 10, 20, 20}));
+    assert(result.component_count == 2);
+    assert(result.passes_completed == 256);
+
+    const std::vector<std::int32_t> left_only{10};
+    const auto one_seed = dslt::ops::watershed(
+        volume, seeds, left_only, 0, {}, {});
+    assert(std::all_of(one_seed.labels.begin(), one_seed.labels.end(),
+        [](std::int32_t label) { return label == 10; }));
+    assert(one_seed.component_count == 1);
+
+    bool rejected = false;
+    try {
+        static_cast<void>(dslt::ops::watershed(
+            volume, seeds, selected, 2, {}, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    bool cancelled = false;
+    try {
+        static_cast<void>(dslt::ops::watershed(
+            volume, seeds, selected, 0, {},
+            [](float progress) { return progress == 0.0F; }));
+    } catch (const std::runtime_error& error) {
+        cancelled = std::string_view(error.what()) == "cancelled";
+    }
+    assert(cancelled);
+}
+
 } // namespace
 
 int main() {
@@ -535,5 +574,6 @@ int main() {
     threshold_sweep_fixture();
     adaptive_threshold_fixture();
     h_minima_fixture();
+    watershed_fixture();
     return 0;
 }
