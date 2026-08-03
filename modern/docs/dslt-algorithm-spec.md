@@ -16,8 +16,8 @@ the compatibility behavior where it is unambiguous. Any behavior marked
 Workbench may claim legacy equivalence.
 
 Implementation status: **scalar CPU threshold basis, iterative C sweep, crop
-integration, and CUDA threshold basis implemented; legacy-runtime comparison
-pending**. The operation covers
+integration, CUDA threshold basis, and CUDA scalar threshold sweep implemented;
+legacy-runtime comparison pending**. The operation covers
 ordered directions, every-radius response, trilinear clamp sampling,
 direction-dependent C, and strict binarization. The response and C application
 are separate internal operations so one response is reused throughout the C
@@ -253,8 +253,8 @@ equivalence.
 
 Stage 7 may mark DSLT `implemented` only after all of the following CPU tests
 pass. CUDA must pass the project-wide numerical tolerances against these CPU
-results. The current CUDA threshold-basis gate covers the response/mask subset;
-the sweep and complete iterative segmentation gates remain outstanding.
+results. The CUDA response/mask and scalar threshold-sweep gates are complete;
+the combined iterative DSLT segmentation gate remains outstanding.
 
 | Fixture | Required assertion |
 |---|---|

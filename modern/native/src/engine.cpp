@@ -348,7 +348,8 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
         case DSLT_OP_THRESHOLD_SWEEP: {
             if (!std::isfinite(request.threshold) || request.threshold < 0.0F ||
                 std::floor(request.threshold) != request.threshold ||
-                request.threshold > static_cast<float>(std::numeric_limits<int>::max())) {
+                static_cast<double>(request.threshold) >
+                    static_cast<double>(std::numeric_limits<int>::max())) {
                 throw std::invalid_argument("minimum invalid-structure area must be a non-negative integer");
             }
             const ops::ThresholdSweepParameters parameters{
@@ -385,7 +386,8 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
         case DSLT_OP_DSLT_SEGMENTATION: {
             if (!std::isfinite(request.threshold) || request.threshold < 0.0F ||
                 std::floor(request.threshold) != request.threshold ||
-                request.threshold > static_cast<float>(std::numeric_limits<int>::max())) {
+                static_cast<double>(request.threshold) >
+                    static_cast<double>(std::numeric_limits<int>::max())) {
                 throw std::invalid_argument("minimum invalid-structure area must be a non-negative integer");
             }
             const ops::DsltSegmentationParameters parameters{

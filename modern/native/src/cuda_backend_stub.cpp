@@ -28,7 +28,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_CONNECTED_COMPONENTS ||
         operation == DSLT_OP_H_MINIMA ||
         operation == DSLT_OP_WATERSHED ||
-        operation == DSLT_OP_DSLT_THRESHOLD;
+        operation == DSLT_OP_DSLT_THRESHOLD ||
+        operation == DSLT_OP_THRESHOLD_SWEEP;
 }
 
 CudaRunResult run_cuda_operation(

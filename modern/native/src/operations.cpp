@@ -741,6 +741,10 @@ std::vector<Vec3> surface_normals(
 
 } // namespace
 
+std::vector<float> threshold_sweep_schedule(float minimum, float maximum, float interval) {
+    return descending_threshold_schedule(minimum, maximum, interval);
+}
+
 std::vector<float> adaptive_threshold(
     const Volume& volume,
     int radius,
@@ -1174,7 +1178,7 @@ ComponentLabels threshold_sweep(
         throw std::invalid_argument(
             "threshold sweep component and invalid-structure limits must be non-negative");
     }
-    const auto values = descending_threshold_schedule(
+    const auto values = threshold_sweep_schedule(
         parameters.minimum_threshold, parameters.maximum_threshold, parameters.interval);
     const auto& descriptor = volume.descriptor();
     validate_crop(descriptor, parameters.crop);

@@ -26,7 +26,8 @@ The currently ported groups are:
 - 6/18/26-connected component labeling with minimum-size filtering; and
 - H-minima reconstruction with exact fixed-point detection; and
 - selected-seed watershed with the fixed 256-level legacy schedule; and
-- the ordered geodesic DSLT directional-threshold basis.
+- the ordered geodesic DSLT directional-threshold basis; and
+- scalar descending threshold sweep with segmentation-state accumulation.
 
 ## Resource ownership and execution
 
@@ -90,6 +91,15 @@ Trilinear sampling clamps every coordinate to the nearest edge, and the final
 kernel applies the direction-dependent XY/Z correction with a strict threshold.
 Minimum-response, direction-alpha, and maximum line-weight buffers are included
 in VRAM preflight; the CPU work estimate and resource gate run before allocation.
+
+Threshold sweep shares the CPU schedule generator, runs binary thresholding,
+spherical closing, fixed/height-map crop, wall-opening trials, low-valued
+six-connected root propagation, and invalid-structure closing on CUDA. Root
+compaction is deterministic by ascending linear root. Component approval and
+append-only result-label assignment remain host ordered because their sequence
+is observable in the public label contract. Current/next float workspaces, two
+64-bit root buffers, convergence state, and optional crop height map are all
+included in VRAM preflight.
 
 ## Validation gates
 
@@ -321,5 +331,28 @@ The runtime fixture proves voxel-exact final masks for mean and Gaussian line
 weights, radii 1 and 2, direction levels 1 and 2, oblique directions, and three
 XY/Z correction combinations. It also covers `Auto`, parameter bounds,
 directional-work rejection, mid-direction cancellation, and repeated response
-workspace allocation. Threshold sweep and iterative DSLT segmentation remain
-separate pending CUDA ports.
+workspace allocation. Iterative DSLT segmentation remains a separate pending
+CUDA port.
+
+## Recorded threshold-sweep runtime evidence
+
+The first scalar threshold-sweep runtime gate was completed on 2026-08-04
+(Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `1a0ff05ac4c57308d08d15948c37717549229b12` |
+| Hosted build | GitHub Actions run `30862128131`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `168A9599B41963FDB84515B7265F257905BEEFD99F9644DD40710C4C5ED7A190` |
+| `dslt_native_tests.exe` SHA-256 | `C60D37CA0856753984FF33AC514AB5299F7CD32751A6FC7B88916627FF49E456` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The runtime fixture proves voxel-exact labels, component count, and completed
+passes for the two-pass staged-defect oracle. It also covers radius-one closing,
+fixed and height-map crop, `Auto`, schedule and parameter rejection, progress
+cancellation, exclusive minimum component size, final-pass acceptance, and
+repeated sweep workspace allocation. Iterative DSLT segmentation remains the
+next pending CUDA port.
