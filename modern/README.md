@@ -56,6 +56,14 @@ non-x64 PE files, an incomplete GPLv3 copy, missing upstream provenance, unsafe
 or duplicate ZIP paths, missing legacy/.NET notices, or a checksum mismatch.
 See `docs/release-policy.md`.
 
+## Real-data release validation
+
+Use `tools/Dslt.Validation` with
+`validation/real-data-manifest.example.json` to evaluate five or more accepted
+legacy/expert label pairs. The tool verifies input, label, and provenance hashes
+before calculating Dice, object-count, volume, and HD95 gates. See
+`docs/real-data-validation.md`.
+
 ## Validation status
 
 Only synthetic-data equivalence can be claimed until representative confocal

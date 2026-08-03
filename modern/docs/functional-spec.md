@@ -51,7 +51,7 @@ conversion conflict. Their effective runtime defaults are intentionally marked
 The Workbench label model uses signed 32-bit values with `-1` as background.
 `LabelEditingSession` provides label selection, deterministic merge, 6/18/26
 connected-component split, crop, dilation, erosion, and bounded undo.
-Crop is a dimension-changing undo transaction; result provenance schema 1.3
+Crop is a dimension-changing undo transaction; result provenance schema 1.5
 records its output origin in the source coordinate system as structured X/Y/Z
 fields in addition to the ordered edit history.
 `LabelTiffCodec` writes legacy-compatible signed 16-bit TIFF whenever all labels

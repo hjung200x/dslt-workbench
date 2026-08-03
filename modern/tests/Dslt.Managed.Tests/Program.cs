@@ -43,6 +43,8 @@ if (!noiseA.Samples.SequenceEqual(noiseB.Samples)) throw new InvalidOperationExc
 var composite = SyntheticVolumes.MultiChannelComposite();
 composite.Validate();
 Equal(3, composite.Channels, "Composite channel count");
+SegmentationValidationTests.Run();
+await RealDataValidationTests.RunAsync();
 
 using var engine = ProcessingEngineFactory.Create();
 if (!engine.IsAvailable && !engine.Status.Contains("Native core unavailable", StringComparison.Ordinal))
@@ -166,6 +168,11 @@ if (!File.Exists(rawPath) || !File.Exists(jsonPath))
 var json = await File.ReadAllTextAsync(jsonPath);
 if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance validation level is missing.");
+if (!json.Contains("\"schemaVersion\": \"1.5\"", StringComparison.Ordinal) ||
+    !json.Contains("\"inputVoxelType\": \"Float32\"", StringComparison.Ordinal) ||
+    !json.Contains("\"inputContainer\": \"memory-float32\"", StringComparison.Ordinal) ||
+    !json.Contains("\"outputSha256\":", StringComparison.Ordinal))
+    throw new InvalidOperationException("Provenance input format identity is missing.");
 if (!json.Contains("merged labels 3 and 4", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance edit history is missing.");
 File.Delete(rawPath);

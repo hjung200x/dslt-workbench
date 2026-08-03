@@ -35,3 +35,7 @@ The project must not claim level 2 or 3 while only level 1 evidence exists.
 - Dice >= 0.995 against accepted legacy or expert reference masks.
 - Equal object count and total segmented volume difference <= 0.5%.
 - 95th-percentile Hausdorff distance <= 1 voxel.
+
+`Dslt.Validation` enforces these metrics and the cohort coverage rules from a
+SHA-256-locked manifest. Metric definitions, evidence requirements, and the
+five-case template are documented in `real-data-validation.md`.

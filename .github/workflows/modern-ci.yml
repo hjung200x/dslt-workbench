@@ -27,6 +27,8 @@ jobs:
         run: dotnet build modern/app/Dslt.App/Dslt.App.csproj --configuration Release
       - name: Run managed contract tests
         run: dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release
+      - name: Build real-data validation tool
+        run: dotnet build modern/tools/Dslt.Validation/Dslt.Validation.csproj --configuration Release
       - name: Run WPF I/O and workflow tests
         run: dotnet run --project modern/tests/Dslt.App.Tests/Dslt.App.Tests.csproj --configuration Release
 

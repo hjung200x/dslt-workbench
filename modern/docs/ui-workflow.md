@@ -39,7 +39,7 @@ equivalence; that remains gated by representative datasets.
   undoable transaction. Shared source/result coordinates remain meaningful
   after crop.
 - Store successful label-edit actions and structured output origin fields in
-  provenance schema 1.3 so an exported result distinguishes processing output
+  provenance schema 1.5 so an exported result distinguishes processing output
   from subsequent manual edits.
 
 ## Automated state checks
