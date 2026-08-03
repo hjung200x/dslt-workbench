@@ -94,3 +94,25 @@ The first pointwise runtime gate was completed on 2026-08-04 (Asia/Seoul):
 This proves the ported pointwise group on one Ada GPU and driver combination.
 It does not replace the required coverage of the remaining CUDA operations or
 future repeated validation on the registered CI GPU fleet.
+
+## Recorded filtering runtime evidence
+
+The first smoothing and morphology runtime gate was completed on 2026-08-04
+(Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `f071bcd29ecf341ef831f78cdab1d6fcda99e9c8` |
+| Hosted build | GitHub Actions run `30849982699`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `CE6DD7D8FC55C313C3287681DFB709A56730D080700953100C6B9001E38D993D` |
+| `dslt_native_tests.exe` SHA-256 | `9BE390AAE18286B7ED68F7CA2B60F5969390D18F9CF4087FFB51EF181466DBAB` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The fixture compares mean/Gaussian smoothing and cubic/spherical dilation and
+erosion against CPU on a nontrivial 3D volume. It also covers clamp boundaries,
+zero radius, invalid radius, `Auto` selection, and cancellation after a
+completed output Z slice. Smoothing uses the project float tolerance; morphology
+is voxel-exact on the fixture.
