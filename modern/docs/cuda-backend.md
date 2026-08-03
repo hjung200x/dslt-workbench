@@ -33,10 +33,20 @@ Progress is reported at start, input transfer, execution, and completion.
 Cancellation before a completed synchronization drains the owned stream and
 discards the partial result.
 
-## Validation gate
+## Validation gates
 
-The `windows-cuda` preset defines `DSLT_TEST_CUDA` and requires a usable NVIDIA
-device. Its native test suite checks:
+`cuda-build-only` runs on a GitHub-hosted Windows Server 2022 image. It installs
+the minimal official CUDA 13.2 compiler/runtime packages with NVIDIA's silent
+network installer, then compiles the CUDA DLL and CUDA-enabled native tests.
+This gate proves NVCC/MSVC/CMake compatibility but cannot execute kernels
+because the hosted runner has no NVIDIA device.
+
+`cuda-runtime-parity` uses the `windows-cuda` preset on a self-hosted runner
+with the `Windows`, `X64`, and `NVIDIA` labels. It defines `DSLT_TEST_CUDA` and
+requires a usable NVIDIA device. Until such a runner is registered, this job is
+started only by an explicit `workflow_dispatch`; ordinary pushes run the hosted
+build gate without leaving an unserviceable job queued. Its native test suite
+checks:
 
 - CPU/CUDA output parity for every ported operation;
 - `Auto` selecting CUDA for a ported operation;
