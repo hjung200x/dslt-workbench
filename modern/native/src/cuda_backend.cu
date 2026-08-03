@@ -1,4 +1,5 @@
 #include "cuda_backend.hpp"
+#include "operations.hpp"
 
 #include <cuda_runtime.h>
 
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -658,6 +660,114 @@ __global__ void h_minima_residual_kernel(
     }
 }
 
+__device__ float dslt_trilinear_clamp(
+    const float* source,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    float x,
+    float y,
+    float z) {
+    const auto cx = fminf(fmaxf(x, 0.0F), static_cast<float>(width - 1));
+    const auto cy = fminf(fmaxf(y, 0.0F), static_cast<float>(height - 1));
+    const auto cz = fminf(fmaxf(z, 0.0F), static_cast<float>(depth - 1));
+    const auto x0 = static_cast<std::size_t>(floorf(cx));
+    const auto y0 = static_cast<std::size_t>(floorf(cy));
+    const auto z0 = static_cast<std::size_t>(floorf(cz));
+    const auto x1 = x0 + 1 < width ? x0 + 1 : width - 1;
+    const auto y1 = y0 + 1 < height ? y0 + 1 : height - 1;
+    const auto z1 = z0 + 1 < depth ? z0 + 1 : depth - 1;
+    const auto tx = cx - static_cast<float>(x0);
+    const auto ty = cy - static_cast<float>(y0);
+    const auto tz = cz - static_cast<float>(z0);
+    const auto c000 = source[flat_index(x0, y0, z0, width, height)];
+    const auto c100 = source[flat_index(x1, y0, z0, width, height)];
+    const auto c010 = source[flat_index(x0, y1, z0, width, height)];
+    const auto c110 = source[flat_index(x1, y1, z0, width, height)];
+    const auto c001 = source[flat_index(x0, y0, z1, width, height)];
+    const auto c101 = source[flat_index(x1, y0, z1, width, height)];
+    const auto c011 = source[flat_index(x0, y1, z1, width, height)];
+    const auto c111 = source[flat_index(x1, y1, z1, width, height)];
+    const auto c00 = c000 + (c100 - c000) * tx;
+    const auto c10 = c010 + (c110 - c010) * tx;
+    const auto c01 = c001 + (c101 - c001) * tx;
+    const auto c11 = c011 + (c111 - c011) * tx;
+    const auto c0 = c00 + (c10 - c00) * ty;
+    const auto c1 = c01 + (c11 - c01) * ty;
+    return c0 + (c1 - c0) * tz;
+}
+
+__global__ void initialize_dslt_response_kernel(
+    float* minimum,
+    float* alpha,
+    std::size_t count,
+    float maximum) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        minimum[index] = maximum;
+        alpha[index] = 0.0F;
+    }
+}
+
+__global__ void dslt_direction_response_kernel(
+    const float* source,
+    float* minimum,
+    float* alpha,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    const float* weights,
+    int radius,
+    float direction_x,
+    float direction_y,
+    float direction_z,
+    float direction_alpha) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        const auto z = index / plane;
+        const auto remainder = index % plane;
+        const auto y = remainder / width;
+        const auto x = remainder % width;
+        auto sum = 0.0F;
+        for (int offset = -radius; offset <= radius; ++offset) {
+            sum += dslt_trilinear_clamp(
+                source, width, height, depth,
+                static_cast<float>(x) + direction_x * static_cast<float>(offset),
+                static_cast<float>(y) + direction_y * static_cast<float>(offset),
+                static_cast<float>(z) + direction_z * static_cast<float>(offset)) *
+                weights[offset + radius];
+        }
+        if (minimum[index] > sum) {
+            minimum[index] = sum;
+            alpha[index] = direction_alpha;
+        }
+    }
+}
+
+__global__ void apply_dslt_threshold_kernel(
+    const float* source,
+    const float* minimum,
+    const float* alpha,
+    float* output,
+    std::size_t count,
+    float constant_c_xy,
+    float constant_c_z) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        const auto correction = constant_c_xy * (1.0F - alpha[index]) +
+            constant_c_z * alpha[index];
+        output[index] = source[index] > minimum[index] - correction ? 0.8F : 0.0F;
+    }
+}
+
 __device__ bool watershed_neighbor(
     std::size_t x,
     std::size_t y,
@@ -971,7 +1081,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_HEIGHT_PROJECTION ||
         operation == DSLT_OP_CONNECTED_COMPONENTS ||
         operation == DSLT_OP_H_MINIMA ||
-        operation == DSLT_OP_WATERSHED;
+        operation == DSLT_OP_WATERSHED ||
+        operation == DSLT_OP_DSLT_THRESHOLD;
 }
 
 CudaRunResult run_cuda_operation(
@@ -1001,6 +1112,7 @@ CudaRunResult run_cuda_operation(
     const auto watershed = request.operation == DSLT_OP_WATERSHED;
     const auto labeling = connected_components || watershed;
     const auto h_minima = request.operation == DSLT_OP_H_MINIMA;
+    const auto dslt_threshold_operation = request.operation == DSLT_OP_DSLT_THRESHOLD;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
     }
@@ -1071,6 +1183,28 @@ CudaRunResult run_cuda_operation(
     if (watershed && request.minimum_component_size < 0) {
         return {CudaRunStatus::invalid_argument, {},
             "watershed minimum seed size must be non-negative"};
+    }
+    if (dslt_threshold_operation && (request.radius < 1 || request.radius > 127)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "DSLT radius must be between 1 and 127"};
+    }
+    if (dslt_threshold_operation &&
+        (request.lanczos_order < 1 || request.lanczos_order > 5)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "DSLT direction level must be between 1 and 5"};
+    }
+    if (dslt_threshold_operation &&
+        request.connectivity != 0 && request.connectivity != 1) {
+        return {CudaRunStatus::invalid_argument, {},
+            "DSLT kernel type must be 0 (Gaussian) or 1 (mean)"};
+    }
+    if (dslt_threshold_operation && !std::isfinite(request.constant_c)) {
+        return {CudaRunStatus::invalid_argument, {}, "DSLT C must be finite"};
+    }
+    if (dslt_threshold_operation &&
+        (!std::isfinite(request.target_spacing_z) || request.target_spacing_z < 0.0F)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "DSLT Z correction factor must be finite and non-negative"};
     }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height = static_cast<std::size_t>(descriptor.height);
@@ -1214,8 +1348,15 @@ CudaRunResult run_cuda_operation(
 
     std::size_t required_bytes = 0;
     std::size_t available_bytes = 0;
+    std::vector<ops::Vec3> dslt_directions;
     try {
         if (!report(progress, 0.0F)) return cancelled();
+        if (dslt_threshold_operation) {
+            const auto work = ops::estimate_dslt_work(
+                descriptor, request.radius, request.lanczos_order, false);
+            ops::enforce_dslt_work_limits(work);
+            dslt_directions = ops::geodesic_directions(request.lanczos_order);
+        }
         if (source.size() > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
             output_count > std::numeric_limits<std::size_t>::max() / sizeof(float)) {
             return {CudaRunStatus::out_of_memory, {}, "CUDA input and output size overflow addressable memory"};
@@ -1227,17 +1368,21 @@ CudaRunResult run_cuda_operation(
             return {CudaRunStatus::out_of_memory, {},
                 "CUDA depth-map workspace overflows addressable memory"};
         }
-        const auto scratch_count = height_processing || h_minima || watershed
+        const auto scratch_count = height_processing || h_minima || watershed ||
+            dslt_threshold_operation
             ? std::max(
                 source.size(),
                 request.operation == DSLT_OP_DEPTH_MAP ? plane_count * 2 : source.size())
             : 0;
-        const auto auxiliary_count = watershed
+        const auto auxiliary_count = watershed || dslt_threshold_operation
             ? source.size()
             : request.operation == DSLT_OP_DEPTH_MAP ||
                 request.operation == DSLT_OP_HEIGHT_PROJECTION
                 ? plane_count
                 : 0;
+        const auto dslt_weight_count = dslt_threshold_operation
+            ? static_cast<std::size_t>(request.radius) * 2 + 1
+            : 0;
         const auto add_required_buffer = [&](std::size_t count, std::size_t element_size) {
             if (count > std::numeric_limits<std::size_t>::max() / element_size) return false;
             const auto bytes = count * element_size;
@@ -1249,6 +1394,7 @@ CudaRunResult run_cuda_operation(
             !add_required_buffer(output_count, sizeof(float)) ||
             !add_required_buffer(scratch_count, sizeof(float)) ||
             !add_required_buffer(auxiliary_count, sizeof(float)) ||
+            !add_required_buffer(dslt_weight_count, sizeof(float)) ||
             ((h_minima || watershed) && !add_required_buffer(1, sizeof(int))) ||
             (watershed_height_map_count != 0 &&
              !add_required_buffer(watershed_height_map_count, sizeof(float))) ||
@@ -1276,6 +1422,7 @@ CudaRunResult run_cuda_operation(
         std::unique_ptr<DeviceBuffer<unsigned long long>> device_component_roots_b;
         std::unique_ptr<DeviceBuffer<int>> device_convergence_flag;
         std::unique_ptr<DeviceBuffer<float>> device_crop_height_map;
+        std::unique_ptr<DeviceBuffer<float>> device_dslt_weights;
         if (scratch_count != 0) {
             device_scratch = std::make_unique<DeviceBuffer<float>>(scratch_count);
         }
@@ -1294,6 +1441,9 @@ CudaRunResult run_cuda_operation(
         if (watershed_height_map_count != 0) {
             device_crop_height_map =
                 std::make_unique<DeviceBuffer<float>>(watershed_height_map_count);
+        }
+        if (dslt_weight_count != 0) {
+            device_dslt_weights = std::make_unique<DeviceBuffer<float>>(dslt_weight_count);
         }
         std::vector<float> output(labeling ? 0 : output_count);
 
@@ -1692,11 +1842,58 @@ CudaRunResult run_cuda_operation(
             cuda_passes_completed = 256;
             break;
         }
+        case DSLT_OP_DSLT_THRESHOLD: {
+            initialize_dslt_response_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_scratch->get(), device_auxiliary->get(), source.size(),
+                std::numeric_limits<float>::max());
+            check_cuda(cudaGetLastError(), "launching CUDA DSLT response initialization");
+
+            const auto direction_steps =
+                static_cast<std::size_t>(request.radius) * dslt_directions.size();
+            std::size_t completed_steps = 0;
+            for (int current_radius = request.radius; current_radius > 0; --current_radius) {
+                const auto weights = ops::line_weights(
+                    current_radius, request.connectivity == 0);
+                check_cuda(cudaMemcpyAsync(
+                    device_dslt_weights->get(), weights.data(),
+                    weights.size() * sizeof(float), cudaMemcpyHostToDevice, stream.get()),
+                    "copying CUDA DSLT line weights");
+                for (const auto& direction : dslt_directions) {
+                    const auto xy_length = std::sqrt(
+                        direction.x * direction.x + direction.y * direction.y);
+                    const auto latitude = std::acos(std::clamp(xy_length, 0.0F, 1.0F));
+                    const auto direction_alpha = std::abs(
+                        2.0F * latitude / std::numbers::pi_v<float>);
+                    dslt_direction_response_kernel<<<blocks, threads, 0, stream.get()>>>(
+                        device_source.get(), device_scratch->get(), device_auxiliary->get(),
+                        width, height, depth, device_dslt_weights->get(), current_radius,
+                        direction.x, direction.y, direction.z, direction_alpha);
+                    check_cuda(cudaGetLastError(), "launching CUDA DSLT direction response");
+                    check_cuda(cudaStreamSynchronize(stream.get()),
+                        "synchronizing CUDA DSLT direction response");
+                    const auto step_progress = 0.25F + 0.45F *
+                        static_cast<float>(++completed_steps) /
+                        static_cast<float>(direction_steps);
+                    if (!report(progress, step_progress)) return cancelled();
+                }
+            }
+
+            apply_dslt_threshold_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(), device_scratch->get(), device_auxiliary->get(),
+                device_output.get(), source.size(), request.constant_c,
+                request.constant_c * request.target_spacing_z);
+            check_cuda(cudaGetLastError(), "launching CUDA DSLT threshold kernel");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA DSLT threshold kernel");
+            if (!report(progress, 0.75F)) return cancelled();
+            break;
+        }
         default:
             return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
         }
 
         if (!slice_based_filter && !resampling && !height_processing && !labeling && !h_minima &&
+            !dslt_threshold_operation &&
             !report(progress, 0.75F)) {
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing cancelled CUDA operation");
             return cancelled();
@@ -1735,6 +1932,8 @@ CudaRunResult run_cuda_operation(
             cuda_component_count,
             cuda_passes_completed,
         };
+    } catch (const ResourceLimitError& error) {
+        return {CudaRunStatus::resource_limit, {}, error.what()};
     } catch (const CudaError& error) {
         if (error.code() == cudaErrorMemoryAllocation) {
             std::ostringstream message;
