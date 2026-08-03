@@ -15,6 +15,7 @@ enum class CudaRunStatus {
     unsupported,
     invalid_argument,
     out_of_memory,
+    resource_limit,
     cancelled,
     internal_error,
 };
