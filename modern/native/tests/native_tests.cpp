@@ -437,6 +437,72 @@ void cuda_pointwise_parity_test() {
         handle, request, DSLT_BACKEND_CUDA);
     assert(automatic_components.result.component_count > 0);
 
+    auto h_minima_desc = descriptor(3, 3, 3);
+    std::vector<float> h_minima_source(h_minima_desc.element_count, 1.0F);
+    const auto h_minima_center = static_cast<std::size_t>(13);
+    h_minima_source[h_minima_center] = 0.0F;
+    require(dslt_set_volume_f32(
+        handle, &h_minima_desc, h_minima_source.data(), h_minima_source.size()));
+
+    for (const auto check_interval : {1, 50}) {
+        dslt_operation_request h_minima_request{};
+        h_minima_request.operation = DSLT_OP_H_MINIMA;
+        h_minima_request.threshold = 0.5F;
+        h_minima_request.radius = check_interval;
+        h_minima_request.backend = DSLT_BACKEND_CPU;
+        const auto cpu = run_float_operation_result(
+            handle, h_minima_request, DSLT_BACKEND_CPU);
+        h_minima_request.backend = DSLT_BACKEND_CUDA;
+        const auto cuda = run_float_operation_result(
+            handle, h_minima_request, DSLT_BACKEND_CUDA);
+        assert(cpu.values == cuda.values);
+        assert(cuda.values[h_minima_center] == 0.0F);
+        assert(std::count(cuda.values.begin(), cuda.values.end(), 0.8F) == 26);
+    }
+
+    dslt_operation_request zero_h_minima_request{};
+    zero_h_minima_request.operation = DSLT_OP_H_MINIMA;
+    zero_h_minima_request.threshold = 0.0F;
+    zero_h_minima_request.radius = 1;
+    zero_h_minima_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_zero_h_minima = run_float_operation_result(
+        handle, zero_h_minima_request, DSLT_BACKEND_CPU);
+    zero_h_minima_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_zero_h_minima = run_float_operation_result(
+        handle, zero_h_minima_request, DSLT_BACKEND_CUDA);
+    assert(cpu_zero_h_minima.values == cuda_zero_h_minima.values);
+
+    auto shallow_h_minima_source = h_minima_source;
+    shallow_h_minima_source[h_minima_center] = 0.8F;
+    require(dslt_set_volume_f32(
+        handle, &h_minima_desc,
+        shallow_h_minima_source.data(), shallow_h_minima_source.size()));
+    dslt_operation_request shallow_h_minima_request{};
+    shallow_h_minima_request.operation = DSLT_OP_H_MINIMA;
+    shallow_h_minima_request.threshold = 0.3F;
+    shallow_h_minima_request.radius = 1;
+    shallow_h_minima_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_shallow_h_minima = run_float_operation_result(
+        handle, shallow_h_minima_request, DSLT_BACKEND_CPU);
+    shallow_h_minima_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_shallow_h_minima = run_float_operation_result(
+        handle, shallow_h_minima_request, DSLT_BACKEND_CUDA);
+    assert(cpu_shallow_h_minima.values == cuda_shallow_h_minima.values);
+    assert(std::all_of(
+        cuda_shallow_h_minima.values.begin(), cuda_shallow_h_minima.values.end(),
+        [](float value) { return value == 0.0F; }));
+    require(dslt_set_volume_f32(
+        handle, &h_minima_desc, h_minima_source.data(), h_minima_source.size()));
+
+    request = {};
+    request.operation = DSLT_OP_H_MINIMA;
+    request.threshold = 0.5F;
+    request.radius = 50;
+    request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic_h_minima = run_float_operation_result(
+        handle, request, DSLT_BACKEND_CUDA);
+    assert(automatic_h_minima.values[h_minima_center] == 0.0F);
+
     dslt_operation_result result{};
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
@@ -507,6 +573,27 @@ void cuda_pointwise_parity_test() {
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
+    request.operation = DSLT_OP_H_MINIMA;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.threshold = -0.1F;
+    request.radius = 1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request.threshold = 0.5F;
+    request.radius = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    auto non_finite_h_minima_source = h_minima_source;
+    non_finite_h_minima_source[h_minima_center] = std::numeric_limits<float>::infinity();
+    require(dslt_set_volume_f32(
+        handle, &h_minima_desc,
+        non_finite_h_minima_source.data(), non_finite_h_minima_source.size()));
+    request.radius = 1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    require(dslt_set_volume_f32(
+        handle, &h_minima_desc, h_minima_source.data(), h_minima_source.size()));
+
+    request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
     request.backend = DSLT_BACKEND_CUDA;
     request.target_spacing_z = 0.5F;
@@ -537,13 +624,24 @@ void cuda_pointwise_parity_test() {
         handle, &request, cancel_components, nullptr, &result), DSLT_CANCELLED);
 
     request = {};
+    request.operation = DSLT_OP_H_MINIMA;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.threshold = 0.5F;
+    request.radius = 50;
+    const auto cancel_h_minima = [](float progress, void*) -> std::int32_t {
+        return progress > 0.30F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_h_minima, nullptr, &result), DSLT_CANCELLED);
+
+    request = {};
     request.operation = DSLT_OP_DILATE_SPHERE;
     request.backend = DSLT_BACKEND_CUDA;
     request.radius = 65;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
-    request.operation = DSLT_OP_H_MINIMA;
+    request.operation = DSLT_OP_WATERSHED;
     request.backend = DSLT_BACKEND_CUDA;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
 
@@ -602,11 +700,17 @@ void cuda_pointwise_parity_test() {
     memory_components.connectivity = 26;
     memory_components.minimum_component_size = 1;
     (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);
+    dslt_operation_request memory_h_minima{};
+    memory_h_minima.operation = DSLT_OP_H_MINIMA;
+    memory_h_minima.backend = DSLT_BACKEND_CUDA;
+    memory_h_minima.threshold = 0.5F;
+    memory_h_minima.radius = 50;
+    (void)run_float_operation(handle, memory_h_minima, DSLT_BACKEND_CUDA);
 
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        switch (iteration % 5) {
+        switch (iteration % 6) {
         case 0:
             (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
             break;
@@ -621,6 +725,9 @@ void cuda_pointwise_parity_test() {
             memory_projection.target_spacing_z = iteration % 8 == 3 ? 0.0F : 1.0F;
             (void)run_float_operation_result(
                 handle, memory_projection, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+            break;
+        case 5:
+            (void)run_float_operation(handle, memory_h_minima, DSLT_BACKEND_CUDA);
             break;
         default:
             (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);

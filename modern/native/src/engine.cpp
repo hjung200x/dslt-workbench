@@ -177,6 +177,7 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
             case CudaRunStatus::unsupported: return DSLT_NOT_IMPLEMENTED;
             case CudaRunStatus::invalid_argument: return DSLT_INVALID_ARGUMENT;
             case CudaRunStatus::out_of_memory: return DSLT_OUT_OF_MEMORY;
+            case CudaRunStatus::resource_limit: return DSLT_RESOURCE_LIMIT;
             case CudaRunStatus::cancelled: return DSLT_CANCELLED;
             case CudaRunStatus::unavailable: return DSLT_BACKEND_UNAVAILABLE;
             case CudaRunStatus::internal_error: return DSLT_INTERNAL_ERROR;

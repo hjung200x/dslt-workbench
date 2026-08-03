@@ -587,6 +587,77 @@ __global__ void depth_column_kernel(
     }
 }
 
+__global__ void initialize_h_minima_marker_kernel(
+    const float* source,
+    float* marker,
+    std::size_t count,
+    float height) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        marker[index] = source[index] + height;
+    }
+}
+
+__global__ void h_minima_iteration_kernel(
+    const float* source,
+    const float* current,
+    float* next,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    int* changed) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        const auto z = index / plane;
+        const auto remainder = index % plane;
+        const auto y = remainder / width;
+        const auto x = remainder % width;
+        auto minimum = current[index];
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const auto nx = static_cast<long long>(x) + dx;
+                    const auto ny = static_cast<long long>(y) + dy;
+                    const auto nz = static_cast<long long>(z) + dz;
+                    if (nx < 0 || ny < 0 || nz < 0 ||
+                        nx >= static_cast<long long>(width) ||
+                        ny >= static_cast<long long>(height) ||
+                        nz >= static_cast<long long>(depth)) continue;
+                    minimum = fminf(minimum, current[flat_index(
+                        static_cast<std::size_t>(nx),
+                        static_cast<std::size_t>(ny),
+                        static_cast<std::size_t>(nz), width, height)]);
+                }
+            }
+        }
+        const auto reconstructed = fmaxf(minimum, source[index]);
+        next[index] = reconstructed;
+        if (reconstructed != current[index]) atomicExch(changed, 1);
+    }
+}
+
+__global__ void h_minima_residual_kernel(
+    const float* source,
+    const float* reconstructed,
+    float* output,
+    std::size_t count) {
+    constexpr float residual_threshold = 0.00001F;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        output[index] = reconstructed[index] - source[index] < residual_threshold
+            ? 0.8F
+            : 0.0F;
+    }
+}
+
 __global__ void initialize_component_roots_kernel(
     const float* source,
     unsigned long long* roots,
@@ -727,7 +798,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_HEIGHT_MAP ||
         operation == DSLT_OP_DEPTH_MAP ||
         operation == DSLT_OP_HEIGHT_PROJECTION ||
-        operation == DSLT_OP_CONNECTED_COMPONENTS;
+        operation == DSLT_OP_CONNECTED_COMPONENTS ||
+        operation == DSLT_OP_H_MINIMA;
 }
 
 CudaRunResult run_cuda_operation(
@@ -753,6 +825,7 @@ CudaRunResult run_cuda_operation(
         request.operation == DSLT_OP_DEPTH_MAP ||
         request.operation == DSLT_OP_HEIGHT_PROJECTION;
     const auto labeling = request.operation == DSLT_OP_CONNECTED_COMPONENTS;
+    const auto h_minima = request.operation == DSLT_OP_H_MINIMA;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
     }
@@ -810,6 +883,16 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "minimum component size must be positive"};
     }
+    if (h_minima &&
+        (!std::isfinite(request.threshold) || request.threshold < 0.0F ||
+         request.threshold > 1.0F)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "h-minima height must be finite and between 0 and 1"};
+    }
+    if (h_minima && (request.radius < 1 || request.radius > 10000)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "h-minima check interval must be between 1 and 10000"};
+    }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height = static_cast<std::size_t>(descriptor.height);
     const auto depth = static_cast<std::size_t>(descriptor.depth);
@@ -818,6 +901,27 @@ CudaRunResult run_cuda_operation(
         width * height > std::numeric_limits<std::size_t>::max() / depth ||
         source.size() != width * height * depth) {
         return {CudaRunStatus::invalid_argument, {}, "CUDA source dimensions do not match the selected channel"};
+    }
+    if (h_minima && !std::all_of(source.begin(), source.end(), [](float value) {
+            return std::isfinite(value);
+        })) {
+        return {CudaRunStatus::invalid_argument, {},
+            "h-minima source must contain only finite values"};
+    }
+    if (h_minima && std::any_of(source.begin(), source.end(), [&](float value) {
+            return !std::isfinite(value + request.threshold);
+        })) {
+        return {CudaRunStatus::invalid_argument, {},
+            "h-minima marker overflowed float range"};
+    }
+    std::size_t h_minima_maximum_iterations = 0;
+    if (h_minima) {
+        const auto checkpoint_margin = static_cast<std::size_t>(request.radius) * 2;
+        if (source.size() > std::numeric_limits<std::size_t>::max() - checkpoint_margin) {
+            return {CudaRunStatus::resource_limit, {},
+                "h-minima iteration limit overflowed size_t"};
+        }
+        h_minima_maximum_iterations = source.size() + checkpoint_margin;
     }
 
     auto output_width = descriptor.width;
@@ -884,7 +988,7 @@ CudaRunResult run_cuda_operation(
             return {CudaRunStatus::out_of_memory, {},
                 "CUDA depth-map workspace overflows addressable memory"};
         }
-        const auto scratch_count = height_processing
+        const auto scratch_count = height_processing || h_minima
             ? std::max(
                 source.size(),
                 request.operation == DSLT_OP_DEPTH_MAP ? plane_count * 2 : source.size())
@@ -904,6 +1008,7 @@ CudaRunResult run_cuda_operation(
             !add_required_buffer(output_count, sizeof(float)) ||
             !add_required_buffer(scratch_count, sizeof(float)) ||
             !add_required_buffer(auxiliary_count, sizeof(float)) ||
+            (h_minima && !add_required_buffer(1, sizeof(int))) ||
             (labeling &&
              (!add_required_buffer(source.size(), sizeof(unsigned long long)) ||
               !add_required_buffer(source.size(), sizeof(unsigned long long))))) {
@@ -926,6 +1031,7 @@ CudaRunResult run_cuda_operation(
         std::unique_ptr<DeviceBuffer<float>> device_auxiliary;
         std::unique_ptr<DeviceBuffer<unsigned long long>> device_component_roots_a;
         std::unique_ptr<DeviceBuffer<unsigned long long>> device_component_roots_b;
+        std::unique_ptr<DeviceBuffer<int>> device_convergence_flag;
         if (scratch_count != 0) {
             device_scratch = std::make_unique<DeviceBuffer<float>>(scratch_count);
         }
@@ -937,6 +1043,9 @@ CudaRunResult run_cuda_operation(
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
             device_component_roots_b =
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
+        }
+        if (h_minima) {
+            device_convergence_flag = std::make_unique<DeviceBuffer<int>>(1);
         }
         std::vector<float> output(labeling ? 0 : output_count);
 
@@ -1178,11 +1287,61 @@ CudaRunResult run_cuda_operation(
             if (!report(progress, 0.75F)) return cancelled();
             break;
         }
+        case DSLT_OP_H_MINIMA: {
+            auto* current = device_output.get();
+            auto* next = device_scratch->get();
+            initialize_h_minima_marker_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(), current, source.size(), request.threshold);
+            check_cuda(cudaGetLastError(), "launching CUDA h-minima marker initialization");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA h-minima marker initialization");
+            if (!report(progress, 0.30F)) return cancelled();
+
+            auto converged = false;
+            for (std::size_t iteration = 0;
+                 iteration < h_minima_maximum_iterations;
+                 ++iteration) {
+                check_cuda(cudaMemsetAsync(
+                    device_convergence_flag->get(), 0, sizeof(int), stream.get()),
+                    "resetting CUDA h-minima convergence flag");
+                h_minima_iteration_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_source.get(), current, next, width, height, depth,
+                    device_convergence_flag->get());
+                check_cuda(cudaGetLastError(), "launching CUDA h-minima reconstruction iteration");
+                int host_changed = 0;
+                check_cuda(cudaMemcpyAsync(
+                    &host_changed, device_convergence_flag->get(), sizeof(int),
+                    cudaMemcpyDeviceToHost, stream.get()),
+                    "copying CUDA h-minima convergence flag");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA h-minima reconstruction iteration");
+                std::swap(current, next);
+                const auto iteration_progress = 0.30F + 0.60F *
+                    static_cast<float>(iteration + 1) /
+                    static_cast<float>(h_minima_maximum_iterations);
+                if (!report(progress, iteration_progress)) return cancelled();
+                if (host_changed == 0) {
+                    converged = true;
+                    break;
+                }
+            }
+            if (!converged) {
+                return {CudaRunStatus::resource_limit, {},
+                    "h-minima reconstruction did not converge within the checked iteration limit"};
+            }
+            h_minima_residual_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(), current, device_output.get(), source.size());
+            check_cuda(cudaGetLastError(), "launching CUDA h-minima residual kernel");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA h-minima residual kernel");
+            if (!report(progress, 0.95F)) return cancelled();
+            break;
+        }
         default:
             return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
         }
 
-        if (!slice_based_filter && !resampling && !height_processing && !labeling &&
+        if (!slice_based_filter && !resampling && !height_processing && !labeling && !h_minima &&
             !report(progress, 0.75F)) {
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing cancelled CUDA operation");
             return cancelled();

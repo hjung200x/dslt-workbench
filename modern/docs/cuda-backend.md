@@ -23,7 +23,8 @@ The currently ported groups are:
 - XY, YZ, and ZX orthogonal-view extraction;
 - filtered height maps and normal/Z height projection; and
 - 3D depth maps derived from the filtered height surface; and
-- 6/18/26-connected component labeling with minimum-size filtering.
+- 6/18/26-connected component labeling with minimum-size filtering; and
+- H-minima reconstruction with exact fixed-point detection.
 
 ## Resource ownership and execution
 
@@ -62,6 +63,13 @@ This produces the same deterministic labels as the CPU Z-Y-X seed scan for all
 three connectivity modes. Two 64-bit root workspaces are included in VRAM
 preflight; final labels and component count cross the CUDA boundary as native
 `DSLT_OUTPUT_LABELS_INT32` results rather than being converted through floats.
+
+H-minima initializes the `I + h` marker and repeatedly applies the reference
+3 x 3 x 3 minimum followed by lower-mask fitting. Each iteration uses separate
+current/next buffers, performs exact change detection, and is cancellable after
+synchronization. The volume-derived iteration bound and its overflow use the
+same resource-limit status as CPU; the validated check interval remains part of
+the request even though consecutive exact equality can finish earlier.
 
 ## Validation gates
 
@@ -225,3 +233,28 @@ The runtime fixture proves voxel-exact deterministic labels and component
 counts for 6, 18, and 26 connectivity at two minimum-size limits. It also
 executes NaN-threshold behavior, `Auto`, invalid arguments, propagation
 cancellation, C ABI label copying, and repeated root-workspace allocation.
+
+The H-minima fixture compares deep and shallow 3D pits, zero height, check
+intervals 1 and 50, and the final binary mask voxel-for-voxel with CPU. It also
+covers `Auto`, invalid height/interval, non-finite source rejection,
+reconstruction cancellation, and inclusion in the mixed-operation memory gate.
+
+## Recorded H-minima runtime evidence
+
+The first H-minima runtime gate was completed on 2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `b24be0498bfa51010e6fe67de95b8d99df47a918` |
+| Hosted build | GitHub Actions run `30857716787`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `64AC6EEE4F34B1BFF4C9A5D5614E82DE409ADBF016EA71F61772B2F750F62FB9` |
+| `dslt_native_tests.exe` SHA-256 | `2924C4AC497533609491964C86EE093245F13975E2DE8F70C96049BAA9F10A30` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The runtime fixture proves voxel-exact binary masks for deep and shallow 3D
+pits, zero height, and check intervals 1 and 50. It also executes `Auto`,
+invalid parameter and source rejection, iteration cancellation, and repeated
+reconstruction workspace allocation.
