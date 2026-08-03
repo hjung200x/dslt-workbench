@@ -273,8 +273,9 @@ operation-specific fields are interpreted as follows:
 
 The .NET `OperationParameters` adapter exposes these as `Radius`,
 `DirectionLevel`, `DsltKernel`, `ConstantC`, and `ZCorrectionFactor`; callers do
-not need to know the C-field reuse. The planned UI-facing positive threshold
-offset adapter is not exposed yet.
+not need to know the C-field reuse. The WPF ViewModel exposes the positive
+legacy preview offset and maps it to `ConstantC = -offset * 0.002` before calling
+the managed adapter.
 
 For `DSLT_OP_DSLT_SEGMENTATION`, the same ABI-stable request is interpreted as:
 
