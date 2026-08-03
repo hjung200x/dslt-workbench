@@ -1,4 +1,5 @@
 #include "dslt/core.hpp"
+#include "cuda_backend.hpp"
 #include "operations.hpp"
 
 #include <algorithm>
@@ -129,11 +130,51 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
     }
 
     const auto cuda = cuda_state();
-    if (request.backend == DSLT_BACKEND_CUDA) {
-        set_error(cuda.available
-            ? "CUDA execution is not implemented for this operation"
-            : "CUDA backend is unavailable; choose Auto or CPU");
-        return cuda.available ? DSLT_NOT_IMPLEMENTED : DSLT_BACKEND_UNAVAILABLE;
+    const auto explicit_cuda = request.backend == DSLT_BACKEND_CUDA;
+    const auto supports_cuda = cuda_supports_operation(request.operation);
+    if (explicit_cuda && !cuda.available) {
+        set_error("CUDA backend is unavailable; choose Auto or CPU");
+        return DSLT_BACKEND_UNAVAILABLE;
+    }
+    if (explicit_cuda && !supports_cuda) {
+        set_error("CUDA execution is not implemented for this operation");
+        return DSLT_NOT_IMPLEMENTED;
+    }
+
+    if (request.backend != DSLT_BACKEND_CPU && cuda.available && supports_cuda) {
+        const auto channel_offset = source_.voxel_count() * source_.descriptor().selected_channel;
+        const auto channel = source_.data().subspan(channel_offset, source_.voxel_count());
+        auto cuda_result = run_cuda_operation(channel, request, progress);
+        if (cuda_result.status == CudaRunStatus::success) {
+            result_ = {};
+            result_.used_backend = DSLT_BACKEND_CUDA;
+            result_.output_kind = DSLT_OUTPUT_VOLUME_FLOAT32;
+            result_.width = source_.descriptor().width;
+            result_.height = source_.descriptor().height;
+            result_.depth = source_.descriptor().depth;
+            output_ = std::move(cuda_result.output);
+            result_.element_count = output_.size();
+            labels_.clear();
+            selection_.clear();
+            last_error_.clear();
+            return DSLT_OK;
+        }
+
+        // Auto falls back only when CUDA becomes unavailable during initialization.
+        // Invalid parameters, cancellation, memory exhaustion, and kernel failures are
+        // surfaced so a failed GPU operation cannot silently produce a different path.
+        if (cuda_result.status != CudaRunStatus::unavailable || explicit_cuda) {
+            set_error(cuda_result.error);
+            switch (cuda_result.status) {
+            case CudaRunStatus::unsupported: return DSLT_NOT_IMPLEMENTED;
+            case CudaRunStatus::invalid_argument: return DSLT_INVALID_ARGUMENT;
+            case CudaRunStatus::out_of_memory: return DSLT_OUT_OF_MEMORY;
+            case CudaRunStatus::cancelled: return DSLT_CANCELLED;
+            case CudaRunStatus::unavailable: return DSLT_BACKEND_UNAVAILABLE;
+            case CudaRunStatus::internal_error: return DSLT_INTERNAL_ERROR;
+            case CudaRunStatus::success: break;
+            }
+        }
     }
 
     try {

@@ -29,6 +29,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Watershed | `Watershed` | scaffolded | CPU selected-seed flooding, fixed 256 levels, legacy 6-neighbor priority, per-level label opening, crop, minimum seed size, cancellation, ABI and WPF undo/provenance fixtures implemented; archived-runtime comparison pending |
 | Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity fixtures; WPF edit fixture; crop dimension/origin/label bit-exact undo fixture |
 | Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |
+| Optional CUDA backend | `Auto`, `CPU`, `CUDA` execution policy | scaffolded | Copy, window/level, and global 2D/3D threshold parity, cancellation, explicit unsupported-operation, VRAM preflight, and repeated-allocation fixtures implemented; remaining processing groups and NVIDIA runner evidence pending |
 | Win32/x86 build | None | excluded | Windows x64 policy |
 
 `pending-reference` algorithms are not exposed as completed UI actions. This
