@@ -8,6 +8,12 @@ public sealed class UnavailableProcessingEngine(string reason) : IProcessingEngi
     public string Status { get; } = reason;
     public BackendInformation Backend { get; } = new(true, false, false, 0, "Managed UI only");
 
+    public Task<ProcessingWorkEstimate> EstimateAsync(
+        VolumeData volume,
+        OperationParameters parameters,
+        CancellationToken cancellationToken) =>
+        Task.FromException<ProcessingWorkEstimate>(new InvalidOperationException(Status));
+
     public Task<ProcessingResult> RunAsync(
         VolumeData volume,
         OperationParameters parameters,
@@ -19,4 +25,3 @@ public sealed class UnavailableProcessingEngine(string reason) : IProcessingEngi
     {
     }
 }
-

@@ -8,10 +8,14 @@ public interface IProcessingEngine : IDisposable
     string Status { get; }
     BackendInformation Backend { get; }
 
+    Task<ProcessingWorkEstimate> EstimateAsync(
+        VolumeData volume,
+        OperationParameters parameters,
+        CancellationToken cancellationToken);
+
     Task<ProcessingResult> RunAsync(
         VolumeData volume,
         OperationParameters parameters,
         IProgress<double>? progress,
         CancellationToken cancellationToken);
 }
-

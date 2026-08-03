@@ -1,4 +1,5 @@
 #include "dslt/core.hpp"
+#include "operations.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -106,6 +107,43 @@ dslt_status DSLT_CALL dslt_set_crop(
         return DSLT_INVALID_ARGUMENT;
     } catch (...) {
         return fail(instance, DSLT_INTERNAL_ERROR, "unexpected native error while configuring crop state");
+    }
+}
+
+dslt_status DSLT_CALL dslt_estimate_operation(
+    dslt_handle handle,
+    const dslt_operation_request* request,
+    dslt_work_estimate* out_estimate) {
+    auto* instance = engine(handle);
+    if (instance == nullptr || request == nullptr || out_estimate == nullptr) return DSLT_INVALID_ARGUMENT;
+    *out_estimate = {};
+    if (instance->volume().empty()) return fail(instance, DSLT_INVALID_STATE, "no volume is loaded");
+    try {
+        const auto segmentation = request->operation == DSLT_OP_DSLT_SEGMENTATION;
+        if (!segmentation && request->operation != DSLT_OP_DSLT_THRESHOLD) {
+            return fail(instance, DSLT_INVALID_ARGUMENT, "work estimates are available only for DSLT operations");
+        }
+        const auto estimate = dslt::ops::estimate_dslt_work(
+            instance->volume().descriptor(), request->radius, request->lanczos_order,
+            segmentation, request->constant_c, request->window_min, request->window_max);
+        out_estimate->voxel_count = estimate.voxel_count;
+        out_estimate->direction_count = estimate.direction_count;
+        out_estimate->line_samples_per_voxel = estimate.line_samples_per_voxel;
+        out_estimate->directional_work_items = estimate.directional_work_items;
+        out_estimate->estimated_host_bytes = estimate.estimated_host_bytes;
+        out_estimate->sweep_passes = estimate.sweep_passes;
+        out_estimate->work_item_limit = estimate.work_item_limit;
+        out_estimate->host_memory_limit_bytes = estimate.host_memory_limit_bytes;
+        out_estimate->within_limits = estimate.within_limits ? 1 : 0;
+        return DSLT_OK;
+    } catch (const dslt::ResourceLimitError& error) {
+        instance->set_error(error.what());
+        return DSLT_RESOURCE_LIMIT;
+    } catch (const std::exception& error) {
+        instance->set_error(error.what());
+        return DSLT_INVALID_ARGUMENT;
+    } catch (...) {
+        return fail(instance, DSLT_INTERNAL_ERROR, "unexpected native error while estimating DSLT work");
     }
 }
 
