@@ -82,6 +82,33 @@ dslt_status DSLT_CALL dslt_set_volume_f32(
     }
 }
 
+dslt_status DSLT_CALL dslt_set_crop(
+    dslt_handle handle,
+    const dslt_crop_options* options,
+    const float* height_map,
+    uint64_t height_map_element_count) {
+    auto* instance = engine(handle);
+    if (instance == nullptr || options == nullptr ||
+        (height_map == nullptr && height_map_element_count != 0)) return DSLT_INVALID_ARGUMENT;
+    if (height_map_element_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return fail(instance, DSLT_INVALID_ARGUMENT, "height map count exceeds addressable memory");
+    }
+    try {
+        const auto values = height_map == nullptr
+            ? std::span<const float>{}
+            : std::span<const float>(height_map, static_cast<std::size_t>(height_map_element_count));
+        instance->set_crop(*options, values);
+        return DSLT_OK;
+    } catch (const std::bad_alloc&) {
+        return fail(instance, DSLT_OUT_OF_MEMORY, "not enough memory to configure crop state");
+    } catch (const std::exception& error) {
+        instance->set_error(error.what());
+        return DSLT_INVALID_ARGUMENT;
+    } catch (...) {
+        return fail(instance, DSLT_INTERNAL_ERROR, "unexpected native error while configuring crop state");
+    }
+}
+
 dslt_status DSLT_CALL dslt_get_volume_descriptor(dslt_handle handle, dslt_volume_descriptor* out_descriptor) {
     auto* instance = engine(handle);
     if (instance == nullptr || out_descriptor == nullptr) return DSLT_INVALID_ARGUMENT;

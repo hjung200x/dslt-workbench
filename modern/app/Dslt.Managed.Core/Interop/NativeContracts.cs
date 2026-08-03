@@ -56,6 +56,17 @@ internal struct NativeOperationRequest
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeCropOptions
+{
+    public byte Enabled;
+    public byte UseHeightMap;
+    public fixed byte Reserved[2];
+    public int Upper;
+    public int Lower;
+    public int BorderXy;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct NativeOperationResult
 {
     public int UsedBackend;
@@ -84,4 +95,3 @@ internal unsafe struct NativeBackendInfo
             return Marshal.PtrToStringUTF8((nint)pointer) ?? string.Empty;
     }
 }
-

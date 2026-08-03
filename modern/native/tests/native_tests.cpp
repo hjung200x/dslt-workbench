@@ -163,13 +163,23 @@ int main() {
     request.window_min = 0.0F;
     request.window_max = 0.1F;
     request.target_spacing_z = 0.2F;
+    dslt_crop_options crop{};
+    crop.enabled = 1;
+    crop.use_height_map = 1;
+    crop.upper = 0;
+    crop.lower = 0;
+    crop.border_xy = 1;
+    std::vector<float> height_map(9, 1.0F);
+    require(dslt_set_crop(handle, &crop, height_map.data(), height_map.size() - 1), DSLT_INVALID_ARGUMENT);
+    require(dslt_set_crop(handle, &crop, height_map.data(), height_map.size()));
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
     assert(result.output_kind == DSLT_OUTPUT_LABELS_INT32);
     assert(result.component_count == 1);
     assert(result.reserved == 1);
     labels.assign(result.element_count, -1);
     require(dslt_copy_labels_i32(handle, labels.data(), labels.size()));
-    assert(std::all_of(labels.begin(), labels.end(), [](std::int32_t label) { return label == 0; }));
+    assert(std::count(labels.begin(), labels.end(), 0) == 1);
+    assert(labels[1 * 9 + 1 * 3 + 1] == 0);
 
     request.window_max = 0.0F;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);

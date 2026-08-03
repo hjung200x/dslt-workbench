@@ -31,6 +31,13 @@ internal static class NativeMethods
         ulong elementCount);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern NativeStatus dslt_set_crop(
+        DsltSafeHandle handle,
+        in NativeCropOptions options,
+        [In] float[]? heightMap,
+        ulong heightMapElementCount);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern NativeStatus dslt_run_operation(
         DsltSafeHandle handle,
         in NativeOperationRequest request,
@@ -57,4 +64,3 @@ internal static class NativeMethods
         nuint destinationSize,
         out nuint requiredSize);
 }
-

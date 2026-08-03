@@ -37,6 +37,11 @@ struct BackendState final {
     std::string device_name;
 };
 
+struct CropState final {
+    dslt_crop_options options{};
+    std::vector<float> height_map;
+};
+
 BackendState query_cuda_backend() noexcept;
 
 class Engine final {
@@ -44,10 +49,12 @@ public:
     using Progress = std::function<bool(float)>;
 
     void set_volume(const dslt_volume_descriptor& descriptor, std::span<const float> samples);
+    void set_crop(const dslt_crop_options& options, std::span<const float> height_map);
     [[nodiscard]] const Volume& volume() const noexcept { return source_; }
     [[nodiscard]] const std::vector<float>& output() const noexcept { return output_; }
     [[nodiscard]] const std::vector<std::int32_t>& labels() const noexcept { return labels_; }
     [[nodiscard]] const dslt_operation_result& result() const noexcept { return result_; }
+    [[nodiscard]] const CropState& crop() const noexcept { return crop_; }
     [[nodiscard]] BackendState cuda_state() const noexcept { return query_cuda_backend(); }
 
     dslt_status run(const dslt_operation_request& request, const Progress& progress);
@@ -59,6 +66,7 @@ private:
     std::vector<float> output_;
     std::vector<std::int32_t> labels_;
     std::unordered_set<std::int32_t> selection_;
+    CropState crop_;
     dslt_operation_result result_{};
     std::string last_error_;
 };

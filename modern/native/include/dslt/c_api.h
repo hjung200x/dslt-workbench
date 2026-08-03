@@ -108,6 +108,15 @@ typedef struct dslt_operation_request {
     float target_spacing_z;
 } dslt_operation_request;
 
+typedef struct dslt_crop_options {
+    uint8_t enabled;
+    uint8_t use_height_map;
+    uint8_t reserved[2];
+    int32_t upper;
+    int32_t lower;
+    int32_t border_xy;
+} dslt_crop_options;
+
 typedef enum dslt_output_kind {
     DSLT_OUTPUT_VOLUME_FLOAT32 = 1,
     DSLT_OUTPUT_LABELS_INT32 = 2,
@@ -145,6 +154,11 @@ DSLT_API dslt_status DSLT_CALL dslt_set_volume_f32(
     const dslt_volume_descriptor* descriptor,
     const float* data,
     uint64_t element_count);
+DSLT_API dslt_status DSLT_CALL dslt_set_crop(
+    dslt_handle handle,
+    const dslt_crop_options* options,
+    const float* height_map,
+    uint64_t height_map_element_count);
 DSLT_API dslt_status DSLT_CALL dslt_get_volume_descriptor(
     dslt_handle handle,
     dslt_volume_descriptor* out_descriptor);

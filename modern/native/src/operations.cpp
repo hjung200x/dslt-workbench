@@ -483,6 +483,37 @@ std::vector<float> c_schedule(float minimum, float maximum, float interval) {
     return values;
 }
 
+void apply_crop(
+    std::span<float> mask,
+    const dslt_volume_descriptor& descriptor,
+    const CropParameters& crop,
+    float outside_value) {
+    if (!crop.enabled) return;
+    const auto border = static_cast<std::size_t>(crop.border_xy);
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t y = 0; y < descriptor.height; ++y) {
+            for (std::size_t x = 0; x < descriptor.width; ++x) {
+                const auto outside_border =
+                    border >= descriptor.width || border >= descriptor.height ||
+                    x < border || x >= descriptor.width - border ||
+                    y < border || y >= descriptor.height - border;
+                auto outside_depth = false;
+                if (crop.use_height_map) {
+                    const auto surface = crop.height_map[y * descriptor.width + x];
+                    outside_depth = static_cast<float>(z) < surface + static_cast<float>(crop.upper) ||
+                        static_cast<float>(z) > surface + static_cast<float>(crop.lower);
+                } else {
+                    outside_depth = static_cast<long long>(z) < crop.upper ||
+                        static_cast<long long>(z) > crop.lower;
+                }
+                if (outside_border || outside_depth) {
+                    mask[flat(x, y, z, descriptor.width, descriptor.height)] = outside_value;
+                }
+            }
+        }
+    }
+}
+
 } // namespace
 
 std::vector<std::int32_t> connected_components(
@@ -645,6 +676,20 @@ ComponentLabels dslt_segmentation_from_response(
     if (parameters.minimum_component_size < 0 || parameters.minimum_invalid_structure_area < 0) {
         throw std::invalid_argument("DSLT component and invalid-structure limits must be non-negative");
     }
+    if (parameters.crop.enabled) {
+        if (parameters.crop.upper > parameters.crop.lower || parameters.crop.border_xy < 0) {
+            throw std::invalid_argument("DSLT crop bounds are invalid");
+        }
+        const auto expected_height_map = static_cast<std::size_t>(descriptor.width) * descriptor.height;
+        if (parameters.crop.use_height_map && parameters.crop.height_map.size() != expected_height_map) {
+            throw std::invalid_argument("DSLT crop height map dimensions do not match");
+        }
+        if (parameters.crop.use_height_map &&
+            !std::all_of(parameters.crop.height_map.begin(), parameters.crop.height_map.end(),
+                [](float value) { return std::isfinite(value); })) {
+            throw std::invalid_argument("DSLT crop height map must contain only finite values");
+        }
+    }
 
     const auto values = c_schedule(parameters.minimum_c, parameters.maximum_c, parameters.c_interval);
     const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
@@ -666,11 +711,13 @@ ComponentLabels dslt_segmentation_from_response(
         for (std::size_t index = 0; index < mask.size(); ++index) {
             if (result.labels[index] >= 0) mask[index] = 0.0F;
         }
+        apply_crop(mask, descriptor, parameters.crop, 0.0F);
 
         const auto thickness = estimate_wall_thickness(
             mask, descriptor, previous_thickness / 2,
             mapped_progress(progress, pass_start + pass_length * 0.35F, pass_length * 0.25F));
         previous_thickness = thickness;
+        apply_crop(mask, descriptor, parameters.crop, 0.8F);
         const auto candidates = connected_components_low_6(
             mask, descriptor, 0.1F, parameters.minimum_component_size, result.labels,
             mapped_progress(progress, pass_start + pass_length * 0.60F, pass_length * 0.15F));

@@ -15,16 +15,16 @@ the compatibility behavior where it is unambiguous. Any behavior marked
 `capture-required` must be measured with the legacy executable before
 Workbench may claim legacy equivalence.
 
-Implementation status: **scalar CPU threshold basis and iterative C sweep
-implemented; crop integration and legacy-runtime comparison pending**. The operation covers
+Implementation status: **scalar CPU threshold basis, iterative C sweep, and
+crop integration implemented; legacy-runtime comparison pending**. The operation covers
 ordered directions, every-radius response, trilinear clamp sampling,
 direction-dependent C, and strict binarization. The response and C application
 are separate internal operations so one response is reused throughout the C
 sweep. Buffer-based spherical closing, low-valued 6-connected component
 extraction, wall-thickness estimation, invalid-structure rejection,
-append-only labeling, final-pass acceptance, and early termination are wired
-to `DSLT_OP_DSLT_SEGMENTATION`. The operation currently runs without a crop
-configuration; crop state remains the last Stage 7 core contract.
+append-only labeling, final-pass acceptance, early termination, fixed-Z crop,
+height-map-relative crop, and XY border exclusion are wired to
+`DSLT_OP_DSLT_SEGMENTATION`.
 
 ## Terminology and coordinates
 
@@ -241,8 +241,9 @@ direction counts and antipodal uniqueness, mean/Gaussian formulae for radii
 strict threshold boundary, spherical closing, and the legacy-exclusive
 low-component size rule. It also uses a staged defect fixture to verify
 append-only labels, invalid-component deferral, final-pass acceptance, exact C
-pass count, and cancellation. Ramp response oracles, crop fixtures, work
-limits, and archived-binary comparisons are still outstanding.
+pass count, and cancellation. C ABI and managed fixtures verify height-map crop
+and XY border behavior. Ramp response oracles, work limits, and archived-binary
+comparisons are still outstanding.
 
 Until the same fixtures can be run through an archived legacy binary, the
 result level is **synthetic-data validated**, not legacy compared or
@@ -287,3 +288,12 @@ the ABI v1 structure sizes. The .NET adapter exposes semantic properties
 `MinimumC`, `MaximumC`, `CInterval`, `ClosingRadius`, and
 `MinimumInvalidStructureArea` so application code does not depend on field
 reuse.
+
+Crop state is configured with the additive ABI v1 function `dslt_set_crop`.
+The 16-byte `dslt_crop_options` contains enabled/use-height-map flags, inclusive
+upper/lower Z offsets, and XY border thickness. When height-map mode is active,
+the caller supplies exactly `width * height` finite float samples. As in the
+legacy loop, excluded voxels are first forced to the lower value for wall
+thickness estimation and then to the upper value before low-component
+extraction. Loading a new volume clears crop state, preventing a stale height
+map from being applied to different dimensions.
