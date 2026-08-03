@@ -15,8 +15,9 @@ the compatibility behavior where it is unambiguous. Any behavior marked
 `capture-required` must be measured with the legacy executable before
 Workbench may claim legacy equivalence.
 
-Implementation status: **scalar CPU threshold basis, iterative C sweep, and
-crop integration implemented; legacy-runtime comparison pending**. The operation covers
+Implementation status: **scalar CPU threshold basis, iterative C sweep, crop
+integration, and CUDA threshold basis implemented; legacy-runtime comparison
+pending**. The operation covers
 ordered directions, every-radius response, trilinear clamp sampling,
 direction-dependent C, and strict binarization. The response and C application
 are separate internal operations so one response is reused throughout the C
@@ -103,7 +104,7 @@ when `previous > candidate`, not when equal
   resulting threshold and mask remain identical.
 
 CUDA texture configuration confirms trilinear interpolation and clamp-to-edge
-addressing (`linearConvolution_Texture.cu:73-101`). CPU and future CUDA code
+addressing (`linearConvolution_Texture.cu:73-101`). CPU and Workbench CUDA code
 must reproduce those semantics explicitly rather than depend on library
 defaults.
 
@@ -251,8 +252,9 @@ equivalence.
 ## Required fixtures and acceptance tests
 
 Stage 7 may mark DSLT `implemented` only after all of the following CPU tests
-pass. CUDA must later pass the project-wide numerical tolerances against these
-CPU results.
+pass. CUDA must pass the project-wide numerical tolerances against these CPU
+results. The current CUDA threshold-basis gate covers the response/mask subset;
+the sweep and complete iterative segmentation gates remain outstanding.
 
 | Fixture | Required assertion |
 |---|---|

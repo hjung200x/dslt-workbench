@@ -25,7 +25,8 @@ The currently ported groups are:
 - 3D depth maps derived from the filtered height surface; and
 - 6/18/26-connected component labeling with minimum-size filtering; and
 - H-minima reconstruction with exact fixed-point detection; and
-- selected-seed watershed with the fixed 256-level legacy schedule.
+- selected-seed watershed with the fixed 256-level legacy schedule; and
+- the ordered geodesic DSLT directional-threshold basis.
 
 ## Resource ownership and execution
 
@@ -80,6 +81,15 @@ labels. Separate current/next label buffers and a convergence flag are included
 in VRAM preflight. Progress remains monotonic after input transfer, cancellation
 is checked only after synchronized work, and failure never replaces the prior
 engine result.
+
+The DSLT threshold basis constructs directions and line weights with the same
+host routines as CPU, then visits radii from largest to smallest and directions
+in encounter order on one stream. Each voxel keeps a candidate only on a
+strictly smaller response, preserving legacy first-minimum tie behavior.
+Trilinear sampling clamps every coordinate to the nearest edge, and the final
+kernel applies the direction-dependent XY/Z correction with a strict threshold.
+Minimum-response, direction-alpha, and maximum line-weight buffers are included
+in VRAM preflight; the CPU work estimate and resource gate run before allocation.
 
 ## Validation gates
 
@@ -290,3 +300,26 @@ two competing seeds. It also covers selected-seed restriction, minimum seed
 size, fixed crop, all 256 levels, `Auto`, invalid state and parameters,
 mid-level cancellation, and repeated watershed workspace allocation in the
 mixed-operation memory gate.
+
+## Recorded DSLT threshold-basis runtime evidence
+
+The first directional DSLT threshold runtime gate was completed on 2026-08-04
+(Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `255b8441982212ff85896204a9b62b7e5cfc2d8d` |
+| Hosted build | GitHub Actions run `30860933349`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `53325895878F0B9A0CD96F92E67F31510DC750B615B3AEC940CAD330A11636D1` |
+| `dslt_native_tests.exe` SHA-256 | `A4B98ECD57EE19C8E636F7C18DA1B737C62C39924ADC80F121139AC72D1B9AC2` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The runtime fixture proves voxel-exact final masks for mean and Gaussian line
+weights, radii 1 and 2, direction levels 1 and 2, oblique directions, and three
+XY/Z correction combinations. It also covers `Auto`, parameter bounds,
+directional-work rejection, mid-direction cancellation, and repeated response
+workspace allocation. Threshold sweep and iterative DSLT segmentation remain
+separate pending CUDA ports.

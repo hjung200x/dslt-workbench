@@ -503,6 +503,58 @@ void cuda_pointwise_parity_test() {
         handle, request, DSLT_BACKEND_CUDA);
     assert(automatic_h_minima.values[h_minima_center] == 0.0F);
 
+    auto dslt_cuda_desc = descriptor(4, 3, 3);
+    std::vector<float> dslt_cuda_source(dslt_cuda_desc.element_count);
+    for (std::size_t index = 0; index < dslt_cuda_source.size(); ++index) {
+        dslt_cuda_source[index] = static_cast<float>((index * 17U + 3U) % 31U) / 30.0F;
+    }
+    dslt_cuda_source[0] = 1.5F;
+    dslt_cuda_source[dslt_cuda_source.size() / 2] = -0.5F;
+    require(dslt_set_volume_f32(
+        handle, &dslt_cuda_desc, dslt_cuda_source.data(), dslt_cuda_source.size()));
+
+    std::vector<dslt_operation_request> dslt_threshold_requests(3);
+    for (auto& dslt_request : dslt_threshold_requests) {
+        dslt_request.operation = DSLT_OP_DSLT_THRESHOLD;
+    }
+    dslt_threshold_requests[0].radius = 1;
+    dslt_threshold_requests[0].lanczos_order = 1;
+    dslt_threshold_requests[0].connectivity = 1;
+    dslt_threshold_requests[0].constant_c = 0.03F;
+    dslt_threshold_requests[0].target_spacing_z = 0.2F;
+    dslt_threshold_requests[1].radius = 2;
+    dslt_threshold_requests[1].lanczos_order = 1;
+    dslt_threshold_requests[1].connectivity = 0;
+    dslt_threshold_requests[1].constant_c = -0.03F;
+    dslt_threshold_requests[1].target_spacing_z = 0.5F;
+    dslt_threshold_requests[2].radius = 1;
+    dslt_threshold_requests[2].lanczos_order = 2;
+    dslt_threshold_requests[2].connectivity = 1;
+    dslt_threshold_requests[2].constant_c = 0.02F;
+    dslt_threshold_requests[2].target_spacing_z = 1.7F;
+
+    auto saw_dslt_lower = false;
+    auto saw_dslt_upper = false;
+    for (auto dslt_request : dslt_threshold_requests) {
+        dslt_request.backend = DSLT_BACKEND_CPU;
+        const auto cpu = run_float_operation_result(
+            handle, dslt_request, DSLT_BACKEND_CPU);
+        dslt_request.backend = DSLT_BACKEND_CUDA;
+        const auto cuda = run_float_operation_result(
+            handle, dslt_request, DSLT_BACKEND_CUDA);
+        assert(cpu.values == cuda.values);
+        saw_dslt_lower = saw_dslt_lower ||
+            std::find(cuda.values.begin(), cuda.values.end(), 0.0F) != cuda.values.end();
+        saw_dslt_upper = saw_dslt_upper ||
+            std::find(cuda.values.begin(), cuda.values.end(), 0.8F) != cuda.values.end();
+    }
+    assert(saw_dslt_lower && saw_dslt_upper);
+
+    auto automatic_dslt_request = dslt_threshold_requests[0];
+    automatic_dslt_request.backend = DSLT_BACKEND_AUTO;
+    (void)run_float_operation_result(
+        handle, automatic_dslt_request, DSLT_BACKEND_CUDA);
+
     auto watershed_desc = descriptor(5, 1, 1);
     const std::vector<float> watershed_source(watershed_desc.element_count, 0.0F);
     const std::vector<std::int32_t> watershed_seeds{10, -1, -1, -1, 20};
@@ -606,6 +658,43 @@ void cuda_pointwise_parity_test() {
     request.minimum_component_size = 2;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
+    require(dslt_set_volume_f32(
+        handle, &dslt_cuda_desc, dslt_cuda_source.data(), dslt_cuda_source.size()));
+    request = dslt_threshold_requests[0];
+    request.backend = DSLT_BACKEND_CUDA;
+    request.radius = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request.radius = 128;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_threshold_requests[0];
+    request.backend = DSLT_BACKEND_CUDA;
+    request.lanczos_order = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request.lanczos_order = 6;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_threshold_requests[0];
+    request.backend = DSLT_BACKEND_CUDA;
+    request.connectivity = 2;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_threshold_requests[0];
+    request.backend = DSLT_BACKEND_CUDA;
+    request.constant_c = std::numeric_limits<float>::quiet_NaN();
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+    request = dslt_threshold_requests[0];
+    request.backend = DSLT_BACKEND_CUDA;
+    request.target_spacing_z = -0.1F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    auto dslt_limit_desc = descriptor(50, 50, 50);
+    const std::vector<float> dslt_limit_source(dslt_limit_desc.element_count, 0.5F);
+    require(dslt_set_volume_f32(
+        handle, &dslt_limit_desc, dslt_limit_source.data(), dslt_limit_source.size()));
+    request = dslt_threshold_requests[0];
+    request.backend = DSLT_BACKEND_CUDA;
+    request.radius = 127;
+    request.lanczos_order = 5;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_RESOURCE_LIMIT);
+
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
     request.backend = DSLT_BACKEND_CUDA;
@@ -622,7 +711,7 @@ void cuda_pointwise_parity_test() {
     request = {};
     request.operation = DSLT_OP_EXTRACT_YZ;
     request.backend = DSLT_BACKEND_CUDA;
-    request.slice_index = static_cast<std::int32_t>(watershed_desc.width);
+    request.slice_index = static_cast<std::int32_t>(dslt_limit_desc.width);
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
@@ -737,6 +826,16 @@ void cuda_pointwise_parity_test() {
         handle, &request, cancel_h_minima, nullptr, &result), DSLT_CANCELLED);
 
     require(dslt_set_volume_f32(
+        handle, &dslt_cuda_desc, dslt_cuda_source.data(), dslt_cuda_source.size()));
+    request = dslt_threshold_requests[2];
+    request.backend = DSLT_BACKEND_CUDA;
+    const auto cancel_dslt_threshold = [](float progress, void*) -> std::int32_t {
+        return progress > 0.25F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_dslt_threshold, nullptr, &result), DSLT_CANCELLED);
+
+    require(dslt_set_volume_f32(
         handle, &watershed_desc, watershed_source.data(), watershed_source.size()));
     require(dslt_set_label_state_i32(
         handle, watershed_seeds.data(), watershed_seeds.size(),
@@ -758,7 +857,7 @@ void cuda_pointwise_parity_test() {
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
-    request.operation = DSLT_OP_DSLT_THRESHOLD;
+    request.operation = DSLT_OP_DSLT_SEGMENTATION;
     request.backend = DSLT_BACKEND_CUDA;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
 
@@ -831,11 +930,14 @@ void cuda_pointwise_parity_test() {
         handle, watershed_seeds.data(), watershed_seeds.size(),
         watershed_selected.data(), watershed_selected.size()));
     (void)run_label_operation_result(handle, memory_watershed, DSLT_BACKEND_CUDA);
+    auto memory_dslt_threshold = dslt_threshold_requests[0];
+    memory_dslt_threshold.backend = DSLT_BACKEND_CUDA;
+    (void)run_float_operation(handle, memory_dslt_threshold, DSLT_BACKEND_CUDA);
 
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        switch (iteration % 7) {
+        switch (iteration % 8) {
         case 0:
             (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
             break;
@@ -859,6 +961,9 @@ void cuda_pointwise_parity_test() {
                 handle, watershed_seeds.data(), watershed_seeds.size(),
                 watershed_selected.data(), watershed_selected.size()));
             (void)run_label_operation_result(handle, memory_watershed, DSLT_BACKEND_CUDA);
+            break;
+        case 7:
+            (void)run_float_operation(handle, memory_dslt_threshold, DSLT_BACKEND_CUDA);
             break;
         default:
             (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);
