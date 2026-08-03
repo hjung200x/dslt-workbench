@@ -12,7 +12,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Channel selection | Explicit `channel` in descriptor/request | implemented | Synthetic multichannel fixture |
 | Z area-average scaling | `ResampleZArea` | implemented | Ramp and impulse fixtures |
 | Z Lanczos 2/3 scaling | `ResampleZLanczos` | implemented | Ramp and impulse fixtures |
-| Orthogonal XY/YZ/ZX views | `ExtractPlane` | implemented | Coordinate fixtures |
+| Orthogonal XY/YZ/ZX views | `ExtractPlane` + synchronized WPF planes | implemented | Native coordinate fixtures + WPF axis-dimension fixture |
 | Brightness/contrast | `WindowLevel` | implemented | Range fixtures |
 | Mean/Gaussian smoothing | `SmoothMean`, `SmoothGaussian` | implemented | Impulse fixture |
 | Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures |
@@ -27,7 +27,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Sobel-like iterative segmentation | `DsltSegmentation` | scaffolded | CPU response reuse, C schedule, closing, wall validation, append-only labels, final pass, cancellation, fixed/height-map crop, checked resource estimates, and staged-defect fixtures implemented; legacy runtime comparison pending |
 | Threshold sweep | `ThresholdSweep` | scaffolded | Reserved for the non-DSLT threshold workflow; legacy comparison required |
 | Watershed | `Watershed` | pending-reference | Legacy comparison required |
-| Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity and undo fixtures |
+| Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity/undo fixtures; WPF select/dilate/undo fixture; undo-safe crop UI pending |
 | Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |
 | Win32/x86 build | None | excluded | Windows x64 policy |
 

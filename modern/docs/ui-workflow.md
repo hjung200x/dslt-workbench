@@ -11,7 +11,10 @@ equivalence; that remains gated by representative datasets.
   volume when decoding fails.
 - Generate a deterministic synthetic volume for installation and backend
   checks.
-- Select a channel and XY Z-slice with bounds derived from the active volume.
+- Select a channel and shared X/Y/Z coordinates with bounds derived from the
+  active volume.
+- Render synchronized XY, YZ, and ZX source/result planes, apply one shared zoom
+  factor, and propagate normalized scroll offsets across all six views.
 - Adjust the display window independently of stored voxel values.
 - Choose the processing backend and an exposed CPU-compatible operation.
 - Configure threshold, radius, connectivity, component-size, and DSLT sweep
@@ -28,6 +31,11 @@ equivalence; that remains gated by representative datasets.
   processing failure.
 - Advance label results to the edit stage and export the result with its JSON
   provenance sidecar.
+- Select the label at the shared cursor, optionally add labels to the selection,
+  and merge, split, dilate, erode, clear, or undo through `LabelEditingSession`.
+  Selected labels are highlighted consistently in all result planes.
+- Store successful label-edit actions in provenance schema 1.2 so an exported
+  result distinguishes processing output from subsequent manual edits.
 
 ## Automated state checks
 
@@ -40,19 +48,22 @@ equivalence; that remains gated by representative datasets.
    previous valid result;
 5. processing failure retains the previous valid result;
 6. opening a multi-channel volume updates channel and Z navigation and changing
-   the channel refreshes the source image.
+   the channel refreshes the source image;
+7. YZ and ZX source/result plane dimensions follow the volume axes;
+8. cursor selection, label dilation, and undo update and restore the published
+   result;
+9. ViewModel export writes label-edit history into the JSON provenance sidecar.
+10. normalized horizontal and vertical offsets propagate between differently
+    sized WPF viewports without feedback recursion.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
 
 ## Remaining UI work
 
-- Render synchronized XY, YZ, and ZX source/destination views with shared
-  coordinates, zoom, and scroll state.
-- Bind `LabelEditingSession` selection, merge, split, crop, dilate, erode, and
-  undo operations to the edit stage.
-- Add keyboard shortcuts compatible with the legacy editing workflow.
-- Add end-to-end package export tests using the UI ViewModel and a temporary
-  destination.
+- Add an undo-safe crop transaction to the edit stage. Selection, merge, split,
+  dilate, erode, and undo are already bound.
+- Recover and add the remaining legacy editing shortcuts. `Ctrl+Z` is currently
+  bound to undo; shortcut behavior without source evidence is not guessed.
 - Perform interactive accessibility, DPI, and large-volume responsiveness
   checks on Windows 10 22H2 and Windows 11.

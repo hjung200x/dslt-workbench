@@ -1,7 +1,13 @@
+using Dslt.App.Infrastructure;
 using Dslt.App.Services;
 using Dslt.App.ViewModels;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Services;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace Dslt.App.Tests;
 
@@ -9,6 +15,7 @@ internal static class WorkflowViewModelTests
 {
     public static async Task RunAsync()
     {
+        RunScrollSyncOnSta();
         var engine = new FakeProcessingEngine();
         var files = new FakeWorkspaceFileService();
         using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
@@ -48,6 +55,16 @@ internal static class WorkflowViewModelTests
         Assert(target.SelectedStage == WorkflowStage.Edit,
             "A label result did not advance the workflow to editing.");
         Assert(target.Progress == 100, "A successful operation did not finish at 100 percent progress.");
+        Assert(target.SourceYzImage is BitmapSource sourceYz &&
+               sourceYz.PixelWidth == successfulResult.Depth &&
+               sourceYz.PixelHeight == successfulResult.Height,
+            "The source YZ plane dimensions are incorrect.");
+        Assert(target.SourceZxImage is BitmapSource sourceZx &&
+               sourceZx.PixelWidth == successfulResult.Width &&
+               sourceZx.PixelHeight == successfulResult.Depth,
+            "The source ZX plane dimensions are incorrect.");
+        Assert(target.ResultYzImage is not null && target.ResultZxImage is not null,
+            "The label result did not publish all orthogonal planes.");
 
         engine.RunBehavior = FakeRunBehavior.WaitForCancellation;
         var cancelledRun = target.RunCommand.ExecuteAsync();
@@ -69,6 +86,38 @@ internal static class WorkflowViewModelTests
         Assert(target.Status.Contains("failed", StringComparison.OrdinalIgnoreCase) &&
                target.Status.Contains("preserved", StringComparison.OrdinalIgnoreCase),
             "Failure did not report result preservation.");
+
+        var labelCountBeforeEdit = target.LastResult!.Labels!.Count(label => label == 0);
+        target.SelectAtCursorCommand.Execute(null);
+        Assert(target.SelectedLabelCount == 1 && target.SelectionSummary.Contains("0", StringComparison.Ordinal),
+            "Selecting the cursor label did not update editing state.");
+        target.DilateSelectionCommand.Execute(null);
+        Assert(target.LastResult!.Labels!.Count(label => label == 0) > labelCountBeforeEdit,
+            "Label dilation did not update the published result.");
+        target.UndoEditCommand.Execute(null);
+        Assert(target.LastResult!.Labels!.Count(label => label == 0) == labelCountBeforeEdit,
+            "Undo did not restore the label result.");
+
+        var exportBase = Path.Combine(Path.GetTempPath(), $"dslt-workflow-{Guid.NewGuid():N}");
+        files.ExportBasePath = exportBase;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            var provenance = await File.ReadAllTextAsync(exportBase + ".json");
+            Assert(provenance.Contains("Dilated selected labels", StringComparison.Ordinal) &&
+                   provenance.Contains("undo", StringComparison.Ordinal),
+                "The UI export did not retain label-edit history.");
+            Assert(target.SelectedStage == WorkflowStage.Export,
+                "Successful export did not advance the workflow.");
+        }
+        finally
+        {
+            foreach (var suffix in new[] { ".i32.raw", ".labels.i16.tif", ".labels.i32.tif", ".json" })
+            {
+                var path = exportBase + suffix;
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
 
         var channelPlanar = new float[]
         {
@@ -93,6 +142,78 @@ internal static class WorkflowViewModelTests
             "Changing channels did not refresh the source image.");
         Assert(target.VolumeSummary.Contains("channel 2/2", StringComparison.Ordinal),
             "The selected channel was not reflected in the volume summary.");
+        Assert(ReadGray8((BitmapSource)target.SourceYzImage!).SequenceEqual(new byte[] { 230, 178, 230, 128 }),
+            "The YZ plane did not preserve Y-vertical and Z-horizontal coordinate order.");
+        Assert(ReadGray8((BitmapSource)target.SourceZxImage!).SequenceEqual(new byte[] { 255, 230, 153, 128 }),
+            "The ZX plane did not preserve Z-vertical and X-horizontal coordinate order.");
+    }
+
+    private static void RunScrollSyncTest()
+    {
+        var source = new ScrollViewer
+        {
+            Width = 100,
+            Height = 100,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            Content = new Border { Width = 1_000, Height = 1_000 },
+        };
+        var target = new ScrollViewer
+        {
+            Width = 100,
+            Height = 100,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            Content = new Border { Width = 500, Height = 500 },
+        };
+        ScrollSyncBehavior.SetGroup(source, "test-orthogonal");
+        ScrollSyncBehavior.SetGroup(target, "test-orthogonal");
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        panel.Children.Add(source);
+        panel.Children.Add(target);
+        panel.Measure(new Size(200, 100));
+        panel.Arrange(new Rect(0, 0, 200, 100));
+        panel.UpdateLayout();
+        source.ScrollToHorizontalOffset(source.ScrollableWidth / 2);
+        source.ScrollToVerticalOffset(source.ScrollableHeight / 2);
+        source.UpdateLayout();
+        target.UpdateLayout();
+        Assert(Math.Abs(target.HorizontalOffset - target.ScrollableWidth / 2) < 0.5 &&
+               Math.Abs(target.VerticalOffset - target.ScrollableHeight / 2) < 0.5,
+            "Orthogonal viewport scroll offsets were not synchronized proportionally.");
+        ScrollSyncBehavior.SetGroup(source, null);
+        ScrollSyncBehavior.SetGroup(target, null);
+    }
+
+    private static void RunScrollSyncOnSta()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                RunScrollSyncTest();
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+            finally
+            {
+                Dispatcher.CurrentDispatcher.InvokeShutdown();
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null) throw new InvalidOperationException("Scroll synchronization test failed.", failure);
+    }
+
+    private static byte[] ReadGray8(BitmapSource source)
+    {
+        var pixels = new byte[checked(source.PixelWidth * source.PixelHeight)];
+        source.CopyPixels(pixels, source.PixelWidth, 0);
+        return pixels;
     }
 
     private static void Assert(bool condition, string message)
@@ -157,9 +278,10 @@ internal static class WorkflowViewModelTests
             if (RunBehavior == FakeRunBehavior.Fail)
                 throw new InvalidOperationException("Synthetic engine failure.");
 
-            var labels = new int[volume.VoxelCount];
-            for (var index = 0; index < labels.Length; index++)
-                labels[index] = volume.Samples[index] >= parameters.Threshold ? 0 : -1;
+            var labels = Enumerable.Repeat(-1, volume.VoxelCount).ToArray();
+            var center = volume.Depth / 2 * volume.Width * volume.Height +
+                         volume.Height / 2 * volume.Width + volume.Width / 2;
+            labels[center] = 0;
             progress?.Report(1);
             return new ProcessingResult(
                 UsedBackend: ProcessingBackend.Cpu,
@@ -179,8 +301,9 @@ internal static class WorkflowViewModelTests
     private sealed class FakeWorkspaceFileService : IWorkspaceFileService
     {
         public VolumeData? NextVolume { get; set; }
+        public string? ExportBasePath { get; set; }
         public Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken) =>
             Task.FromResult(NextVolume);
-        public string? ChooseExportBasePath() => null;
+        public string? ChooseExportBasePath() => ExportBasePath;
     }
 }

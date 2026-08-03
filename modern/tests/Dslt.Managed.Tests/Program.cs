@@ -157,7 +157,8 @@ var syntheticResult = new ProcessingResult(
     sphere.Samples[..sphere.VoxelCount],
     null);
 var operation = new OperationParameters(ProcessingOperation.Copy, ProcessingBackend.Cpu);
-await ResultPackageWriter.WriteAsync(temporaryBase, sphere, operation, syntheticResult);
+await ResultPackageWriter.WriteAsync(
+    temporaryBase, sphere, operation, syntheticResult, ["selected label 3", "merged labels 3 and 4"]);
 var rawPath = temporaryBase + ".f32.raw";
 var jsonPath = temporaryBase + ".json";
 if (!File.Exists(rawPath) || !File.Exists(jsonPath))
@@ -165,6 +166,8 @@ if (!File.Exists(rawPath) || !File.Exists(jsonPath))
 var json = await File.ReadAllTextAsync(jsonPath);
 if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance validation level is missing.");
+if (!json.Contains("merged labels 3 and 4", StringComparison.Ordinal))
+    throw new InvalidOperationException("Provenance edit history is missing.");
 File.Delete(rawPath);
 File.Delete(jsonPath);
 Console.WriteLine("DSLT provenance export test passed.");
