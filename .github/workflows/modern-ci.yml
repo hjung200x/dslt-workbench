@@ -5,10 +5,14 @@ on:
     branches: [ main, master, 'codex/**' ]
     paths:
       - 'modern/**'
+      - 'COPYING.GPLv3'
+      - 'license.txt'
       - '.github/workflows/modern-ci.yml'
   pull_request:
     paths:
       - 'modern/**'
+      - 'COPYING.GPLv3'
+      - 'license.txt'
       - '.github/workflows/modern-ci.yml'
 
 jobs:
@@ -30,6 +34,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -70,3 +76,12 @@ jobs:
         run: |
           $env:ASAN_OPTIONS = "halt_on_error=1:abort_on_error=1:detect_leaks=0"
           ctest --preset windows-cpu-asan
+      - name: Build and verify self-contained preview package
+        shell: pwsh
+        run: ./modern/scripts/package-preview.ps1 -SkipNativeBuild -Version "0.1.0-preview.${{ github.run_number }}"
+      - name: Upload verified preview package
+        uses: actions/upload-artifact@v4
+        with:
+          name: dslt-workbench-preview-win-x64-${{ github.run_number }}
+          path: modern/artifacts/preview/*
+          if-no-files-found: error

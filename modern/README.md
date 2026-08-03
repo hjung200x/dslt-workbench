@@ -38,6 +38,24 @@ ctest --preset windows-cpu
 Use the `windows-cuda` preset after installing CUDA 13.2. The CUDA target is
 optional and never changes CPU semantics.
 
+## Preview package
+
+Build, assemble, and verify a self-contained CPU preview package from a Visual
+Studio developer shell:
+
+```powershell
+.\modern\scripts\package-preview.ps1 -Version 0.1.0-preview
+```
+
+Packaging requires a clean Git worktree so `BUILD-INFO.json` identifies the
+exact distributed source commit.
+
+The command creates a Windows x64 ZIP and adjacent SHA-256 file under
+`modern/artifacts/preview`. It rejects missing native/runtime binaries,
+non-x64 PE files, an incomplete GPLv3 copy, missing upstream provenance, unsafe
+or duplicate ZIP paths, missing legacy/.NET notices, or a checksum mismatch.
+See `docs/release-policy.md`.
+
 ## Validation status
 
 Only synthetic-data equivalence can be claimed until representative confocal
