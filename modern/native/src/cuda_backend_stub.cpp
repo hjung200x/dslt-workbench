@@ -16,7 +16,12 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_DILATE_CUBE ||
         operation == DSLT_OP_ERODE_CUBE ||
         operation == DSLT_OP_DILATE_SPHERE ||
-        operation == DSLT_OP_ERODE_SPHERE;
+        operation == DSLT_OP_ERODE_SPHERE ||
+        operation == DSLT_OP_RESAMPLE_Z_AREA ||
+        operation == DSLT_OP_RESAMPLE_Z_LANCZOS ||
+        operation == DSLT_OP_EXTRACT_XY ||
+        operation == DSLT_OP_EXTRACT_YZ ||
+        operation == DSLT_OP_EXTRACT_ZX;
 }
 
 CudaRunResult run_cuda_operation(

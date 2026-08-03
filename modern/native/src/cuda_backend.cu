@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -204,6 +205,118 @@ __global__ void morphology_slice_kernel(
     }
 }
 
+__device__ float sinc_device(float value) {
+    if (fabsf(value) < 1.0e-7F) return 1.0F;
+    constexpr float pi = 3.14159265358979323846F;
+    const auto angle = pi * value;
+    return sinf(angle) / angle;
+}
+
+__device__ int clamp_index(int value, int length) {
+    if (value < 0) return 0;
+    return value >= length ? length - 1 : value;
+}
+
+__global__ void resample_area_slice_kernel(
+    const float* source,
+    float* output,
+    std::size_t width,
+    std::size_t height,
+    int input_depth,
+    std::size_t output_z,
+    double scale) {
+    const auto plane = width * height;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    const auto begin = static_cast<double>(output_z) * scale;
+    const auto end = static_cast<double>(output_z + 1) * scale;
+    const auto first = static_cast<int>(floor(begin));
+    const auto last = static_cast<int>(ceil(end));
+    for (auto plane_index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         plane_index < plane;
+         plane_index += stride) {
+        const auto x = plane_index % width;
+        const auto y = plane_index / width;
+        double sum = 0.0;
+        double weight_sum = 0.0;
+        for (int input_z = first; input_z < last; ++input_z) {
+            const auto clamped_z = clamp_index(input_z, input_depth);
+            const auto overlap = fmax(
+                0.0,
+                fmin(end, static_cast<double>(input_z) + 1.0) -
+                    fmax(begin, static_cast<double>(input_z)));
+            sum += static_cast<double>(source[flat_index(
+                x, y, static_cast<std::size_t>(clamped_z), width, height)]) * overlap;
+            weight_sum += overlap;
+        }
+        output[flat_index(x, y, output_z, width, height)] =
+            weight_sum == 0.0 ? 0.0F : static_cast<float>(sum / weight_sum);
+    }
+}
+
+__global__ void resample_lanczos_slice_kernel(
+    const float* source,
+    float* output,
+    std::size_t width,
+    std::size_t height,
+    int input_depth,
+    std::size_t output_z,
+    double scale,
+    int order) {
+    const auto plane = width * height;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    const auto center = (static_cast<double>(output_z) + 0.5) * scale - 0.5;
+    const auto center_floor = static_cast<int>(floor(center));
+    const auto first = center_floor - order + 1;
+    const auto last = center_floor + order;
+    for (auto plane_index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         plane_index < plane;
+         plane_index += stride) {
+        const auto x = plane_index % width;
+        const auto y = plane_index / width;
+        double sum = 0.0;
+        double weight_sum = 0.0;
+        for (int input_z = first; input_z <= last; ++input_z) {
+            const auto clamped_z = clamp_index(input_z, input_depth);
+            const auto distance = static_cast<float>(center - input_z);
+            const double weight = fabsf(distance) < static_cast<float>(order)
+                ? static_cast<double>(sinc_device(distance) * sinc_device(distance / order))
+                : 0.0;
+            sum += static_cast<double>(source[flat_index(
+                x, y, static_cast<std::size_t>(clamped_z), width, height)]) * weight;
+            weight_sum += weight;
+        }
+        output[flat_index(x, y, output_z, width, height)] =
+            weight_sum == 0.0 ? 0.0F : static_cast<float>(sum / weight_sum);
+    }
+}
+
+__global__ void extract_plane_kernel(
+    const float* source,
+    float* output,
+    std::size_t output_count,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    int operation,
+    std::size_t slice) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto output_index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         output_index < output_count;
+         output_index += stride) {
+        if (operation == DSLT_OP_EXTRACT_XY) {
+            output[output_index] = source[slice * width * height + output_index];
+        } else if (operation == DSLT_OP_EXTRACT_YZ) {
+            const auto y = output_index / depth;
+            const auto z = output_index % depth;
+            output[output_index] = source[flat_index(slice, y, z, width, height)];
+        } else {
+            const auto z = output_index / width;
+            const auto x = output_index % width;
+            output[output_index] = source[flat_index(x, slice, z, width, height)];
+        }
+    }
+}
+
 [[nodiscard]] unsigned int block_count(std::size_t count) noexcept {
     constexpr std::size_t threads = 256;
     constexpr std::size_t maximum_blocks = 65535;
@@ -239,7 +352,12 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_DILATE_CUBE ||
         operation == DSLT_OP_ERODE_CUBE ||
         operation == DSLT_OP_DILATE_SPHERE ||
-        operation == DSLT_OP_ERODE_SPHERE;
+        operation == DSLT_OP_ERODE_SPHERE ||
+        operation == DSLT_OP_RESAMPLE_Z_AREA ||
+        operation == DSLT_OP_RESAMPLE_Z_LANCZOS ||
+        operation == DSLT_OP_EXTRACT_XY ||
+        operation == DSLT_OP_EXTRACT_YZ ||
+        operation == DSLT_OP_EXTRACT_ZX;
 }
 
 CudaRunResult run_cuda_operation(
@@ -259,11 +377,20 @@ CudaRunResult run_cuda_operation(
         request.operation == DSLT_OP_ERODE_CUBE ||
         request.operation == DSLT_OP_DILATE_SPHERE ||
         request.operation == DSLT_OP_ERODE_SPHERE;
+    const auto resampling = request.operation == DSLT_OP_RESAMPLE_Z_AREA ||
+        request.operation == DSLT_OP_RESAMPLE_Z_LANCZOS;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
     }
     if (morphology && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "morphology radius must be between 0 and 64"};
+    }
+    if (resampling && !(request.target_spacing_z > 0.0F)) {
+        return {CudaRunStatus::invalid_argument, {}, "target Z spacing must be positive"};
+    }
+    if (request.operation == DSLT_OP_RESAMPLE_Z_LANCZOS &&
+        request.lanczos_order != 2 && request.lanczos_order != 3) {
+        return {CudaRunStatus::invalid_argument, {}, "Lanczos order must be 2 or 3"};
     }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height = static_cast<std::size_t>(descriptor.height);
@@ -275,15 +402,62 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {}, "CUDA source dimensions do not match the selected channel"};
     }
 
+    auto output_width = descriptor.width;
+    auto output_height = descriptor.height;
+    auto output_depth = descriptor.depth;
+    auto output_kind = DSLT_OUTPUT_VOLUME_FLOAT32;
+    if (resampling) {
+        const auto physical_depth = static_cast<double>(descriptor.depth) * descriptor.calibration.spacing_z;
+        output_depth = std::max<std::uint32_t>(
+            1,
+            static_cast<std::uint32_t>(std::lround(physical_depth / request.target_spacing_z)));
+    } else if (request.operation == DSLT_OP_EXTRACT_XY) {
+        if (request.slice_index < 0 || request.slice_index >= static_cast<int>(descriptor.depth)) {
+            return {CudaRunStatus::invalid_argument, {}, "XY slice is outside the volume"};
+        }
+        output_depth = 1;
+        output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
+    } else if (request.operation == DSLT_OP_EXTRACT_YZ) {
+        if (request.slice_index < 0 || request.slice_index >= static_cast<int>(descriptor.width)) {
+            return {CudaRunStatus::invalid_argument, {}, "YZ slice is outside the volume"};
+        }
+        output_width = descriptor.depth;
+        output_height = descriptor.height;
+        output_depth = 1;
+        output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
+    } else if (request.operation == DSLT_OP_EXTRACT_ZX) {
+        if (request.slice_index < 0 || request.slice_index >= static_cast<int>(descriptor.height)) {
+            return {CudaRunStatus::invalid_argument, {}, "ZX slice is outside the volume"};
+        }
+        output_width = descriptor.width;
+        output_height = descriptor.depth;
+        output_depth = 1;
+        output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
+    }
+    const auto output_width_size = static_cast<std::size_t>(output_width);
+    const auto output_height_size = static_cast<std::size_t>(output_height);
+    const auto output_depth_size = static_cast<std::size_t>(output_depth);
+    if (output_width_size > std::numeric_limits<std::size_t>::max() / output_height_size ||
+        output_width_size * output_height_size >
+            std::numeric_limits<std::size_t>::max() / output_depth_size) {
+        return {CudaRunStatus::out_of_memory, {}, "CUDA output dimensions overflow addressable memory"};
+    }
+    const auto output_count = output_width_size * output_height_size * output_depth_size;
+
     std::size_t required_bytes = 0;
     std::size_t available_bytes = 0;
     try {
         if (!report(progress, 0.0F)) return cancelled();
-        if (source.size() > std::numeric_limits<std::size_t>::max() / (2 * sizeof(float))) {
+        if (source.size() > std::numeric_limits<std::size_t>::max() / sizeof(float) ||
+            output_count > std::numeric_limits<std::size_t>::max() / sizeof(float)) {
             return {CudaRunStatus::out_of_memory, {}, "CUDA input and output size overflow addressable memory"};
         }
-        const auto buffer_bytes = source.size() * sizeof(float);
-        required_bytes = buffer_bytes * 2;
+        const auto input_bytes = source.size() * sizeof(float);
+        const auto output_bytes = output_count * sizeof(float);
+        if (input_bytes > std::numeric_limits<std::size_t>::max() - output_bytes) {
+            return {CudaRunStatus::out_of_memory, {}, "CUDA input and output size overflow addressable memory"};
+        }
+        required_bytes = input_bytes + output_bytes;
         std::size_t total_bytes = 0;
         check_cuda(cudaMemGetInfo(&available_bytes, &total_bytes), "querying CUDA memory");
         if (required_bytes > available_bytes) {
@@ -295,11 +469,11 @@ CudaRunResult run_cuda_operation(
 
         CudaStream stream;
         DeviceBuffer<float> device_source(source.size());
-        DeviceBuffer<float> device_output(source.size());
-        std::vector<float> output(source.size());
+        DeviceBuffer<float> device_output(output_count);
+        std::vector<float> output(output_count);
 
         check_cuda(cudaMemcpyAsync(
-            device_source.get(), source.data(), buffer_bytes,
+            device_source.get(), source.data(), input_bytes,
             cudaMemcpyHostToDevice, stream.get()), "copying input to CUDA device");
         if (!report(progress, 0.25F)) {
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing cancelled CUDA input copy");
@@ -309,10 +483,11 @@ CudaRunResult run_cuda_operation(
         constexpr unsigned int threads = 256;
         const auto blocks = block_count(source.size());
         const auto zero_radius_filter = (smoothing || morphology) && request.radius == 0;
+        const auto slice_based_filter = (smoothing || morphology) && !zero_radius_filter;
         switch (request.operation) {
         case DSLT_OP_COPY:
             check_cuda(cudaMemcpyAsync(
-                device_output.get(), device_source.get(), buffer_bytes,
+                device_output.get(), device_source.get(), input_bytes,
                 cudaMemcpyDeviceToDevice, stream.get()), "copying CUDA volume");
             break;
         case DSLT_OP_WINDOW_LEVEL:
@@ -335,7 +510,7 @@ CudaRunResult run_cuda_operation(
         case DSLT_OP_ERODE_SPHERE:
             if (zero_radius_filter) {
                 check_cuda(cudaMemcpyAsync(
-                    device_output.get(), device_source.get(), buffer_bytes,
+                    device_output.get(), device_source.get(), input_bytes,
                     cudaMemcpyDeviceToDevice, stream.get()), "copying zero-radius CUDA filter output");
                 break;
             }
@@ -361,20 +536,58 @@ CudaRunResult run_cuda_operation(
                 if (!report(progress, slice_progress)) return cancelled();
             }
             break;
+        case DSLT_OP_RESAMPLE_Z_AREA:
+        case DSLT_OP_RESAMPLE_Z_LANCZOS: {
+            const auto scale = static_cast<double>(depth) / output_depth_size;
+            for (std::size_t output_z = 0; output_z < output_depth_size; ++output_z) {
+                if (request.operation == DSLT_OP_RESAMPLE_Z_AREA) {
+                    resample_area_slice_kernel<<<block_count(width * height), threads, 0, stream.get()>>>(
+                        device_source.get(), device_output.get(), width, height,
+                        static_cast<int>(depth), output_z, scale);
+                    check_cuda(cudaGetLastError(), "launching CUDA area-resample kernel");
+                } else {
+                    resample_lanczos_slice_kernel<<<block_count(width * height), threads, 0, stream.get()>>>(
+                        device_source.get(), device_output.get(), width, height,
+                        static_cast<int>(depth), output_z, scale, request.lanczos_order);
+                    check_cuda(cudaGetLastError(), "launching CUDA Lanczos-resample kernel");
+                }
+                check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA resample slice");
+                const auto slice_progress = 0.25F + 0.5F *
+                    static_cast<float>(output_z + 1) / static_cast<float>(output_depth_size);
+                if (!report(progress, slice_progress)) return cancelled();
+            }
+            break;
+        }
+        case DSLT_OP_EXTRACT_XY:
+        case DSLT_OP_EXTRACT_YZ:
+        case DSLT_OP_EXTRACT_ZX:
+            extract_plane_kernel<<<block_count(output_count), threads, 0, stream.get()>>>(
+                device_source.get(), device_output.get(), output_count, width, height, depth,
+                static_cast<int>(request.operation), static_cast<std::size_t>(request.slice_index));
+            check_cuda(cudaGetLastError(), "launching CUDA orthogonal-view kernel");
+            break;
         default:
             return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
         }
 
-        if ((zero_radius_filter || (!smoothing && !morphology)) && !report(progress, 0.75F)) {
+        if (!slice_based_filter && !resampling && !report(progress, 0.75F)) {
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing cancelled CUDA operation");
             return cancelled();
         }
         check_cuda(cudaMemcpyAsync(
-            output.data(), device_output.get(), buffer_bytes,
+            output.data(), device_output.get(), output_bytes,
             cudaMemcpyDeviceToHost, stream.get()), "copying CUDA output to host");
         check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA operation");
         if (!report(progress, 1.0F)) return cancelled();
-        return {CudaRunStatus::success, std::move(output), {}};
+        return {
+            CudaRunStatus::success,
+            std::move(output),
+            {},
+            output_width,
+            output_height,
+            output_depth,
+            output_kind,
+        };
     } catch (const CudaError& error) {
         if (error.code() == cudaErrorMemoryAllocation) {
             std::ostringstream message;

@@ -23,6 +23,10 @@ struct CudaRunResult final {
     CudaRunStatus status{CudaRunStatus::internal_error};
     std::vector<float> output;
     std::string error;
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint32_t depth{};
+    dslt_output_kind output_kind{DSLT_OUTPUT_VOLUME_FLOAT32};
 };
 
 [[nodiscard]] bool cuda_supports_operation(dslt_operation operation) noexcept;

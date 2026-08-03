@@ -17,8 +17,10 @@ shape, and output kind as CPU.
 The currently ported groups are:
 
 - `Copy`, `WindowLevel`, `Threshold2D`, and `Threshold3D`;
-- mean/Gaussian smoothing; and
-- cubic/spherical dilation and erosion.
+- mean/Gaussian smoothing;
+- cubic/spherical dilation and erosion;
+- area-average and Lanczos 2/3 Z resampling; and
+- XY, YZ, and ZX orthogonal-view extraction.
 
 ## Resource ownership and execution
 
@@ -26,8 +28,10 @@ Each request owns a non-blocking CUDA stream plus its input and output device
 buffers. RAII destructors release all resources; the backend never calls
 `cudaDeviceReset()` and does not use global texture or context state.
 
-Before allocation, the backend checks size arithmetic and compares the two
-required float buffers with `cudaMemGetInfo`. Allocation and runtime failures
+Before allocation, the backend checks input and output size arithmetic and
+compares their combined size with `cudaMemGetInfo`. This also covers operations
+whose output shape differs from the input, such as Z resampling and orthogonal
+views. Allocation and runtime failures
 are converted into DSLT error states and UTF-8 diagnostic text. Every kernel
 launch is checked with `cudaGetLastError`, and the stream is synchronized
 before host output is published.
@@ -36,6 +40,11 @@ Progress is reported at start, input transfer, execution, and completion.
 Smoothing and morphology synchronize and report after every output Z slice so
 longer filters can be cancelled between slices. Cancellation drains the owned
 stream and discards the partial result.
+
+Z resampling likewise synchronizes and reports after every output slice. The
+CUDA result carries its own output width, height, depth, and kind so the C ABI
+publishes the same variable-shape metadata as the CPU reference. Orthogonal
+views run as one plane extraction and publish `DSLT_OUTPUT_IMAGE_FLOAT32`.
 
 ## Validation gates
 
@@ -75,6 +84,13 @@ checks:
 Pointwise float parity uses an absolute tolerance of `1e-6`, which is stricter
 than the project-wide float gate (`abs <= 1e-5` or `rel <= 1e-4`). Binary
 threshold results are therefore voxel-exact on the test fixture.
+
+The resampling fixture checks both Lanczos orders and area averaging against
+the CPU reference at the project-wide float tolerance. Orthogonal-view values
+must be voxel-exact and their output dimensions and image output kind must
+match. Invalid spacing, Lanczos order, and slice index plus mid-resample
+cancellation are covered. Runtime evidence for these newly ported groups is
+pending a successful hosted build and NVIDIA-device execution.
 
 ## Recorded pointwise runtime evidence
 
