@@ -560,6 +560,42 @@ void watershed_fixture() {
     assert(cancelled);
 }
 
+void filtered_height_map_fixture() {
+    const auto ramp_desc = descriptor(1, 1, 5);
+    const dslt::Volume ramp_volume(
+        ramp_desc, std::vector<float>{0.0F, 0.0F, 0.25F, 0.75F, 1.0F});
+    const dslt::ops::HeightMapParameters ramp_parameters{0, 0, 0, 0, 0.5F};
+    const auto ramp = dslt::ops::height_map(ramp_volume, ramp_parameters, {});
+    assert(ramp.size() == 1 && close(ramp[0], 2.5F));
+
+    const auto smooth_desc = descriptor(3, 1, 3);
+    const dslt::Volume smooth_volume(
+        smooth_desc,
+        std::vector<float>{
+            1.0F, 0.0F, 0.0F,
+            1.0F, 1.0F, 0.0F,
+            1.0F, 1.0F, 1.0F,
+        });
+    const dslt::ops::HeightMapParameters smooth_parameters{1, 0, 1, 1, 0.5F};
+    const auto smoothed = dslt::ops::height_map(smooth_volume, smooth_parameters, {});
+    assert(close(smoothed[0], 1.0F / 6.0F));
+    assert(close(smoothed[1], 2.0F / 3.0F));
+    assert(close(smoothed[2], 7.0F / 6.0F));
+
+    const dslt::Volume empty_volume(ramp_desc, std::vector<float>(5, 0.0F));
+    const auto no_crossing = dslt::ops::height_map(empty_volume, ramp_parameters, {});
+    assert(no_crossing[0] == 4.0F);
+
+    bool rejected = false;
+    try {
+        static_cast<void>(dslt::ops::height_map(
+            ramp_volume, dslt::ops::HeightMapParameters{0, 65, 0, 0, 0.5F}, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+}
+
 } // namespace
 
 int main() {
@@ -575,5 +611,6 @@ int main() {
     adaptive_threshold_fixture();
     h_minima_fixture();
     watershed_fixture();
+    filtered_height_map_fixture();
     return 0;
 }

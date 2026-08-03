@@ -18,7 +18,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures |
 | Adaptive 2D/3D threshold | `AdaptiveThreshold2D`, `AdaptiveThreshold3D` | scaffolded | CPU mean/Gaussian, clamp boundary, strict tie, 2D/3D distinction, ABI and WPF fixtures implemented; legacy GPU discrepancy and archived-runtime comparison pending |
 | Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures |
-| Simplified height/depth map | `HeightMap`, `DepthMap` | implemented | Sloped-surface fixture |
+| Filtered height map / simplified depth map | `HeightMap`, `DepthMap` | scaffolded | Height-map Gaussian/mean Z filter, strict crossing interpolation, repeated XY smoothing, clamp boundary, ABI and WPF parameter fixtures plus simplified calibrated depth fixture; legacy runtime comparison pending |
 | Full height/depth projection controls | Extended operation contract | pending-reference | Legacy projection fixtures |
 | 6/18/26 connectivity | `ConnectedComponents` | implemented | Touching-object fixtures |
 | Flood-fill segmentation | Connected-components request | implemented | Noise/min-size fixtures |

@@ -27,6 +27,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private string _workEstimateSummary = "Select a DSLT operation to calculate its work estimate.";
     private double _progress;
     private float _threshold = 0.5F;
+    private float _heightMapThreshold = 0.25F;
     private float _windowMinimum;
     private float _windowMaximum = 1.0F;
     private int _radius = 1;
@@ -46,6 +47,10 @@ public sealed class MainWindowViewModel : ObservableObject
     private float _adaptiveThresholdOffset = 20;
     private float _hMinimaHeight = 0.1F;
     private int _hMinimaCheckInterval = 50;
+    private int _heightMapXyRadius;
+    private int _heightMapZRadius = 4;
+    private DsltKernelType _heightMapKernel = DsltKernelType.Gaussian;
+    private int _heightMapSmoothLevel = 1;
     private float _previewOffset = 20;
     private float _zCorrectionFactor = 0.2F;
     private float _minimumC;
@@ -89,7 +94,7 @@ public sealed class MainWindowViewModel : ObservableObject
             new("Gaussian smoothing", ProcessingOperation.SmoothGaussian, WorkflowStage.Process),
             new("Dilate sphere", ProcessingOperation.DilateSphere, WorkflowStage.Process),
             new("Erode sphere", ProcessingOperation.ErodeSphere, WorkflowStage.Process),
-            new("Height map", ProcessingOperation.HeightMap, WorkflowStage.Process),
+            new("Filtered height map", ProcessingOperation.HeightMap, WorkflowStage.Process),
             new("Depth map", ProcessingOperation.DepthMap, WorkflowStage.Process),
             new("Connected components", ProcessingOperation.ConnectedComponents, WorkflowStage.Segment),
             new("Threshold sweep segmentation", ProcessingOperation.ThresholdSweep, WorkflowStage.Segment),
@@ -138,10 +143,12 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsAdaptiveThreshold));
             OnPropertyChanged(nameof(IsHMinima));
             OnPropertyChanged(nameof(IsWatershed));
+            OnPropertyChanged(nameof(IsHeightMap));
             OnPropertyChanged(nameof(MinimumComponentSizeLabel));
             OnPropertyChanged(nameof(MinimumInvalidStructureArea));
             OnPropertyChanged(nameof(MinimumComponentSize));
             OnPropertyChanged(nameof(UsesThreshold));
+            OnPropertyChanged(nameof(Threshold));
             OnPropertyChanged(nameof(UsesRadius));
             OnPropertyChanged(nameof(Radius));
             OnPropertyChanged(nameof(MinimumRadius));
@@ -164,8 +171,14 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public float Threshold
     {
-        get => _threshold;
-        set => SetProperty(ref _threshold, Math.Clamp(value, 0, 1));
+        get => IsHeightMap ? _heightMapThreshold : _threshold;
+        set
+        {
+            if (IsHeightMap)
+                SetProperty(ref _heightMapThreshold, Math.Clamp(value, 0, 1));
+            else
+                SetProperty(ref _threshold, Math.Clamp(value, 0, 1));
+        }
     }
 
     public float WindowMinimum
@@ -320,6 +333,30 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _hMinimaCheckInterval;
         set => SetProperty(ref _hMinimaCheckInterval, Math.Clamp(value, 1, 10_000));
+    }
+
+    public int HeightMapXyRadius
+    {
+        get => _heightMapXyRadius;
+        set => SetProperty(ref _heightMapXyRadius, Math.Clamp(value, 0, 64));
+    }
+
+    public int HeightMapZRadius
+    {
+        get => _heightMapZRadius;
+        set => SetProperty(ref _heightMapZRadius, Math.Clamp(value, 0, 64));
+    }
+
+    public DsltKernelType HeightMapKernel
+    {
+        get => _heightMapKernel;
+        set => SetProperty(ref _heightMapKernel, value);
+    }
+
+    public int HeightMapSmoothLevel
+    {
+        get => _heightMapSmoothLevel;
+        set => SetProperty(ref _heightMapSmoothLevel, Math.Clamp(value, 0, 10));
     }
 
     public float PreviewOffset
@@ -495,6 +532,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
     public bool IsHMinima => SelectedOperation.Operation == ProcessingOperation.HMinima;
     public bool IsWatershed => SelectedOperation.Operation == ProcessingOperation.Watershed;
+    public bool IsHeightMap => SelectedOperation.Operation == ProcessingOperation.HeightMap;
     public string MinimumComponentSizeLabel => IsWatershed
         ? "Minimum selected seed size"
         : "Exclusive minimum component size";
@@ -719,6 +757,10 @@ public sealed class MainWindowViewModel : ObservableObject
         AdaptiveThresholdKernel: AdaptiveThresholdKernel,
         HMinimaHeight: HMinimaHeight,
         HMinimaCheckInterval: HMinimaCheckInterval,
+        HeightMapXyRadius: HeightMapXyRadius,
+        HeightMapZRadius: HeightMapZRadius,
+        HeightMapKernel: HeightMapKernel,
+        HeightMapSmoothLevel: HeightMapSmoothLevel,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea,
         SeedLabelsSha256: labelState is null

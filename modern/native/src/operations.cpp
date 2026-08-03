@@ -1335,21 +1335,79 @@ ComponentLabels watershed(
     return {std::move(labels), static_cast<std::uint32_t>(components.size()), 256};
 }
 
-std::vector<float> height_map(const Volume& volume, float threshold_value, const Engine::Progress& progress) {
-    const auto source = selected_channel(volume);
-    const auto& d = volume.descriptor();
-    std::vector<float> result(static_cast<std::size_t>(d.width) * d.height, -1.0F);
-    for (std::size_t y = 0; y < d.height; ++y) {
-        for (std::size_t x = 0; x < d.width; ++x) {
-            for (std::size_t z = 0; z < d.depth; ++z) {
-                if (source[flat(x, y, z, d.width, d.height)] >= threshold_value) {
-                    result[y * d.width + x] = static_cast<float>(z);
-                    break;
-                }
-            }
-        }
-        report(progress, y + 1, d.height);
+std::vector<float> height_map(
+    const Volume& volume,
+    const HeightMapParameters& parameters,
+    const Engine::Progress& progress) {
+    if (parameters.xy_radius < 0 || parameters.xy_radius > 64 ||
+        parameters.z_radius < 0 || parameters.z_radius > 64) {
+        throw std::invalid_argument("height-map XY and Z radii must be between 0 and 64");
     }
+    if (parameters.kernel_type != 0 && parameters.kernel_type != 1) {
+        throw std::invalid_argument("height-map kernel must be 0 (Gaussian) or 1 (mean)");
+    }
+    if (parameters.smooth_level < 0 || parameters.smooth_level > 10) {
+        throw std::invalid_argument("height-map smooth level must be between 0 and 10");
+    }
+    if (!std::isfinite(parameters.threshold)) {
+        throw std::invalid_argument("height-map threshold must be finite");
+    }
+
+    const auto& descriptor = volume.descriptor();
+    const auto source = selected_channel(volume);
+    const auto z_weights = line_weights(parameters.z_radius, parameters.kernel_type == 0);
+    const auto filtered = convolve_axis_clamp(
+        source, descriptor, z_weights, ConvolutionAxis::z,
+        mapped_progress(progress, 0.0F, 0.35F));
+
+    std::vector<float> result(
+        static_cast<std::size_t>(descriptor.width) * descriptor.height, 0.0F);
+    for (std::size_t y = 0; y < descriptor.height; ++y) {
+        for (std::size_t x = 0; x < descriptor.width; ++x) {
+            auto surface = static_cast<float>(descriptor.depth - 1);
+            for (std::size_t z = 0; z < descriptor.depth; ++z) {
+                const auto value = filtered[flat(x, y, z, descriptor.width, descriptor.height)];
+                if (value <= parameters.threshold) continue;
+                if (z == 0) {
+                    surface = 0.0F;
+                } else {
+                    const auto previous = filtered[flat(
+                        x, y, z - 1, descriptor.width, descriptor.height)];
+                    const auto denominator = value - previous;
+                    surface = denominator == 0.0F
+                        ? static_cast<float>(z - 1)
+                        : static_cast<float>(z - 1) +
+                            (parameters.threshold - previous) / denominator;
+                }
+                break;
+            }
+            result[y * descriptor.width + x] = surface;
+        }
+        if (progress && !progress(0.35F + 0.30F * static_cast<float>(y + 1) /
+            static_cast<float>(descriptor.height))) {
+            throw std::runtime_error("cancelled");
+        }
+    }
+
+    if (parameters.smooth_level > 0) {
+        auto map_descriptor = descriptor;
+        map_descriptor.depth = 1;
+        map_descriptor.channels = 1;
+        map_descriptor.selected_channel = 0;
+        map_descriptor.element_count = result.size();
+        const auto xy_weights = line_weights(parameters.xy_radius, parameters.kernel_type == 0);
+        const auto pass_length = 0.35F / static_cast<float>(parameters.smooth_level);
+        for (int pass = 0; pass < parameters.smooth_level; ++pass) {
+            const auto pass_start = 0.65F + static_cast<float>(pass) * pass_length;
+            result = convolve_axis_clamp(
+                result, map_descriptor, xy_weights, ConvolutionAxis::x,
+                mapped_progress(progress, pass_start, pass_length * 0.5F));
+            result = convolve_axis_clamp(
+                result, map_descriptor, xy_weights, ConvolutionAxis::y,
+                mapped_progress(progress, pass_start + pass_length * 0.5F, pass_length * 0.5F));
+        }
+    }
+    report(progress, 1, 1);
     return result;
 }
 

@@ -221,7 +221,16 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
             last_error_.clear();
             return DSLT_OK;
         case DSLT_OP_HEIGHT_MAP:
-            output_ = ops::height_map(source_, request.threshold, progress);
+            output_ = ops::height_map(
+                source_,
+                ops::HeightMapParameters{
+                    request.radius,
+                    request.lanczos_order,
+                    request.connectivity,
+                    request.slice_index,
+                    request.threshold,
+                },
+                progress);
             result_.width = source_.descriptor().width;
             result_.height = source_.descriptor().height;
             result_.depth = 1;

@@ -57,6 +57,14 @@ struct ThresholdSweepParameters final {
     CropParameters crop{};
 };
 
+struct HeightMapParameters final {
+    int xy_radius;
+    int z_radius;
+    int kernel_type;
+    int smooth_level;
+    float threshold;
+};
+
 struct DsltWorkEstimate final {
     std::uint64_t voxel_count;
     std::uint64_t direction_count;
@@ -163,7 +171,10 @@ std::vector<std::int32_t> connected_components(
     int minimum_size,
     std::uint32_t& component_count,
     const Engine::Progress& progress);
-std::vector<float> height_map(const Volume& volume, float threshold, const Engine::Progress& progress);
+std::vector<float> height_map(
+    const Volume& volume,
+    const HeightMapParameters& parameters,
+    const Engine::Progress& progress);
 std::vector<float> depth_map(const Volume& volume, float threshold, const Engine::Progress& progress);
 std::vector<float> resample_z(const Volume& volume, float target_spacing, int lanczos_order, bool lanczos, std::uint32_t& output_depth, const Engine::Progress& progress);
 std::vector<float> extract_plane(const Volume& volume, dslt_operation operation, int slice, std::uint32_t& width, std::uint32_t& height);

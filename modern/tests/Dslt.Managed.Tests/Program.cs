@@ -139,6 +139,26 @@ if (engine.IsAvailable)
     if (!hMinimaData.SequenceEqual(new[] { 0.8F, 0.0F, 0.8F }))
         throw new InvalidOperationException("H-minima ABI output did not preserve the pit fixture.");
 
+    var heightMapResult = await engine.RunAsync(
+        new VolumeData(
+            1, 1, 5, 1, 0, Calibration.Unit,
+            [0.0F, 0.0F, 0.25F, 0.75F, 1.0F]),
+        new OperationParameters(
+            ProcessingOperation.HeightMap,
+            ProcessingBackend.Cpu,
+            Threshold: 0.5F,
+            HeightMapXyRadius: 0,
+            HeightMapZRadius: 0,
+            HeightMapKernel: DsltKernelType.Gaussian,
+            HeightMapSmoothLevel: 0),
+        null,
+        CancellationToken.None);
+    var heightMapData = heightMapResult.FloatData ??
+        throw new InvalidOperationException("Filtered height map returned no float output.");
+    Equal(1, heightMapData.Length, "Filtered height-map output size");
+    if (Math.Abs(heightMapData[0] - 2.5F) > 1e-6F)
+        throw new InvalidOperationException("Filtered height-map crossing interpolation is incorrect.");
+
     var constantVolume = new VolumeData(
         3, 3, 3, 1, 0, Calibration.Unit,
         Enumerable.Repeat(0.5f, 27).ToArray());
