@@ -228,6 +228,9 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
             set_error("unknown operation identifier");
             return DSLT_INVALID_ARGUMENT;
         }
+    } catch (const ResourceLimitError& error) {
+        set_error(error.what());
+        return DSLT_RESOURCE_LIMIT;
     } catch (const std::bad_alloc&) {
         set_error("not enough memory for the requested operation");
         return DSLT_OUT_OF_MEMORY;

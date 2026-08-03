@@ -163,6 +163,15 @@ int main() {
     request.window_min = 0.0F;
     request.window_max = 0.1F;
     request.target_spacing_z = 0.2F;
+    dslt_work_estimate work{};
+    require(dslt_estimate_operation(handle, &request, &work));
+    assert(work.voxel_count == 27);
+    assert(work.direction_count == 21);
+    assert(work.line_samples_per_voxel == 3);
+    assert(work.directional_work_items == 1701);
+    assert(work.estimated_host_bytes == 1548);
+    assert(work.sweep_passes == 1);
+    assert(work.within_limits == 1);
     dslt_crop_options crop{};
     crop.enabled = 1;
     crop.use_height_map = 1;

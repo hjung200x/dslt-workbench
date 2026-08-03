@@ -33,6 +33,7 @@ typedef enum dslt_status {
     DSLT_BACKEND_UNAVAILABLE = 5,
     DSLT_IO_ERROR = 6,
     DSLT_NOT_IMPLEMENTED = 7,
+    DSLT_RESOURCE_LIMIT = 8,
     DSLT_INTERNAL_ERROR = 100
 } dslt_status;
 
@@ -117,6 +118,19 @@ typedef struct dslt_crop_options {
     int32_t border_xy;
 } dslt_crop_options;
 
+typedef struct dslt_work_estimate {
+    uint64_t voxel_count;
+    uint64_t direction_count;
+    uint64_t line_samples_per_voxel;
+    uint64_t directional_work_items;
+    uint64_t estimated_host_bytes;
+    uint64_t sweep_passes;
+    uint64_t work_item_limit;
+    uint64_t host_memory_limit_bytes;
+    uint8_t within_limits;
+    uint8_t reserved[7];
+} dslt_work_estimate;
+
 typedef enum dslt_output_kind {
     DSLT_OUTPUT_VOLUME_FLOAT32 = 1,
     DSLT_OUTPUT_LABELS_INT32 = 2,
@@ -159,6 +173,10 @@ DSLT_API dslt_status DSLT_CALL dslt_set_crop(
     const dslt_crop_options* options,
     const float* height_map,
     uint64_t height_map_element_count);
+DSLT_API dslt_status DSLT_CALL dslt_estimate_operation(
+    dslt_handle handle,
+    const dslt_operation_request* request,
+    dslt_work_estimate* out_estimate);
 DSLT_API dslt_status DSLT_CALL dslt_get_volume_descriptor(
     dslt_handle handle,
     dslt_volume_descriptor* out_descriptor);

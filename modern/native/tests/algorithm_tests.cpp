@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 #include <numeric>
 #include <stdexcept>
 #include <string_view>
@@ -27,6 +28,82 @@ dslt_volume_descriptor descriptor(std::uint32_t width, std::uint32_t height, std
 
 bool close(float actual, float expected, float tolerance = 1.0e-6F) {
     return std::abs(actual - expected) <= tolerance;
+}
+
+std::size_t offset(
+    std::size_t x,
+    std::size_t y,
+    std::size_t z,
+    const dslt_volume_descriptor& desc) {
+    return z * desc.width * desc.height + y * desc.width + x;
+}
+
+float oracle_trilinear(
+    std::span<const float> source,
+    const dslt_volume_descriptor& desc,
+    float x,
+    float y,
+    float z) {
+    const auto cx = std::clamp(x, 0.0F, static_cast<float>(desc.width - 1));
+    const auto cy = std::clamp(y, 0.0F, static_cast<float>(desc.height - 1));
+    const auto cz = std::clamp(z, 0.0F, static_cast<float>(desc.depth - 1));
+    const auto x0 = static_cast<std::size_t>(cx);
+    const auto y0 = static_cast<std::size_t>(cy);
+    const auto z0 = static_cast<std::size_t>(cz);
+    const auto x1 = std::min<std::size_t>(x0 + 1, desc.width - 1);
+    const auto y1 = std::min<std::size_t>(y0 + 1, desc.height - 1);
+    const auto z1 = std::min<std::size_t>(z0 + 1, desc.depth - 1);
+    const auto tx = cx - static_cast<float>(x0);
+    const auto ty = cy - static_cast<float>(y0);
+    const auto tz = cz - static_cast<float>(z0);
+    const auto lerp = [](float left, float right, float amount) { return left + (right - left) * amount; };
+    const auto c00 = lerp(source[offset(x0, y0, z0, desc)], source[offset(x1, y0, z0, desc)], tx);
+    const auto c10 = lerp(source[offset(x0, y1, z0, desc)], source[offset(x1, y1, z0, desc)], tx);
+    const auto c01 = lerp(source[offset(x0, y0, z1, desc)], source[offset(x1, y0, z1, desc)], tx);
+    const auto c11 = lerp(source[offset(x0, y1, z1, desc)], source[offset(x1, y1, z1, desc)], tx);
+    return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
+}
+
+dslt::ops::DsltResponse oracle_response(
+    std::span<const float> source,
+    const dslt_volume_descriptor& desc,
+    int radius,
+    int level,
+    bool gaussian) {
+    dslt::ops::DsltResponse response{
+        std::vector<float>(source.size(), std::numeric_limits<float>::max()),
+        std::vector<float>(source.size(), 0.0F),
+    };
+    const auto directions = dslt::ops::geodesic_directions(level);
+    for (int current_radius = radius; current_radius > 0; --current_radius) {
+        const auto weights = dslt::ops::line_weights(current_radius, gaussian);
+        for (const auto& direction : directions) {
+            const auto xy = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+            const auto alpha = std::abs(2.0F * std::acos(std::clamp(xy, 0.0F, 1.0F)) /
+                std::numbers::pi_v<float>);
+            for (std::size_t z = 0; z < desc.depth; ++z) {
+                for (std::size_t y = 0; y < desc.height; ++y) {
+                    for (std::size_t x = 0; x < desc.width; ++x) {
+                        float sum = 0.0F;
+                        for (int sample = -current_radius; sample <= current_radius; ++sample) {
+                            sum += oracle_trilinear(
+                                source, desc,
+                                static_cast<float>(x) + direction.x * sample,
+                                static_cast<float>(y) + direction.y * sample,
+                                static_cast<float>(z) + direction.z * sample) *
+                                weights[static_cast<std::size_t>(sample + current_radius)];
+                        }
+                        const auto id = offset(x, y, z, desc);
+                        if (response.minimum[id] > sum) {
+                            response.minimum[id] = sum;
+                            response.alpha[id] = alpha;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return response;
 }
 
 void direction_fixture() {
@@ -101,6 +178,59 @@ void response_and_boundary_fixture() {
     assert(mask[1] == 0.8F);
 }
 
+void ramp_response_fixture() {
+    const auto desc = descriptor(4, 4, 4);
+    for (int ramp_kind = 0; ramp_kind < 4; ++ramp_kind) {
+        std::vector<float> ramp(desc.element_count);
+        for (std::size_t z = 0; z < desc.depth; ++z) {
+            for (std::size_t y = 0; y < desc.height; ++y) {
+                for (std::size_t x = 0; x < desc.width; ++x) {
+                    const auto value = ramp_kind == 0 ? static_cast<float>(x) :
+                        ramp_kind == 1 ? static_cast<float>(y) :
+                        ramp_kind == 2 ? static_cast<float>(z) :
+                        static_cast<float>(x + 2 * y + 3 * z);
+                    ramp[offset(x, y, z, desc)] = value;
+                }
+            }
+        }
+        const dslt::Volume volume(desc, ramp);
+        for (const auto kernel : {0, 1}) {
+            const auto actual = dslt::ops::dslt_response(volume, 2, 1, kernel, {});
+            const auto expected = oracle_response(ramp, desc, 2, 1, kernel == 0);
+            for (std::size_t index = 0; index < ramp.size(); ++index) {
+                assert(close(actual.minimum[index], expected.minimum[index], 2.0e-6F));
+                assert(close(actual.alpha[index], expected.alpha[index], 2.0e-6F));
+            }
+        }
+    }
+}
+
+void work_estimate_fixture() {
+    const auto tiny = descriptor(1, 1, 1);
+    const auto estimate = dslt::ops::estimate_dslt_work(tiny, 2, 1, false);
+    assert(estimate.voxel_count == 1);
+    assert(estimate.direction_count == 21);
+    assert(estimate.line_samples_per_voxel == 8);
+    assert(estimate.directional_work_items == 168);
+    assert(estimate.estimated_host_bytes == 268);
+    assert(estimate.sweep_passes == 1);
+    assert(estimate.within_limits);
+
+    auto huge = descriptor(2048, 2048, 2048);
+    const auto oversized = dslt::ops::estimate_dslt_work(huge, 14, 5, true, 0.0F, 1.0F, 0.1F);
+    assert(!oversized.within_limits);
+    bool rejected = false;
+    try {
+        dslt::ops::enforce_dslt_work_limits(oversized);
+    } catch (const dslt::ResourceLimitError& error) {
+        const std::string_view message(error.what());
+        rejected = message.find("work=") != std::string_view::npos &&
+            message.find("host_bytes=") != std::string_view::npos &&
+            message.find("directions=5121") != std::string_view::npos;
+    }
+    assert(rejected);
+}
+
 void closing_and_component_fixture() {
     const auto closing_desc = descriptor(5, 5, 5);
     std::vector<float> solid(closing_desc.element_count, 0.8F);
@@ -166,6 +296,8 @@ int main() {
     weight_fixture();
     interpolation_fixture();
     response_and_boundary_fixture();
+    ramp_response_fixture();
+    work_estimate_fixture();
     closing_and_component_fixture();
     iterative_sweep_fixture();
     return 0;

@@ -7,6 +7,7 @@
 #include <limits>
 #include <numbers>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 
 namespace dslt::ops {
@@ -21,6 +22,20 @@ void report(const Engine::Progress& progress, std::size_t done, std::size_t tota
 
 std::size_t flat(std::size_t x, std::size_t y, std::size_t z, std::size_t width, std::size_t height) {
     return z * width * height + y * width + x;
+}
+
+std::uint64_t checked_multiply_u64(std::uint64_t left, std::uint64_t right, const char* name) {
+    if (left != 0 && right > std::numeric_limits<std::uint64_t>::max() / left) {
+        throw ResourceLimitError(std::string(name) + " estimate overflowed uint64");
+    }
+    return left * right;
+}
+
+std::uint64_t checked_add_u64(std::uint64_t left, std::uint64_t right, const char* name) {
+    if (right > std::numeric_limits<std::uint64_t>::max() - left) {
+        throw ResourceLimitError(std::string(name) + " estimate overflowed uint64");
+    }
+    return left + right;
 }
 
 float sinc(float value) {
@@ -243,6 +258,8 @@ std::vector<float> dslt_threshold(
     if (!std::isfinite(z_correction_factor) || z_correction_factor < 0.0F) {
         throw std::invalid_argument("DSLT Z correction factor must be finite and non-negative");
     }
+    enforce_dslt_work_limits(estimate_dslt_work(
+        volume.descriptor(), radius, direction_level, false));
     const auto direction_steps = static_cast<std::size_t>(radius) * geodesic_directions(direction_level).size();
     const auto& descriptor = volume.descriptor();
     const auto threshold_steps = static_cast<std::size_t>(descriptor.depth) * descriptor.height;
@@ -516,6 +533,72 @@ void apply_crop(
 
 } // namespace
 
+DsltWorkEstimate estimate_dslt_work(
+    const dslt_volume_descriptor& descriptor,
+    int radius,
+    int direction_level,
+    bool segmentation,
+    float minimum_c,
+    float maximum_c,
+    float c_interval) {
+    if (descriptor.width == 0 || descriptor.height == 0 || descriptor.depth == 0) {
+        throw std::invalid_argument("DSLT work estimate requires non-zero volume dimensions");
+    }
+    if (radius < 1 || radius > 127) throw std::invalid_argument("DSLT radius must be between 1 and 127");
+    if (direction_level < 1 || direction_level > 5) {
+        throw std::invalid_argument("DSLT direction level must be between 1 and 5");
+    }
+
+    std::uint64_t direction_scale = 1;
+    for (int level = 0; level < direction_level; ++level) {
+        direction_scale = checked_multiply_u64(direction_scale, 4, "direction count");
+    }
+    const auto direction_count = checked_add_u64(
+        checked_multiply_u64(5, direction_scale, "direction count"), 1, "direction count");
+    const auto radius_u64 = static_cast<std::uint64_t>(radius);
+    const auto line_samples = checked_multiply_u64(radius_u64, radius_u64 + 2, "line sample count");
+    auto voxel_count = checked_multiply_u64(descriptor.width, descriptor.height, "voxel count");
+    voxel_count = checked_multiply_u64(voxel_count, descriptor.depth, "voxel count");
+    const auto directional_work = checked_multiply_u64(
+        checked_multiply_u64(voxel_count, direction_count, "directional work"),
+        line_samples, "directional work");
+    const auto bytes_per_voxel = segmentation ? 48ULL : 16ULL;
+    auto host_bytes = checked_multiply_u64(voxel_count, bytes_per_voxel, "host memory");
+    host_bytes = checked_add_u64(
+        host_bytes,
+        checked_multiply_u64(direction_count, sizeof(Vec3), "direction memory"),
+        "host memory");
+    const auto sweep_passes = segmentation
+        ? static_cast<std::uint64_t>(c_schedule(minimum_c, maximum_c, c_interval).size())
+        : 1ULL;
+    constexpr std::uint64_t work_item_limit = 10'000'000'000'000ULL;
+    constexpr std::uint64_t host_memory_limit = 16ULL * 1024ULL * 1024ULL * 1024ULL;
+    return {
+        voxel_count,
+        direction_count,
+        line_samples,
+        directional_work,
+        host_bytes,
+        sweep_passes,
+        work_item_limit,
+        host_memory_limit,
+        directional_work <= work_item_limit && host_bytes <= host_memory_limit,
+    };
+}
+
+void enforce_dslt_work_limits(const DsltWorkEstimate& estimate) {
+    if (estimate.within_limits) return;
+    std::ostringstream message;
+    message << "DSLT resource limit exceeded: work=" << estimate.directional_work_items
+            << "/" << estimate.work_item_limit
+            << ", host_bytes=" << estimate.estimated_host_bytes
+            << "/" << estimate.host_memory_limit_bytes
+            << ", directions=" << estimate.direction_count
+            << ", line_samples_per_voxel=" << estimate.line_samples_per_voxel
+            << ", sweep_passes=" << estimate.sweep_passes;
+    throw ResourceLimitError(message.str());
+}
+
 std::vector<std::int32_t> connected_components(
     const Volume& volume,
     float threshold_value,
@@ -692,6 +775,9 @@ ComponentLabels dslt_segmentation_from_response(
     }
 
     const auto values = c_schedule(parameters.minimum_c, parameters.maximum_c, parameters.c_interval);
+    enforce_dslt_work_limits(estimate_dslt_work(
+        descriptor, parameters.radius, parameters.direction_level, true,
+        parameters.minimum_c, parameters.maximum_c, parameters.c_interval));
     const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
     if (source.size() != expected || response.minimum.size() != expected || response.alpha.size() != expected) {
         throw std::invalid_argument("DSLT sweep response dimensions do not match the source volume");
@@ -772,6 +858,9 @@ ComponentLabels dslt_segmentation(
         throw std::invalid_argument("DSLT segmentation limits are outside the supported range");
     }
     static_cast<void>(c_schedule(parameters.minimum_c, parameters.maximum_c, parameters.c_interval));
+    enforce_dslt_work_limits(estimate_dslt_work(
+        volume.descriptor(), parameters.radius, parameters.direction_level, true,
+        parameters.minimum_c, parameters.maximum_c, parameters.c_interval));
     const auto response = dslt_response(
         volume, parameters.radius, parameters.direction_level, parameters.kernel_type,
         mapped_progress(progress, 0.0F, 0.45F));

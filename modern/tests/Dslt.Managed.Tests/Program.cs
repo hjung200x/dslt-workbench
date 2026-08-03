@@ -17,6 +17,7 @@ Equal(32, Marshal.SizeOf<NativeCalibration>(), "NativeCalibration ABI size");
 Equal(64, Marshal.SizeOf<NativeVolumeDescriptor>(), "NativeVolumeDescriptor ABI size");
 Equal(48, Marshal.SizeOf<NativeOperationRequest>(), "NativeOperationRequest ABI size");
 Equal(16, Marshal.SizeOf<NativeCropOptions>(), "NativeCropOptions ABI size");
+Equal(72, Marshal.SizeOf<NativeWorkEstimate>(), "NativeWorkEstimate ABI size");
 Equal(40, Marshal.SizeOf<NativeOperationResult>(), "NativeOperationResult ABI size");
 Equal(144, Marshal.SizeOf<NativeBackendInfo>(), "NativeBackendInfo ABI size");
 
@@ -89,27 +90,40 @@ if (engine.IsAvailable)
         CancellationToken.None);
     Equal(27, dsltResult.FloatData!.Count(value => value == 0), "DSLT strict threshold tie output");
 
+    var dsltSegmentationParameters = new OperationParameters(
+        ProcessingOperation.DsltSegmentation,
+        ProcessingBackend.Cpu,
+        Radius: 1,
+        MinimumComponentSize: 0,
+        DirectionLevel: 1,
+        DsltKernel: DsltKernelType.Mean,
+        ZCorrectionFactor: 0.2f,
+        MinimumC: 0,
+        MaximumC: 0,
+        CInterval: 0.1f,
+        ClosingRadius: 0,
+        MinimumInvalidStructureArea: 0,
+        CropEnabled: true,
+        CropUseHeightMap: true,
+        CropUpper: 0,
+        CropLower: 0,
+        CropBorderXy: 1,
+        CropHeightMap: Enumerable.Repeat(1.0f, 9).ToArray());
+    var workEstimate = await engine.EstimateAsync(
+        constantVolume,
+        dsltSegmentationParameters,
+        CancellationToken.None);
+    Equal(27UL, workEstimate.VoxelCount, "DSLT estimate voxel count");
+    Equal(21UL, workEstimate.DirectionCount, "DSLT estimate direction count");
+    Equal(3UL, workEstimate.LineSamplesPerVoxel, "DSLT estimate line samples");
+    Equal(1701UL, workEstimate.DirectionalWorkItems, "DSLT estimate work items");
+    Equal(1548UL, workEstimate.EstimatedHostBytes, "DSLT estimate host bytes");
+    Equal(1UL, workEstimate.SweepPasses, "DSLT estimate sweep passes");
+    Equal(true, workEstimate.WithinLimits, "DSLT estimate limit status");
+
     var dsltSegmentation = await engine.RunAsync(
         constantVolume,
-        new OperationParameters(
-            ProcessingOperation.DsltSegmentation,
-            ProcessingBackend.Cpu,
-            Radius: 1,
-            MinimumComponentSize: 0,
-            DirectionLevel: 1,
-            DsltKernel: DsltKernelType.Mean,
-            ZCorrectionFactor: 0.2f,
-            MinimumC: 0,
-            MaximumC: 0,
-            CInterval: 0.1f,
-            ClosingRadius: 0,
-            MinimumInvalidStructureArea: 0,
-            CropEnabled: true,
-            CropUseHeightMap: true,
-            CropUpper: 0,
-            CropLower: 0,
-            CropBorderXy: 1,
-            CropHeightMap: Enumerable.Repeat(1.0f, 9).ToArray()),
+        dsltSegmentationParameters,
         null,
         CancellationToken.None);
     Equal(1, dsltSegmentation.ComponentCount, "DSLT segmentation component count");

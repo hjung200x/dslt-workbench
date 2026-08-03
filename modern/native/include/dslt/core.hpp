@@ -7,11 +7,17 @@
 #include <cstdint>
 #include <functional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 namespace dslt {
+
+class ResourceLimitError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 class Volume final {
 public:

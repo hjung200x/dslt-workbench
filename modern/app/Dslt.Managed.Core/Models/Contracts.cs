@@ -167,3 +167,14 @@ public sealed record ProcessingResult(
     float[]? FloatData,
     int[]? Labels,
     int CompletedPasses = 0);
+
+public sealed record ProcessingWorkEstimate(
+    ulong VoxelCount,
+    ulong DirectionCount,
+    ulong LineSamplesPerVoxel,
+    ulong DirectionalWorkItems,
+    ulong EstimatedHostBytes,
+    ulong SweepPasses,
+    ulong WorkItemLimit,
+    ulong HostMemoryLimitBytes,
+    bool WithinLimits);

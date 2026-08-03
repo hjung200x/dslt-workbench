@@ -47,7 +47,28 @@ struct DsltSegmentationParameters final {
     CropParameters crop{};
 };
 
+struct DsltWorkEstimate final {
+    std::uint64_t voxel_count;
+    std::uint64_t direction_count;
+    std::uint64_t line_samples_per_voxel;
+    std::uint64_t directional_work_items;
+    std::uint64_t estimated_host_bytes;
+    std::uint64_t sweep_passes;
+    std::uint64_t work_item_limit;
+    std::uint64_t host_memory_limit_bytes;
+    bool within_limits;
+};
+
 std::vector<float> selected_channel(const Volume& volume);
+DsltWorkEstimate estimate_dslt_work(
+    const dslt_volume_descriptor& descriptor,
+    int radius,
+    int direction_level,
+    bool segmentation,
+    float minimum_c = 0.0F,
+    float maximum_c = 0.0F,
+    float c_interval = 1.0F);
+void enforce_dslt_work_limits(const DsltWorkEstimate& estimate);
 std::vector<Vec3> geodesic_directions(int level);
 std::vector<float> line_weights(int radius, bool gaussian);
 float trilinear_clamp(

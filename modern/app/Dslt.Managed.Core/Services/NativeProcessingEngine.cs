@@ -30,6 +30,17 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         : "Native core ready · CPU reference backend";
     public BackendInformation Backend { get; }
 
+    public Task<ProcessingWorkEstimate> EstimateAsync(
+        VolumeData volume,
+        OperationParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        volume.Validate();
+        if (parameters.Operation is not ProcessingOperation.DsltThreshold and not ProcessingOperation.DsltSegmentation)
+            throw new ArgumentException("Work estimates are available only for DSLT operations.", nameof(parameters));
+        return Task.Run(() => Estimate(volume, parameters, cancellationToken), cancellationToken);
+    }
+
     public Task<ProcessingResult> RunAsync(
         VolumeData volume,
         OperationParameters parameters,
@@ -41,6 +52,29 @@ public sealed class NativeProcessingEngine : IProcessingEngine
     }
 
     public void Dispose() => _handle.Dispose();
+
+    private ProcessingWorkEstimate Estimate(
+        VolumeData volume,
+        OperationParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var descriptor = MapDescriptor(volume);
+        ThrowIfFailed(NativeMethods.dslt_set_volume_f32(
+            _handle, in descriptor, volume.Samples, (ulong)volume.Samples.LongLength));
+        var request = MapRequest(parameters);
+        ThrowIfFailed(NativeMethods.dslt_estimate_operation(_handle, in request, out var estimate));
+        return new ProcessingWorkEstimate(
+            estimate.VoxelCount,
+            estimate.DirectionCount,
+            estimate.LineSamplesPerVoxel,
+            estimate.DirectionalWorkItems,
+            estimate.EstimatedHostBytes,
+            estimate.SweepPasses,
+            estimate.WorkItemLimit,
+            estimate.HostMemoryLimitBytes,
+            estimate.WithinLimits != 0);
+    }
 
     private ProcessingResult Run(
         VolumeData volume,

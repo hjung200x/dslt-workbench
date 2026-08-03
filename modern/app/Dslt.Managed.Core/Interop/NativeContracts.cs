@@ -12,6 +12,7 @@ internal enum NativeStatus
     BackendUnavailable = 5,
     IoError = 6,
     NotImplemented = 7,
+    ResourceLimit = 8,
     InternalError = 100,
 }
 
@@ -64,6 +65,21 @@ internal unsafe struct NativeCropOptions
     public int Upper;
     public int Lower;
     public int BorderXy;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeWorkEstimate
+{
+    public ulong VoxelCount;
+    public ulong DirectionCount;
+    public ulong LineSamplesPerVoxel;
+    public ulong DirectionalWorkItems;
+    public ulong EstimatedHostBytes;
+    public ulong SweepPasses;
+    public ulong WorkItemLimit;
+    public ulong HostMemoryLimitBytes;
+    public byte WithinLimits;
+    public fixed byte Reserved[7];
 }
 
 [StructLayout(LayoutKind.Sequential)]

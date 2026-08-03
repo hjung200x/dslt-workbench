@@ -159,10 +159,17 @@ unambiguous `Cxy` and `Cz` values.
 | `closing` | Spherical maximum then minimum filter | 0..50, default 2 | Integer >= 0; default 2 |
 | `validArea` | Converted to volume by multiplying estimated wall thickness | 0..10000, default 500 | Integer >= 0; exact validation rule remains `capture-required` |
 
-Levels can become computationally explosive. The Workbench must calculate
-direction count, sample count, host memory, and estimated work with checked
-arithmetic before starting. A resource-limit error must report the estimate;
-it must not silently lower the requested level.
+Levels can become computationally explosive. `dslt_estimate_operation` and the
+.NET `EstimateAsync` adapter calculate voxel count, direction count,
+`R*(R+2)` line samples per voxel/direction, total directional sample work,
+conservative host memory, and C-sweep pass count with checked 64-bit
+arithmetic. Execution performs the same preflight and never silently lowers a
+parameter. The initial CPU safety gates are 10,000,000,000,000 directional
+sample operations and 16 GiB estimated host memory. A rejected request returns
+`DSLT_RESOURCE_LIMIT` and an error containing the measured and allowed work,
+memory, direction, sample, and pass values. These are safety gates rather than
+performance promises; future tiled execution may raise them without changing
+algorithm parameters.
 
 The legacy segmentation XAML declares values that conflict with slider ranges
 and swaps visible min/max labels (`MainWindow.xaml:694-728`). WPF coercion and
@@ -242,8 +249,10 @@ strict threshold boundary, spherical closing, and the legacy-exclusive
 low-component size rule. It also uses a staged defect fixture to verify
 append-only labels, invalid-component deferral, final-pass acceptance, exact C
 pass count, and cancellation. C ABI and managed fixtures verify height-map crop
-and XY border behavior. Ramp response oracles, work limits, and archived-binary
-comparisons are still outstanding.
+and XY border behavior. X/Y/Z and oblique ramps are compared voxel-by-voxel
+against an independent scalar orchestration for mean and Gaussian kernels.
+Checked work/memory estimates and oversized rejection also have native and ABI
+fixtures. Archived-binary comparisons are still outstanding.
 
 Until the same fixtures can be run through an archived legacy binary, the
 result level is **synthetic-data validated**, not legacy compared or
@@ -297,3 +306,8 @@ legacy loop, excluded voxels are first forced to the lower value for wall
 thickness estimation and then to the upper value before low-component
 extraction. Loading a new volume clears crop state, preventing a stale height
 map from being applied to different dimensions.
+
+`dslt_estimate_operation` returns the 72-byte `dslt_work_estimate`. The same
+values are exposed as `.NET ProcessingWorkEstimate`; UI code can therefore show
+the estimate before starting, while native execution independently enforces the
+same limits to prevent bypasses.
