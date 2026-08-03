@@ -186,7 +186,8 @@ __global__ void morphology_slice_kernel(
          plane_index += stride) {
         const auto x = plane_index % width;
         const auto y = plane_index / width;
-        auto chosen = dilate ? -CUDART_INF_F : CUDART_INF_F;
+        const auto infinity = __int_as_float(0x7f800000);
+        auto chosen = dilate ? -infinity : infinity;
         for (int dz = -radius; dz <= radius; ++dz) {
             const auto zz = clamp_coordinate(static_cast<long long>(z) + dz, depth);
             for (int dy = -radius; dy <= radius; ++dy) {
