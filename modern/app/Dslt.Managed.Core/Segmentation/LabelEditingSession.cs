@@ -30,9 +30,9 @@ public sealed class LabelEditingSession
         _labels = labels.ToArray();
     }
 
-    public int Width { get; }
-    public int Height { get; }
-    public int Depth { get; }
+    public int Width { get; private set; }
+    public int Height { get; private set; }
+    public int Depth { get; private set; }
     public ReadOnlyMemory<int> Labels => _labels;
     public IReadOnlySet<int> Selection => _selection;
     public bool CanUndo => _undo.Count > 0;
@@ -174,10 +174,25 @@ public sealed class LabelEditingSession
         return new CroppedLabels(minimumX, minimumY, minimumZ, width, height, depth, cropped);
     }
 
+    public CroppedLabels CropSelected()
+    {
+        var cropped = CropToSelection();
+        SaveUndo();
+        Width = cropped.Width;
+        Height = cropped.Height;
+        Depth = cropped.Depth;
+        _labels = cropped.Labels;
+        _selection.RemoveWhere(label => !_labels.Contains(label));
+        return cropped;
+    }
+
     public bool Undo()
     {
         if (_undo.Count == 0) return false;
         var snapshot = _undo.Pop();
+        Width = snapshot.Width;
+        Height = snapshot.Height;
+        Depth = snapshot.Depth;
         _labels = snapshot.Labels;
         _selection.Clear();
         _selection.UnionWith(snapshot.Selection);
@@ -186,7 +201,7 @@ public sealed class LabelEditingSession
 
     private void SaveUndo()
     {
-        _undo.Push(new Snapshot((int[])_labels.Clone(), [.. _selection]));
+        _undo.Push(new Snapshot(Width, Height, Depth, (int[])_labels.Clone(), [.. _selection]));
         const int maximumUndoDepth = 32;
         if (_undo.Count <= maximumUndoDepth) return;
         var retained = _undo.Take(maximumUndoDepth).Reverse().ToArray();
@@ -245,5 +260,10 @@ public sealed class LabelEditingSession
         RequireConnectivity(connectivity);
     }
 
-    private sealed record Snapshot(int[] Labels, int[] Selection);
+    private sealed record Snapshot(
+        int Width,
+        int Height,
+        int Depth,
+        int[] Labels,
+        int[] Selection);
 }

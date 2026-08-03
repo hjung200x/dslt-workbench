@@ -98,6 +98,33 @@ internal static class WorkflowViewModelTests
         Assert(target.LastResult!.Labels!.Count(label => label == 0) == labelCountBeforeEdit,
             "Undo did not restore the label result.");
 
+        var labelsBeforeCrop = target.LastResult.Labels!.ToArray();
+        var widthBeforeCrop = target.LastResult.Width;
+        var heightBeforeCrop = target.LastResult.Height;
+        var depthBeforeCrop = target.LastResult.Depth;
+        target.CropSelectionCommand.Execute(null);
+        Assert(target.LastResult is { Width: 1, Height: 1, Depth: 1 } &&
+               target.ResultOriginX == widthBeforeCrop / 2 &&
+               target.ResultOriginY == heightBeforeCrop / 2 &&
+               target.ResultOriginZ == depthBeforeCrop / 2,
+            "Crop did not publish the selected bounding box in source coordinates.");
+        Assert(target.ResultImage is BitmapSource croppedXy && croppedXy.PixelWidth == 1 && croppedXy.PixelHeight == 1,
+            "Crop did not refresh the result planes to the cropped dimensions.");
+        target.XIndex = 0;
+        target.SelectAtCursorCommand.Execute(null);
+        Assert(target.Status.Contains("outside the cropped result", StringComparison.Ordinal) &&
+               target.SelectedLabelCount == 1,
+            "A source cursor outside the cropped result did not preserve selection.");
+        target.UndoEditCommand.Execute(null);
+        Assert(target.LastResult is not null &&
+               target.LastResult.Width == widthBeforeCrop &&
+               target.LastResult.Height == heightBeforeCrop &&
+               target.LastResult.Depth == depthBeforeCrop &&
+               target.ResultOriginX == 0 && target.ResultOriginY == 0 && target.ResultOriginZ == 0 &&
+               labelsBeforeCrop.SequenceEqual(target.LastResult.Labels!),
+            "Crop undo did not restore dimensions, origin, and labels bit-exactly.");
+        target.CropSelectionCommand.Execute(null);
+
         var exportBase = Path.Combine(Path.GetTempPath(), $"dslt-workflow-{Guid.NewGuid():N}");
         files.ExportBasePath = exportBase;
         try
@@ -105,6 +132,11 @@ internal static class WorkflowViewModelTests
             await target.SaveCommand.ExecuteAsync();
             var provenance = await File.ReadAllTextAsync(exportBase + ".json");
             Assert(provenance.Contains("Dilated selected labels", StringComparison.Ordinal) &&
+                   provenance.Contains("Cropped selection to origin", StringComparison.Ordinal) &&
+                   provenance.Contains("\"outputWidth\": 1", StringComparison.Ordinal) &&
+                   provenance.Contains($"\"outputOriginX\": {widthBeforeCrop / 2}", StringComparison.Ordinal) &&
+                   provenance.Contains($"\"outputOriginY\": {heightBeforeCrop / 2}", StringComparison.Ordinal) &&
+                   provenance.Contains($"\"outputOriginZ\": {depthBeforeCrop / 2}", StringComparison.Ordinal) &&
                    provenance.Contains("undo", StringComparison.Ordinal),
                 "The UI export did not retain label-edit history.");
             Assert(target.SelectedStage == WorkflowStage.Export,

@@ -20,6 +20,9 @@ public sealed record ProcessingProvenance(
     int OutputWidth,
     int OutputHeight,
     int OutputDepth,
+    int OutputOriginX,
+    int OutputOriginY,
+    int OutputOriginZ,
     int ComponentCount,
     string? LabelTiffEncoding,
     string? CompatibilityWarning,
@@ -31,14 +34,17 @@ public sealed record ProcessingProvenance(
         ProcessingResult result,
         string? labelTiffEncoding = null,
         string? compatibilityWarning = null,
-        IReadOnlyList<string>? editHistory = null)
+        IReadOnlyList<string>? editHistory = null,
+        int outputOriginX = 0,
+        int outputOriginY = 0,
+        int outputOriginZ = 0)
     {
         ReadOnlySpan<byte> bytes = input.Source is null
             ? MemoryMarshal.AsBytes(input.Samples.AsSpan())
             : input.Source.ChannelPlanarRawSamples;
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         return new ProcessingProvenance(
-            "1.2",
+            "1.3",
             "synthetic-data-validated",
             DateTimeOffset.UtcNow,
             hash,
@@ -53,6 +59,9 @@ public sealed record ProcessingProvenance(
             result.Width,
             result.Height,
             result.Depth,
+            outputOriginX,
+            outputOriginY,
+            outputOriginZ,
             result.ComponentCount,
             labelTiffEncoding,
             compatibilityWarning,
