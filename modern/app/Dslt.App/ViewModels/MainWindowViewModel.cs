@@ -5,6 +5,7 @@ using Dslt.App.Infrastructure;
 using Dslt.App.Services;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Provenance;
+using Dslt.Managed.Core.Segmentation;
 using Dslt.Managed.Core.Services;
 using Dslt.Managed.Core.Synthetic;
 
@@ -17,7 +18,11 @@ public sealed class MainWindowViewModel : ObservableObject
     private VolumeData? _volume;
     private CancellationTokenSource? _cancellation;
     private ImageSource? _sourceImage;
+    private ImageSource? _sourceYzImage;
+    private ImageSource? _sourceZxImage;
     private ImageSource? _resultImage;
+    private ImageSource? _resultYzImage;
+    private ImageSource? _resultZxImage;
     private string _status;
     private string _workEstimateSummary = "Select a DSLT operation to calculate its work estimate.";
     private double _progress;
@@ -27,7 +32,10 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _radius = 1;
     private int _dsltRadius = 14;
     private int _channelIndex;
+    private int _xIndex;
+    private int _yIndex;
     private int _zIndex;
+    private double _zoom = 1;
     private int _connectivity = 6;
     private int _minimumComponentSize;
     private int _directionLevel = 2;
@@ -44,6 +52,11 @@ public sealed class MainWindowViewModel : ObservableObject
     private WorkflowStage _selectedStage = WorkflowStage.Inspect;
     private ProcessingResult? _lastResult;
     private OperationParameters? _lastParameters;
+    private LabelEditingSession? _editingSession;
+    private readonly List<string> _editHistory = [];
+    private int _editIterations = 1;
+    private bool _addToSelection;
+    private string _selectionSummary = "No label selection";
     private bool _isBusy;
 
     public MainWindowViewModel(IProcessingEngine engine, IWorkspaceFileService files)
@@ -72,6 +85,13 @@ public sealed class MainWindowViewModel : ObservableObject
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasResult && !IsBusy);
         RunCommand = new AsyncRelayCommand(RunSelectedOperationAsync, () => HasVolume && _engine.IsAvailable && !IsBusy);
         CancelCommand = new RelayCommand(() => _cancellation?.Cancel(), () => _cancellation is not null);
+        SelectAtCursorCommand = new RelayCommand(SelectAtCursor, () => CanEdit && !IsBusy);
+        ClearSelectionCommand = new RelayCommand(ClearSelection, () => HasSelection && !IsBusy);
+        MergeSelectionCommand = new RelayCommand(MergeSelection, () => SelectedLabelCount >= 2 && !IsBusy);
+        SplitSelectionCommand = new RelayCommand(SplitSelection, () => HasSelection && !IsBusy);
+        DilateSelectionCommand = new RelayCommand(DilateSelection, () => HasSelection && !IsBusy);
+        ErodeSelectionCommand = new RelayCommand(ErodeSelection, () => HasSelection && !IsBusy);
+        UndoEditCommand = new RelayCommand(UndoEdit, () => _editingSession?.CanUndo == true && !IsBusy);
         GenerateSynthetic();
     }
 
@@ -167,8 +187,30 @@ public sealed class MainWindowViewModel : ObservableObject
             var selected = Math.Clamp(value, 0, _volume.Channels - 1);
             if (!SetProperty(ref _channelIndex, selected)) return;
             _volume = _volume with { SelectedChannel = selected };
-            SourceImage = CreateVolumeSlice(_volume, ZIndex, WindowMinimum, WindowMaximum);
+            RefreshImages();
             OnPropertyChanged(nameof(VolumeSummary));
+        }
+    }
+
+    public int XIndex
+    {
+        get => _xIndex;
+        set
+        {
+            var maximum = Math.Max(0, (_volume?.Width ?? 1) - 1);
+            if (!SetProperty(ref _xIndex, Math.Clamp(value, 0, maximum))) return;
+            RefreshImages();
+        }
+    }
+
+    public int YIndex
+    {
+        get => _yIndex;
+        set
+        {
+            var maximum = Math.Max(0, (_volume?.Height ?? 1) - 1);
+            if (!SetProperty(ref _yIndex, Math.Clamp(value, 0, maximum))) return;
+            RefreshImages();
         }
     }
 
@@ -184,7 +226,15 @@ public sealed class MainWindowViewModel : ObservableObject
     }
 
     public int MaximumChannelIndex => Math.Max(0, (_volume?.Channels ?? 1) - 1);
+    public int MaximumXIndex => Math.Max(0, (_volume?.Width ?? 1) - 1);
+    public int MaximumYIndex => Math.Max(0, (_volume?.Height ?? 1) - 1);
     public int MaximumZIndex => Math.Max(0, (_volume?.Depth ?? 1) - 1);
+
+    public double Zoom
+    {
+        get => _zoom;
+        set => SetProperty(ref _zoom, Math.Clamp(value, 0.25, 8));
+    }
 
     public int Connectivity
     {
@@ -258,10 +308,52 @@ public sealed class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _sourceImage, value);
     }
 
+    public ImageSource? SourceYzImage
+    {
+        get => _sourceYzImage;
+        private set => SetProperty(ref _sourceYzImage, value);
+    }
+
+    public ImageSource? SourceZxImage
+    {
+        get => _sourceZxImage;
+        private set => SetProperty(ref _sourceZxImage, value);
+    }
+
     public ImageSource? ResultImage
     {
         get => _resultImage;
         private set => SetProperty(ref _resultImage, value);
+    }
+
+    public ImageSource? ResultYzImage
+    {
+        get => _resultYzImage;
+        private set => SetProperty(ref _resultYzImage, value);
+    }
+
+    public ImageSource? ResultZxImage
+    {
+        get => _resultZxImage;
+        private set => SetProperty(ref _resultZxImage, value);
+    }
+
+    public int EditIterations
+    {
+        get => _editIterations;
+        set => SetProperty(ref _editIterations, Math.Clamp(value, 1, 64));
+    }
+
+    public bool AddToSelection
+    {
+        get => _addToSelection;
+        set => SetProperty(ref _addToSelection, value);
+    }
+
+    public string SelectionSummary
+    {
+        get => _selectionSummary;
+        private set => SetProperty(ref _selectionSummary, value);
     }
 
     public string Status
@@ -296,6 +388,9 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsIdle => !IsBusy;
     public bool HasVolume => _volume is not null;
     public bool HasResult => _lastResult is not null && _lastParameters is not null;
+    public bool CanEdit => _editingSession is not null;
+    public bool HasSelection => SelectedLabelCount > 0;
+    public int SelectedLabelCount => _editingSession?.Selection.Count ?? 0;
     public bool IsDsltOperation => SelectedOperation.Operation is ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation;
     public bool IsDsltSegmentation => SelectedOperation.Operation == ProcessingOperation.DsltSegmentation;
     public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
@@ -320,6 +415,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand RunCommand { get; }
     public RelayCommand CancelCommand { get; }
+    public RelayCommand SelectAtCursorCommand { get; }
+    public RelayCommand ClearSelectionCommand { get; }
+    public RelayCommand MergeSelectionCommand { get; }
+    public RelayCommand SplitSelectionCommand { get; }
+    public RelayCommand DilateSelectionCommand { get; }
+    public RelayCommand ErodeSelectionCommand { get; }
+    public RelayCommand UndoEditCommand { get; }
 
     private void GenerateSynthetic() => ReplaceVolume(
         SyntheticVolumes.Sphere(),
@@ -386,6 +488,11 @@ public sealed class MainWindowViewModel : ObservableObject
             var result = await _engine.RunAsync(_volume, parameters, progress, _cancellation.Token);
             _lastResult = result;
             _lastParameters = parameters;
+            _editHistory.Clear();
+            _editingSession = result.Labels is null
+                ? null
+                : new LabelEditingSession(result.Width, result.Height, result.Depth, result.Labels);
+            UpdateSelectionState();
             RefreshResultImage();
             SelectedStage = result.OutputKind == OutputKind.LabelsInt32 ? WorkflowStage.Edit : SelectedOperation.Stage;
             Status = result.CompletedPasses > 0
@@ -419,7 +526,8 @@ public sealed class MainWindowViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            await ResultPackageWriter.WriteAsync(basePath, _volume, _lastParameters, _lastResult);
+            await ResultPackageWriter.WriteAsync(
+                basePath, _volume, _lastParameters, _lastResult, _editHistory);
             SelectedStage = WorkflowStage.Export;
             Status = $"Result package exported: {basePath}.json";
         }
@@ -464,18 +572,29 @@ public sealed class MainWindowViewModel : ObservableObject
         replacement.Validate();
         _volume = replacement;
         _channelIndex = replacement.SelectedChannel;
+        _xIndex = replacement.Width / 2;
+        _yIndex = replacement.Height / 2;
         _zIndex = replacement.Depth / 2;
         _lastResult = null;
         _lastParameters = null;
+        _editingSession = null;
+        _editHistory.Clear();
         ResultImage = null;
+        ResultYzImage = null;
+        ResultZxImage = null;
+        UpdateSelectionState();
         WorkEstimateSummary = "Select a DSLT operation to calculate its work estimate.";
         Progress = 0;
         Status = status;
         SelectedStage = WorkflowStage.Inspect;
         RefreshImages();
         OnPropertyChanged(nameof(ChannelIndex));
+        OnPropertyChanged(nameof(XIndex));
+        OnPropertyChanged(nameof(YIndex));
         OnPropertyChanged(nameof(ZIndex));
         OnPropertyChanged(nameof(MaximumChannelIndex));
+        OnPropertyChanged(nameof(MaximumXIndex));
+        OnPropertyChanged(nameof(MaximumYIndex));
         OnPropertyChanged(nameof(MaximumZIndex));
         OnPropertyChanged(nameof(VolumeSummary));
         OnPropertyChanged(nameof(HasVolume));
@@ -486,7 +605,18 @@ public sealed class MainWindowViewModel : ObservableObject
     private void RefreshImages()
     {
         if (_volume is not null)
-            SourceImage = CreateVolumeSlice(_volume, ZIndex, WindowMinimum, WindowMaximum);
+        {
+            var source = SelectedChannelSamples(_volume);
+            SourceImage = CreateFloatPlane(
+                source, _volume.Width, _volume.Height, _volume.Depth,
+                OrthogonalPlane.Xy, ZIndex, WindowMinimum, WindowMaximum);
+            SourceYzImage = CreateFloatPlane(
+                source, _volume.Width, _volume.Height, _volume.Depth,
+                OrthogonalPlane.Yz, XIndex, WindowMinimum, WindowMaximum);
+            SourceZxImage = CreateFloatPlane(
+                source, _volume.Width, _volume.Height, _volume.Depth,
+                OrthogonalPlane.Zx, YIndex, WindowMinimum, WindowMaximum);
+        }
         RefreshResultImage();
     }
 
@@ -494,15 +624,133 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         if (_lastResult?.FloatData is not null)
         {
-            ResultImage = CreateSlice(
+            ResultImage = CreateFloatPlane(
                 _lastResult.FloatData, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                ZIndex, WindowMinimum, WindowMaximum);
+                OrthogonalPlane.Xy, ZIndex, WindowMinimum, WindowMaximum);
+            ResultYzImage = CreateFloatPlane(
+                _lastResult.FloatData, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
+                OrthogonalPlane.Yz, XIndex, WindowMinimum, WindowMaximum);
+            ResultZxImage = CreateFloatPlane(
+                _lastResult.FloatData, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
+                OrthogonalPlane.Zx, YIndex, WindowMinimum, WindowMaximum);
         }
         else if (_lastResult?.Labels is not null)
         {
-            ResultImage = CreateLabelSlice(
-                _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth, ZIndex);
+            ResultImage = CreateLabelPlane(
+                _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
+                OrthogonalPlane.Xy, ZIndex, _editingSession?.Selection);
+            ResultYzImage = CreateLabelPlane(
+                _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
+                OrthogonalPlane.Yz, XIndex, _editingSession?.Selection);
+            ResultZxImage = CreateLabelPlane(
+                _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
+                OrthogonalPlane.Zx, YIndex, _editingSession?.Selection);
         }
+        else
+        {
+            ResultImage = null;
+            ResultYzImage = null;
+            ResultZxImage = null;
+        }
+    }
+
+    private void SelectAtCursor()
+    {
+        if (_editingSession is null) return;
+        var x = Math.Clamp(XIndex, 0, _editingSession.Width - 1);
+        var y = Math.Clamp(YIndex, 0, _editingSession.Height - 1);
+        var z = Math.Clamp(ZIndex, 0, _editingSession.Depth - 1);
+        var label = _editingSession.Labels.Span[z * _editingSession.Width * _editingSession.Height +
+                                                 y * _editingSession.Width + x];
+        if (label == LabelEditingSession.Background)
+        {
+            Status = $"Cursor ({x}, {y}, {z}) is on background; selection was preserved.";
+            return;
+        }
+        _editingSession.Select([label], replace: !AddToSelection);
+        UpdateSelectionState();
+        RefreshResultImage();
+        Status = $"Selected label {label} at ({x}, {y}, {z}).";
+    }
+
+    private void ClearSelection()
+    {
+        _editingSession?.ClearSelection();
+        UpdateSelectionState();
+        RefreshResultImage();
+        Status = "Label selection cleared.";
+    }
+
+    private void MergeSelection() => ApplyLabelEdit(() =>
+    {
+        var destination = _editingSession!.MergeSelected();
+        return $"Merged selected labels into label {destination}.";
+    });
+
+    private void SplitSelection() => ApplyLabelEdit(() =>
+    {
+        var created = _editingSession!.SplitSelected(Connectivity);
+        return $"Split selection with {Connectivity}-connectivity; created {created} label(s).";
+    });
+
+    private void DilateSelection() => ApplyLabelEdit(() =>
+    {
+        _editingSession!.DilateSelected(EditIterations, Connectivity);
+        return $"Dilated selected labels by {EditIterations} iteration(s).";
+    });
+
+    private void ErodeSelection() => ApplyLabelEdit(() =>
+    {
+        _editingSession!.ErodeSelected(EditIterations, Connectivity);
+        return $"Eroded selected labels by {EditIterations} iteration(s).";
+    });
+
+    private void UndoEdit()
+    {
+        if (_editingSession?.Undo() != true) return;
+        PublishEditedLabels();
+        _editHistory.Add("undo");
+        Status = "Undid the last label edit.";
+    }
+
+    private void ApplyLabelEdit(Func<string> edit)
+    {
+        try
+        {
+            var message = edit();
+            PublishEditedLabels();
+            _editHistory.Add(message);
+            Status = message;
+        }
+        catch (Exception error)
+        {
+            Status = $"Label edit failed; the current result was preserved: {error.Message}";
+        }
+    }
+
+    private void PublishEditedLabels()
+    {
+        if (_editingSession is null || _lastResult is null) return;
+        var labels = _editingSession.Labels.ToArray();
+        _lastResult = _lastResult with
+        {
+            Labels = labels,
+            ComponentCount = labels.Where(label => label >= 0).Distinct().Count(),
+        };
+        UpdateSelectionState();
+        RefreshResultImage();
+    }
+
+    private void UpdateSelectionState()
+    {
+        var selection = _editingSession?.Selection.Order().ToArray() ?? [];
+        SelectionSummary = selection.Length == 0
+            ? (_editingSession is null ? "No editable label result" : "No label selection")
+            : $"Selected ({selection.Length}): {string.Join(", ", selection)}";
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(SelectedLabelCount));
+        NotifyCommandStates();
     }
 
     private bool CanEstimate() => HasVolume && _engine.IsAvailable && IsDsltOperation && !IsBusy;
@@ -514,6 +762,13 @@ public sealed class MainWindowViewModel : ObservableObject
         EstimateCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
         RunCommand.NotifyCanExecuteChanged();
+        SelectAtCursorCommand.NotifyCanExecuteChanged();
+        ClearSelectionCommand.NotifyCanExecuteChanged();
+        MergeSelectionCommand.NotifyCanExecuteChanged();
+        SplitSelectionCommand.NotifyCanExecuteChanged();
+        DilateSelectionCommand.NotifyCanExecuteChanged();
+        ErodeSelectionCommand.NotifyCanExecuteChanged();
+        UndoEditCommand.NotifyCanExecuteChanged();
     }
 
     private static string FormatEstimate(ProcessingWorkEstimate estimate) =>
@@ -521,53 +776,113 @@ public sealed class MainWindowViewModel : ObservableObject
         $"{estimate.DirectionalWorkItems:N0} directional samples · {estimate.EstimatedHostBytes / (1024.0 * 1024.0):N1} MiB host · " +
         $"{estimate.SweepPasses:N0} pass(es) · {(estimate.WithinLimits ? "within limits" : "over limit")}";
 
-    private static BitmapSource CreateVolumeSlice(VolumeData volume, int zIndex, float minimum, float maximum)
+    private static ReadOnlySpan<float> SelectedChannelSamples(VolumeData volume)
     {
         var voxelCount = volume.VoxelCount;
-        var channelOffset = checked(volume.SelectedChannel * voxelCount);
-        return CreateSlice(
-            volume.Samples.AsSpan(channelOffset, voxelCount),
-            volume.Width, volume.Height, volume.Depth, zIndex, minimum, maximum);
+        return volume.Samples.AsSpan(checked(volume.SelectedChannel * voxelCount), voxelCount);
     }
 
-    private static BitmapSource CreateSlice(
+    private static BitmapSource CreateFloatPlane(
         ReadOnlySpan<float> volume,
         int width,
         int height,
         int depth,
-        int zIndex,
+        OrthogonalPlane plane,
+        int coordinate,
         float minimum,
         float maximum)
     {
-        var slice = Math.Clamp(zIndex, 0, Math.Max(0, depth - 1));
-        var offset = checked(slice * width * height);
-        var pixels = new byte[checked(width * height)];
+        var (planeWidth, planeHeight) = PlaneDimensions(width, height, depth, plane);
+        var pixels = new byte[checked(planeWidth * planeHeight)];
         var scale = 1.0F / Math.Max(0.000001F, maximum - minimum);
-        for (var i = 0; i < pixels.Length; i++)
+        for (var vertical = 0; vertical < planeHeight; vertical++)
+        for (var horizontal = 0; horizontal < planeWidth; horizontal++)
         {
-            var normalized = Math.Clamp((volume[offset + i] - minimum) * scale, 0, 1);
-            pixels[i] = (byte)Math.Clamp((int)Math.Round(normalized * 255), 0, 255);
+            var (x, y, z) = PlaneCoordinates(
+                horizontal, vertical, coordinate, width, height, depth, plane);
+            var sourceIndex = checked(z * width * height + y * width + x);
+            var normalized = Math.Clamp((volume[sourceIndex] - minimum) * scale, 0, 1);
+            pixels[vertical * planeWidth + horizontal] =
+                (byte)Math.Clamp((int)Math.Round(normalized * 255), 0, 255);
         }
-        var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Gray8, null, pixels, width);
+        var bitmap = BitmapSource.Create(
+            planeWidth, planeHeight, 96, 96, PixelFormats.Gray8, null, pixels, planeWidth);
         bitmap.Freeze();
         return bitmap;
     }
 
-    private static BitmapSource CreateLabelSlice(int[] labels, int width, int height, int depth, int zIndex)
+    private static BitmapSource CreateLabelPlane(
+        int[] labels,
+        int width,
+        int height,
+        int depth,
+        OrthogonalPlane plane,
+        int coordinate,
+        IReadOnlySet<int>? selection)
     {
-        var slice = Math.Clamp(zIndex, 0, Math.Max(0, depth - 1));
-        var offset = checked(slice * width * height);
-        var pixels = new byte[checked(width * height * 3)];
-        for (var i = 0; i < width * height; i++)
+        var (planeWidth, planeHeight) = PlaneDimensions(width, height, depth, plane);
+        var pixels = new byte[checked(planeWidth * planeHeight * 3)];
+        for (var vertical = 0; vertical < planeHeight; vertical++)
+        for (var horizontal = 0; horizontal < planeWidth; horizontal++)
         {
-            var label = labels[offset + i];
+            var (x, y, z) = PlaneCoordinates(
+                horizontal, vertical, coordinate, width, height, depth, plane);
+            var label = labels[checked(z * width * height + y * width + x)];
             if (label < 0) continue;
-            pixels[i * 3] = (byte)(53 + label * 97);
-            pixels[i * 3 + 1] = (byte)(151 + label * 57);
-            pixels[i * 3 + 2] = (byte)(211 + label * 31);
+            var destination = checked((vertical * planeWidth + horizontal) * 3);
+            if (selection?.Contains(label) == true)
+            {
+                pixels[destination] = 255;
+                pixels[destination + 1] = 218;
+                pixels[destination + 2] = 74;
+            }
+            else
+            {
+                pixels[destination] = (byte)(53 + label * 97);
+                pixels[destination + 1] = (byte)(151 + label * 57);
+                pixels[destination + 2] = (byte)(211 + label * 31);
+            }
         }
-        var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Rgb24, null, pixels, width * 3);
+        var bitmap = BitmapSource.Create(
+            planeWidth, planeHeight, 96, 96, PixelFormats.Rgb24, null, pixels, planeWidth * 3);
         bitmap.Freeze();
         return bitmap;
+    }
+
+    private static (int Width, int Height) PlaneDimensions(
+        int width,
+        int height,
+        int depth,
+        OrthogonalPlane plane) => plane switch
+    {
+        OrthogonalPlane.Xy => (width, height),
+        OrthogonalPlane.Yz => (depth, height),
+        OrthogonalPlane.Zx => (width, depth),
+        _ => throw new ArgumentOutOfRangeException(nameof(plane)),
+    };
+
+    private static (int X, int Y, int Z) PlaneCoordinates(
+        int horizontal,
+        int vertical,
+        int coordinate,
+        int width,
+        int height,
+        int depth,
+        OrthogonalPlane plane) => plane switch
+    {
+        OrthogonalPlane.Xy =>
+            (horizontal, vertical, Math.Clamp(coordinate, 0, depth - 1)),
+        OrthogonalPlane.Yz =>
+            (Math.Clamp(coordinate, 0, width - 1), vertical, horizontal),
+        OrthogonalPlane.Zx =>
+            (horizontal, Math.Clamp(coordinate, 0, height - 1), vertical),
+        _ => throw new ArgumentOutOfRangeException(nameof(plane)),
+    };
+
+    private enum OrthogonalPlane
+    {
+        Xy,
+        Yz,
+        Zx,
     }
 }

@@ -17,6 +17,7 @@ public static class ResultPackageWriter
         VolumeData input,
         OperationParameters operation,
         ProcessingResult result,
+        IReadOnlyList<string>? editHistory = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
@@ -63,7 +64,8 @@ public static class ResultPackageWriter
             if (encoding == LabelTiffEncoding.SignedInt32)
                 compatibilityWarning = "Labels exceed the legacy signed 16-bit TIFF range; a signed 32-bit TIFF was written.";
         }
-        var provenance = ProcessingProvenance.Create(input, operation, result, labelTiffEncoding, compatibilityWarning);
+        var provenance = ProcessingProvenance.Create(
+            input, operation, result, labelTiffEncoding, compatibilityWarning, editHistory);
         await using var stream = File.Create(metadataPath);
         await JsonSerializer.SerializeAsync(stream, provenance, JsonOptions, cancellationToken).ConfigureAwait(false);
     }
