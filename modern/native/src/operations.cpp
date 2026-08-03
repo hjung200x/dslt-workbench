@@ -500,6 +500,44 @@ std::vector<float> c_schedule(float minimum, float maximum, float interval) {
     return values;
 }
 
+std::vector<float> descending_threshold_schedule(float minimum, float maximum, float interval) {
+    if (!std::isfinite(minimum) || !std::isfinite(maximum) || !std::isfinite(interval) ||
+        minimum > maximum || interval <= 0.0F) {
+        throw std::invalid_argument(
+            "threshold sweep requires finite ordered bounds and a positive interval");
+    }
+    std::vector<float> values{maximum};
+    constexpr std::size_t maximum_passes = 100000;
+    for (std::size_t iteration = 1; values.back() > minimum; ++iteration) {
+        if (iteration >= maximum_passes) {
+            throw std::invalid_argument("threshold sweep exceeds the pass limit");
+        }
+        const auto candidate = static_cast<double>(maximum) - static_cast<double>(interval) * iteration;
+        if (!std::isfinite(candidate) || candidate <= minimum) {
+            if (values.back() != minimum) values.push_back(minimum);
+            break;
+        }
+        values.push_back(static_cast<float>(candidate));
+    }
+    return values;
+}
+
+void validate_crop(const dslt_volume_descriptor& descriptor, const CropParameters& crop) {
+    if (!crop.enabled) return;
+    if (crop.upper > crop.lower || crop.border_xy < 0) {
+        throw std::invalid_argument("crop bounds are invalid");
+    }
+    const auto expected_height_map = static_cast<std::size_t>(descriptor.width) * descriptor.height;
+    if (crop.use_height_map && crop.height_map.size() != expected_height_map) {
+        throw std::invalid_argument("crop height map dimensions do not match");
+    }
+    if (crop.use_height_map &&
+        !std::all_of(crop.height_map.begin(), crop.height_map.end(),
+            [](float value) { return std::isfinite(value); })) {
+        throw std::invalid_argument("crop height map must contain only finite values");
+    }
+}
+
 void apply_crop(
     std::span<float> mask,
     const dslt_volume_descriptor& descriptor,
@@ -759,20 +797,7 @@ ComponentLabels dslt_segmentation_from_response(
     if (parameters.minimum_component_size < 0 || parameters.minimum_invalid_structure_area < 0) {
         throw std::invalid_argument("DSLT component and invalid-structure limits must be non-negative");
     }
-    if (parameters.crop.enabled) {
-        if (parameters.crop.upper > parameters.crop.lower || parameters.crop.border_xy < 0) {
-            throw std::invalid_argument("DSLT crop bounds are invalid");
-        }
-        const auto expected_height_map = static_cast<std::size_t>(descriptor.width) * descriptor.height;
-        if (parameters.crop.use_height_map && parameters.crop.height_map.size() != expected_height_map) {
-            throw std::invalid_argument("DSLT crop height map dimensions do not match");
-        }
-        if (parameters.crop.use_height_map &&
-            !std::all_of(parameters.crop.height_map.begin(), parameters.crop.height_map.end(),
-                [](float value) { return std::isfinite(value); })) {
-            throw std::invalid_argument("DSLT crop height map must contain only finite values");
-        }
-    }
+    validate_crop(descriptor, parameters.crop);
 
     const auto values = c_schedule(parameters.minimum_c, parameters.maximum_c, parameters.c_interval);
     enforce_dslt_work_limits(estimate_dslt_work(
@@ -833,6 +858,92 @@ ComponentLabels dslt_segmentation_from_response(
             const auto label = static_cast<std::int32_t>(result.component_count++);
             for (std::size_t index = 0; index < candidates.labels.size(); ++index) {
                 if (candidates.labels[index] == static_cast<std::int32_t>(component)) result.labels[index] = label;
+            }
+        }
+        if (progress && !progress(pass_start + pass_length)) throw std::runtime_error("cancelled");
+        result.passes_completed = static_cast<std::uint32_t>(pass + 1);
+        if (invalid_components == 0) break;
+    }
+    report(progress, 1, 1);
+    return result;
+}
+
+ComponentLabels threshold_sweep(
+    const Volume& volume,
+    const ThresholdSweepParameters& parameters,
+    const Engine::Progress& progress) {
+    if (parameters.closing_radius < 0 || parameters.closing_radius > 64) {
+        throw std::invalid_argument("threshold sweep closing radius must be between 0 and 64");
+    }
+    if (parameters.minimum_component_size < 0 || parameters.minimum_invalid_structure_area < 0) {
+        throw std::invalid_argument(
+            "threshold sweep component and invalid-structure limits must be non-negative");
+    }
+    const auto values = descending_threshold_schedule(
+        parameters.minimum_threshold, parameters.maximum_threshold, parameters.interval);
+    const auto& descriptor = volume.descriptor();
+    validate_crop(descriptor, parameters.crop);
+    const auto source = selected_channel(volume);
+    ComponentLabels result{std::vector<std::int32_t>(source.size(), -1), 0};
+    auto previous_thickness = 0;
+    const auto pass_length = 1.0F / static_cast<float>(values.size());
+
+    for (std::size_t pass = 0; pass < values.size(); ++pass) {
+        const auto pass_start = static_cast<float>(pass) * pass_length;
+        std::vector<float> mask(source.size(), 0.0F);
+        for (std::size_t index = 0; index < source.size(); ++index) {
+            mask[index] = source[index] >= values[pass] ? 0.8F : 0.0F;
+            if ((index & 0xffffU) == 0 && progress &&
+                !progress(pass_start + pass_length * 0.10F *
+                    static_cast<float>(index) / static_cast<float>(std::max(source.size(), std::size_t{1})))) {
+                throw std::runtime_error("cancelled");
+            }
+        }
+        mask = spherical_closing(
+            mask, descriptor, parameters.closing_radius,
+            mapped_progress(progress, pass_start + pass_length * 0.10F, pass_length * 0.25F));
+        for (std::size_t index = 0; index < mask.size(); ++index) {
+            if (result.labels[index] >= 0) mask[index] = 0.0F;
+        }
+        apply_crop(mask, descriptor, parameters.crop, 0.0F);
+
+        const auto thickness = estimate_wall_thickness(
+            mask, descriptor, previous_thickness / 2,
+            mapped_progress(progress, pass_start + pass_length * 0.35F, pass_length * 0.25F));
+        previous_thickness = thickness;
+        apply_crop(mask, descriptor, parameters.crop, 0.8F);
+        const auto candidates = connected_components_low_6(
+            mask, descriptor, 0.1F, parameters.minimum_component_size, result.labels,
+            mapped_progress(progress, pass_start + pass_length * 0.60F, pass_length * 0.15F));
+
+        const auto final_pass = pass + 1 == values.size();
+        const auto invalid_limit = static_cast<std::uint64_t>(parameters.minimum_invalid_structure_area) *
+            static_cast<std::uint64_t>(thickness);
+        std::uint32_t invalid_components = 0;
+        for (std::uint32_t component = 0; component < candidates.component_count; ++component) {
+            const auto component_count = std::max(candidates.component_count, 1U);
+            const auto component_progress = mapped_progress(
+                progress,
+                pass_start + pass_length * (0.75F + 0.25F * static_cast<float>(component) /
+                    static_cast<float>(component_count)),
+                pass_length * 0.25F / static_cast<float>(component_count));
+            const auto invalid_voxels = final_pass
+                ? 0U
+                : invalid_structure_voxels(
+                    candidates.labels, result.labels, static_cast<std::int32_t>(component), descriptor,
+                    thickness / 2, component_progress);
+            if (!final_pass && invalid_voxels > invalid_limit) {
+                ++invalid_components;
+                continue;
+            }
+            if (result.component_count >= static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+                throw std::overflow_error("component label count exceeds int32 capacity");
+            }
+            const auto label = static_cast<std::int32_t>(result.component_count++);
+            for (std::size_t index = 0; index < candidates.labels.size(); ++index) {
+                if (candidates.labels[index] == static_cast<std::int32_t>(component)) {
+                    result.labels[index] = label;
+                }
             }
         }
         if (progress && !progress(pass_start + pass_length)) throw std::runtime_error("cancelled");

@@ -289,6 +289,52 @@ void iterative_sweep_fixture() {
     assert(cancelled);
 }
 
+void threshold_sweep_fixture() {
+    const auto desc = descriptor(9, 5, 1);
+    std::vector<float> source(desc.element_count, 1.0F);
+    const auto index = [&desc](std::size_t x, std::size_t y) { return y * desc.width + x; };
+    source[index(0, 2)] = 0.0F;
+    for (std::size_t y = 1; y <= 3; ++y) {
+        for (std::size_t x = 4; x <= 6; ++x) {
+            if (x != 5 || y != 2) source[index(x, y)] = 0.0F;
+        }
+    }
+    const dslt::Volume volume(desc, source);
+    const dslt::ops::ThresholdSweepParameters parameters{
+        0.4F, 0.8F, 0.4F,
+        0, 0, 0,
+    };
+    const auto segmented = dslt::ops::threshold_sweep(volume, parameters, {});
+    assert(segmented.passes_completed == 2);
+    assert(segmented.component_count == 2);
+    assert(segmented.labels[index(0, 2)] == 0);
+    for (std::size_t y = 1; y <= 3; ++y) {
+        for (std::size_t x = 4; x <= 6; ++x) {
+            if (x == 5 && y == 2) assert(segmented.labels[index(x, y)] == -1);
+            else assert(segmented.labels[index(x, y)] == 1);
+        }
+    }
+
+    bool rejected = false;
+    try {
+        auto invalid = parameters;
+        invalid.minimum_threshold = 0.9F;
+        static_cast<void>(dslt::ops::threshold_sweep(volume, invalid, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    bool cancelled = false;
+    try {
+        static_cast<void>(dslt::ops::threshold_sweep(
+            volume, parameters, [](float progress) { return progress < 0.5F; }));
+    } catch (const std::runtime_error& error) {
+        cancelled = std::string_view(error.what()) == "cancelled";
+    }
+    assert(cancelled);
+}
+
 } // namespace
 
 int main() {
@@ -300,5 +346,6 @@ int main() {
     work_estimate_fixture();
     closing_and_component_fixture();
     iterative_sweep_fixture();
+    threshold_sweep_fixture();
     return 0;
 }

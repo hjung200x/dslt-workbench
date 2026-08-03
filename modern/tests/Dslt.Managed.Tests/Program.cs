@@ -134,6 +134,33 @@ if (engine.IsAvailable)
     Equal(1, croppedLabels.Count(label => label == 0), "DSLT cropped segmentation labels");
     Equal(0, croppedLabels[1 * 9 + 1 * 3 + 1], "DSLT height-map crop center label");
 
+    var sweepSamples = Enumerable.Repeat(1.0F, 9 * 5).ToArray();
+    static int SweepIndex(int x, int y) => y * 9 + x;
+    sweepSamples[SweepIndex(0, 2)] = 0.0F;
+    for (var y = 1; y <= 3; y++)
+    for (var x = 4; x <= 6; x++)
+        if (x != 5 || y != 2) sweepSamples[SweepIndex(x, y)] = 0.0F;
+    var sweepVolume = new VolumeData(9, 5, 1, 1, 0, Calibration.Unit, sweepSamples);
+    var sweepResult = await engine.RunAsync(
+        sweepVolume,
+        new OperationParameters(
+            ProcessingOperation.ThresholdSweep,
+            ProcessingBackend.Cpu,
+            MinimumThreshold: 0.4F,
+            MaximumThreshold: 0.8F,
+            ThresholdInterval: 0.4F,
+            ThresholdSweepMinimumComponentSize: 0,
+            ThresholdSweepMinimumInvalidStructureArea: 0,
+            ClosingRadius: 0,
+            MinimumInvalidStructureArea: 500),
+        null,
+        CancellationToken.None);
+    Equal(2, sweepResult.ComponentCount, "Threshold sweep component count");
+    Equal(2, sweepResult.CompletedPasses, "Threshold sweep completed passes");
+    Equal(0, sweepResult.Labels![SweepIndex(0, 2)], "Threshold sweep first-pass label");
+    Equal(1, sweepResult.Labels[SweepIndex(4, 1)], "Threshold sweep final-pass label");
+    Equal(-1, sweepResult.Labels[SweepIndex(5, 2)], "Threshold sweep hole background");
+
     for (var iteration = 0; iteration < 100; iteration++)
     {
         using var lifecycleEngine = new NativeProcessingEngine();

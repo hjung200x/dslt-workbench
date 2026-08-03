@@ -209,6 +209,33 @@ editing action (`filter3d.cpp:6877-6925`, `MainWindow.xaml.cs:1591-1595`). The
 paper-level end-to-end workflow may include watershed, but Workbench must not
 fold it into the DSLT threshold operation implicitly.
 
+## Non-DSLT threshold sweep workflow
+
+`segmentation_Threshold` is a separate legacy operation and does not calculate
+the directional DSLT response (`filter3d.cpp:4545-4695`). Workbench exposes it
+as `DSLT_OP_THRESHOLD_SWEEP` with the following source-derived ordering:
+
+1. Start at `maximumThreshold`, then subtract the positive interval, clamping
+   the last pass to `minimumThreshold` so both bounds are evaluated exactly.
+2. Binarize each voxel to `0.8` when `I >= threshold` and `0.0` otherwise.
+3. Apply spherical closing, mask already accepted labels to `0.0`, apply crop,
+   estimate wall thickness, and invert crop-excluded voxels to `0.8`.
+4. Extract low-valued 6-connected components using the exclusive minimum-size
+   rule and append accepted labels without replacing earlier labels.
+5. Defer components whose closed invalid-structure volume exceeds
+   `minimumInvalidStructureArea * wallThickness`; accept every remaining
+   component on the final pass.
+6. Stop early when a pass leaves no deferred component. Report the exact number
+   of completed passes and honor cancellation without publishing partial output.
+
+The legacy XAML declares maximum threshold `1` but an initial value of `20`;
+WPF coerces that slider value to `1`. Workbench uses explicit defaults min `0`,
+max `1`, interval `0.02`, valid area `100`, and closing radius `2`. Native,
+C ABI, managed, and WPF fixtures cover pass order, append-only labels, a staged
+defect, final-pass behavior, invalid bounds, cancellation, and parameter
+mapping. Archived-runtime comparison remains required before claiming legacy
+equivalence.
+
 ## Known legacy defects and compatibility decisions
 
 | Observation | Decision |
@@ -298,6 +325,24 @@ the ABI v1 structure sizes. The .NET adapter exposes semantic properties
 `MinimumC`, `MaximumC`, `CInterval`, `ClosingRadius`, and
 `MinimumInvalidStructureArea` so application code does not depend on field
 reuse.
+
+For `DSLT_OP_THRESHOLD_SWEEP`, the 48-byte v1 request is interpreted as:
+
+| C ABI field | Threshold sweep meaning |
+|---|---|
+| `minimum_component_size` | Exclusive minimum low-component size |
+| `slice_index` | Spherical closing radius |
+| `threshold` | Minimum invalid-structure area; must be a non-negative integer |
+| `constant_c` | Minimum image threshold |
+| `window_min` | Maximum image threshold |
+| `window_max` | Positive threshold interval |
+
+The .NET adapter exposes semantic `MinimumThreshold`, `MaximumThreshold`,
+`ThresholdInterval`, `ThresholdSweepMinimumComponentSize`, and
+`ThresholdSweepMinimumInvalidStructureArea` properties. Separating the last
+two prevents the threshold defaults (0 and 100) from being confused with DSLT
+segmentation defaults. Completed passes use the same result field as the DSLT
+sweep, preserving all ABI v1 structure sizes.
 
 Crop state is configured with the additive ABI v1 function `dslt_set_crop`.
 The 16-byte `dslt_crop_options` contains enabled/use-height-map flags, inclusive

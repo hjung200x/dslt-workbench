@@ -17,8 +17,9 @@ equivalence; that remains gated by representative datasets.
   factor, and propagate normalized scroll offsets across all six views.
 - Adjust the display window independently of stored voxel values.
 - Choose the processing backend and an exposed CPU-compatible operation.
-- Configure threshold, radius, connectivity, component-size, and DSLT sweep
-  parameters according to the selected operation.
+- Configure threshold, radius, connectivity, component-size, non-DSLT
+  threshold-sweep, and DSLT sweep parameters according to the selected
+  operation.
 - Keep general filter radius separate from the DSLT radius. DSLT starts at the
   legacy UI default of 14 and is bounded by the legacy UI maximum of 100.
 - Present the preview offset on the legacy 0..200 scale with default 20 and map

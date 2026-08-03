@@ -25,7 +25,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | h-minima segmentation | `HMinima` | pending-reference | Legacy comparison required |
 | DSLT directional threshold basis | Ordered geodesic directions, multi-radius line response, directional C | scaffolded | Scalar CPU operation plus direction/weight/interpolation/boundary and X/Y/Z/oblique ramp oracle fixtures implemented; legacy-binary oracle pending |
 | Sobel-like iterative segmentation | `DsltSegmentation` | scaffolded | CPU response reuse, C schedule, closing, wall validation, append-only labels, final pass, cancellation, fixed/height-map crop, checked resource estimates, and staged-defect fixtures implemented; legacy runtime comparison pending |
-| Threshold sweep | `ThresholdSweep` | scaffolded | Reserved for the non-DSLT threshold workflow; legacy comparison required |
+| Threshold sweep | `ThresholdSweep` | scaffolded | CPU descending sweep, closing, crop, validation, append-only labels, final pass, cancellation, ABI and WPF fixtures implemented; legacy-runtime comparison pending |
 | Watershed | `Watershed` | pending-reference | Legacy comparison required |
 | Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity fixtures; WPF edit fixture; crop dimension/origin/label bit-exact undo fixture |
 | Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |

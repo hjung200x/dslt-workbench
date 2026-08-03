@@ -188,6 +188,24 @@
               <TextBlock Text="{Binding Radius}" Foreground="{StaticResource AccentBrush}" />
             </StackPanel>
 
+            <StackPanel Visibility="{Binding IsThresholdSweep, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <Separator Margin="0,16,0,12" Background="#354152" />
+              <TextBlock Text="THRESHOLD SWEEP" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <TextBlock Text="Minimum / maximum threshold" Margin="0,10,0,5" />
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <TextBox Text="{Binding MinimumThreshold, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox Grid.Column="2" Text="{Binding MaximumThreshold, UpdateSourceTrigger=PropertyChanged}" />
+              </Grid>
+              <TextBlock Text="Threshold interval" Margin="0,10,0,5" />
+              <TextBox Text="{Binding ThresholdInterval, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBlock Text="Closing radius" Margin="0,10,0,5" />
+              <Slider Minimum="0" Maximum="50" Value="{Binding ClosingRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <TextBlock Text="{Binding ClosingRadius}" Foreground="{StaticResource AccentBrush}" />
+              <TextBlock Text="Minimum invalid-structure area" Margin="0,10,0,5" />
+              <TextBox Text="{Binding MinimumInvalidStructureArea, UpdateSourceTrigger=PropertyChanged}" />
+            </StackPanel>
+
             <StackPanel Visibility="{Binding IsDsltOperation, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="DSLT" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
