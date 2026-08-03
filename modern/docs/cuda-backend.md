@@ -27,7 +27,9 @@ The currently ported groups are:
 - H-minima reconstruction with exact fixed-point detection; and
 - selected-seed watershed with the fixed 256-level legacy schedule; and
 - the ordered geodesic DSLT directional-threshold basis; and
-- scalar descending threshold sweep with segmentation-state accumulation.
+- scalar descending threshold sweep with segmentation-state accumulation; and
+- iterative DSLT segmentation with one cached directional response and an
+  ascending, endpoint-inclusive C schedule.
 
 ## Resource ownership and execution
 
@@ -41,7 +43,9 @@ whose output shape differs from the input, such as Z resampling and orthogonal
 views. Allocation and runtime failures
 are converted into DSLT error states and UTF-8 diagnostic text. Every kernel
 launch is checked with `cudaGetLastError`, and the stream is synchronized
-before host output is published.
+before host output is published. Iterative DSLT segmentation includes both
+directional-response volumes, morphology workspaces, component-root buffers,
+the convergence flag, and optional crop height map in the VRAM preflight.
 
 Progress is reported at start, input transfer, execution, and completion.
 Smoothing and morphology synchronize and report after every output Z slice so
@@ -331,8 +335,8 @@ The runtime fixture proves voxel-exact final masks for mean and Gaussian line
 weights, radii 1 and 2, direction levels 1 and 2, oblique directions, and three
 XY/Z correction combinations. It also covers `Auto`, parameter bounds,
 directional-work rejection, mid-direction cancellation, and repeated response
-workspace allocation. Iterative DSLT segmentation remains a separate pending
-CUDA port.
+workspace allocation. The same response kernels are reused by the iterative
+DSLT segmentation port recorded below.
 
 ## Recorded threshold-sweep runtime evidence
 
@@ -354,5 +358,27 @@ The runtime fixture proves voxel-exact labels, component count, and completed
 passes for the two-pass staged-defect oracle. It also covers radius-one closing,
 fixed and height-map crop, `Auto`, schedule and parameter rejection, progress
 cancellation, exclusive minimum component size, final-pass acceptance, and
-repeated sweep workspace allocation. Iterative DSLT segmentation remains the
-next pending CUDA port.
+repeated sweep workspace allocation. The same deterministic component and wall
+validation stages are reused by iterative DSLT segmentation.
+
+## Recorded iterative DSLT segmentation runtime evidence
+
+The first full iterative DSLT segmentation runtime gate was completed on
+2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `2f62079ebf45252c7ba48f4488e1fb4cccd910ab` |
+| Hosted build | GitHub Actions run `30863620628`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `80D03A1A839A88D1912FBDF93BF3C36921DAB6BF71CBCA2AA788D14E0282698F` |
+| `dslt_native_tests.exe` SHA-256 | `90144F7B5ADB8D700A4EAC44052DAC4304FF2F0EF55BF6F9AEA05FA8F8C7EFCE` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The runtime fixture proves voxel-exact CPU/CUDA labels, component count, and
+completed-pass count for both a general volume and a staged two-pass defect
+volume. It also covers radius-one closing, height-map crop, `Auto`, invalid C
+schedule and limit rejection, mid-response cancellation, and repeated combined
+response/sweep workspace allocation without measured GPU-memory growth.
