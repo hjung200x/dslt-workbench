@@ -49,3 +49,8 @@ C++ tools, CMake 3.30 or newer, and .NET 10. Its workflow records the GPU,
 driver, toolchain, and source commit in the run summary. Only after parity and
 memory-lifetime tests succeed does it build, verify, and upload a self-contained
 CUDA preview ZIP with its SHA-256 checksum.
+
+Run `modern/scripts/test-cuda-prerequisites.ps1` from PowerShell before
+registering a machine as a runner. It reports every missing prerequisite in one
+pass and exits unsuccessfully until the machine satisfies the same checks used
+by CI.

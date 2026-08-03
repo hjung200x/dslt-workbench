@@ -7,6 +7,7 @@ on:
     paths:
       - 'modern/native/**'
       - 'modern/scripts/package-preview.ps1'
+      - 'modern/scripts/test-cuda-prerequisites.ps1'
       - 'modern/scripts/verify-preview-package.ps1'
       - 'modern/docs/**'
       - 'modern/README.md'
@@ -31,28 +32,7 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Capture NVIDIA runner evidence
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($command in @('nvidia-smi', 'nvcc', 'cmake')) {
-            if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
-              throw "$command is required on the NVIDIA runner."
-            }
-          }
-          $gpu = (& nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader) -join "`n"
-          if ($LASTEXITCODE -ne 0) { throw 'nvidia-smi failed.' }
-          $nvcc = (& nvcc --version) -join "`n"
-          if ($LASTEXITCODE -ne 0) { throw 'nvcc failed.' }
-          if ($nvcc -notmatch 'release 13\.2') { throw 'CUDA Toolkit 13.2 is required.' }
-          $cmake = (& cmake --version | Select-Object -First 1)
-          if ($LASTEXITCODE -ne 0) { throw 'cmake failed.' }
-          @"
-          ### NVIDIA runner evidence
-
-          - GPU: $gpu
-          - CMake: $cmake
-          - CUDA Toolkit: 13.2 (validated from nvcc --version)
-          - Commit: $env:GITHUB_SHA
-          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+        run: ./modern/scripts/test-cuda-prerequisites.ps1 -WriteGitHubSummary
       - name: Configure CUDA backend
         working-directory: modern/native
         run: cmake --preset windows-cuda
