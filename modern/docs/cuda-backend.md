@@ -20,7 +20,9 @@ The currently ported groups are:
 - mean/Gaussian smoothing;
 - cubic/spherical dilation and erosion;
 - area-average and Lanczos 2/3 Z resampling; and
-- XY, YZ, and ZX orthogonal-view extraction.
+- XY, YZ, and ZX orthogonal-view extraction;
+- filtered height maps and normal/Z height projection; and
+- 3D depth maps derived from the filtered height surface.
 
 ## Resource ownership and execution
 
@@ -45,6 +47,13 @@ Z resampling likewise synchronizes and reports after every output slice. The
 CUDA result carries its own output width, height, depth, and kind so the C ABI
 publishes the same variable-shape metadata as the CPU reference. Orthogonal
 views run as one plane extraction and publish `DSLT_OUTPUT_IMAGE_FLOAT32`.
+
+Height-map operations use the CPU reference's separable clamp-boundary line
+weights, threshold-crossing interpolation, and optional repeated XY smoothing.
+Normal and Z projections preserve the reference sampling and threshold rules.
+Depth maps run a two-pass squared-distance calculation for each output Z slice.
+These phases synchronize at cancellable boundaries and include their temporary
+volume and plane buffers in the VRAM preflight estimate.
 
 ## Validation gates
 
@@ -152,3 +161,10 @@ The fixture compares area averaging and Lanczos orders 2 and 3 with the CPU
 reference on a calibrated 3D volume. It verifies variable output depth, exact
 XY/YZ/ZX plane values and dimensions, image output kind, `Auto` selection,
 invalid parameters, and cancellation after a completed resampling slice.
+
+The height/depth projection fixture compares Gaussian and mean height surfaces,
+normal and Z projections, and volumetric depth values against CPU at the
+project float tolerance. It also covers variable image metadata, `Auto`
+selection, parameter rejection, and cancellation during depth-slice execution.
+Runtime evidence for this newly ported group is pending a successful hosted
+build and NVIDIA-device execution.
