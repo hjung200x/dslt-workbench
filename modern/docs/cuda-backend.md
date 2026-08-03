@@ -39,7 +39,19 @@ discards the partial result.
 the minimal official CUDA 13.2 compiler/runtime packages with NVIDIA's silent
 network installer, then compiles the CUDA DLL and CUDA-enabled native tests.
 This gate proves NVCC/MSVC/CMake compatibility but cannot execute kernels
-because the hosted runner has no NVIDIA device.
+because the hosted runner has no NVIDIA device. A successful job uploads the
+DLL and native test executable as `dslt-cuda-tests-win-x64-<commit>` for seven
+days. The bundle can be downloaded to a trusted Windows NVIDIA host and run
+without installing a compiler:
+
+```powershell
+gh run download <run-id> --name dslt-cuda-tests-win-x64-<commit> --dir .run/cuda-tests
+./modern/scripts/run-cuda-artifact-tests.ps1 -ArtifactDirectory .run/cuda-tests
+```
+
+Only bundles produced from the repository's own reviewed commit should be
+executed. The script requires `nvidia-smi`, verifies the expected DLL/executable
+layout, reports the selected GPU, and propagates any native test failure.
 
 `cuda-runtime-parity` uses the `windows-cuda` preset on a self-hosted runner
 with the `Windows`, `X64`, and `NVIDIA` labels. It defines `DSLT_TEST_CUDA` and
