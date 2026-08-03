@@ -28,17 +28,11 @@ float sinc(float value) {
     return std::sin(p) / p;
 }
 
-struct Vec3 final {
-    float x;
-    float y;
-    float z;
-
-    bool operator==(const Vec3&) const = default;
-};
-
 Vec3 midpoint(const Vec3& left, const Vec3& right) {
     return {(left.x + right.x) * 0.5F, (left.y + right.y) * 0.5F, (left.z + right.z) * 0.5F};
 }
+
+} // namespace
 
 std::vector<Vec3> geodesic_directions(int level) {
     if (level < 1 || level > 5) throw std::invalid_argument("DSLT direction level must be between 1 and 5");
@@ -144,8 +138,6 @@ float trilinear_clamp(
     return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
 }
 
-} // namespace
-
 std::vector<float> selected_channel(const Volume& volume) {
     std::vector<float> result(volume.voxel_count());
     const auto offset = volume.voxel_count() * volume.descriptor().selected_channel;
@@ -153,28 +145,23 @@ std::vector<float> selected_channel(const Volume& volume) {
     return result;
 }
 
-std::vector<float> dslt_threshold(
+DsltResponse dslt_response(
     const Volume& volume,
     int radius,
     int direction_level,
     int kernel_type,
-    float constant_c_xy,
-    float z_correction_factor,
     const Engine::Progress& progress) {
     if (radius < 1 || radius > 127) throw std::invalid_argument("DSLT radius must be between 1 and 127");
     if (kernel_type != 0 && kernel_type != 1) throw std::invalid_argument("DSLT kernel type must be 0 (Gaussian) or 1 (mean)");
-    if (!std::isfinite(constant_c_xy)) throw std::invalid_argument("DSLT C must be finite");
-    if (!std::isfinite(z_correction_factor) || z_correction_factor < 0.0F)
-        throw std::invalid_argument("DSLT Z correction factor must be finite and non-negative");
 
     const auto directions = geodesic_directions(direction_level);
     const auto source = selected_channel(volume);
     const auto& descriptor = volume.descriptor();
-    std::vector<float> result(source.size(), 0.0F);
-    std::vector<float> minimum(source.size(), std::numeric_limits<float>::max());
-    std::vector<float> alpha(source.size(), 0.0F);
-    const auto total_steps = static_cast<std::size_t>(radius) * directions.size() +
-        static_cast<std::size_t>(descriptor.depth) * descriptor.height;
+    DsltResponse response{
+        std::vector<float>(source.size(), std::numeric_limits<float>::max()),
+        std::vector<float>(source.size(), 0.0F),
+    };
+    const auto total_steps = static_cast<std::size_t>(radius) * directions.size();
     std::size_t completed_steps = 0;
 
     for (int current_radius = radius; current_radius > 0; --current_radius) {
@@ -196,9 +183,9 @@ std::vector<float> dslt_threshold(
                                 static_cast<float>(z) + direction.z * static_cast<float>(offset)) * weight;
                         }
                         const auto id = flat(x, y, z, descriptor.width, descriptor.height);
-                        if (minimum[id] > sum) {
-                            minimum[id] = sum;
-                            alpha[id] = direction_alpha;
+                        if (response.minimum[id] > sum) {
+                            response.minimum[id] = sum;
+                            response.alpha[id] = direction_alpha;
                         }
                     }
                 }
@@ -206,19 +193,70 @@ std::vector<float> dslt_threshold(
             report(progress, ++completed_steps, total_steps);
         }
     }
+    return response;
+}
 
+std::vector<float> apply_dslt_threshold(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    const DsltResponse& response,
+    float constant_c_xy,
+    float z_correction_factor,
+    const Engine::Progress& progress) {
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
+    if (source.size() != expected || response.minimum.size() != expected || response.alpha.size() != expected) {
+        throw std::invalid_argument("DSLT response dimensions do not match the source volume");
+    }
+    if (!std::isfinite(constant_c_xy)) throw std::invalid_argument("DSLT C must be finite");
+    if (!std::isfinite(z_correction_factor) || z_correction_factor < 0.0F) {
+        throw std::invalid_argument("DSLT Z correction factor must be finite and non-negative");
+    }
+
+    std::vector<float> result(source.size(), 0.0F);
     const auto constant_c_z = constant_c_xy * z_correction_factor;
     for (std::size_t z = 0; z < descriptor.depth; ++z) {
         for (std::size_t y = 0; y < descriptor.height; ++y) {
             for (std::size_t x = 0; x < descriptor.width; ++x) {
                 const auto id = flat(x, y, z, descriptor.width, descriptor.height);
-                const auto correction = constant_c_xy * (1.0F - alpha[id]) + constant_c_z * alpha[id];
-                result[id] = source[id] > minimum[id] - correction ? 0.8F : 0.0F;
+                const auto correction = constant_c_xy * (1.0F - response.alpha[id]) + constant_c_z * response.alpha[id];
+                result[id] = source[id] > response.minimum[id] - correction ? 0.8F : 0.0F;
             }
-            report(progress, ++completed_steps, total_steps);
+            report(progress, z * descriptor.height + y + 1,
+                static_cast<std::size_t>(descriptor.depth) * descriptor.height);
         }
     }
     return result;
+}
+
+std::vector<float> dslt_threshold(
+    const Volume& volume,
+    int radius,
+    int direction_level,
+    int kernel_type,
+    float constant_c_xy,
+    float z_correction_factor,
+    const Engine::Progress& progress) {
+    if (radius < 1 || radius > 127) throw std::invalid_argument("DSLT radius must be between 1 and 127");
+    if (kernel_type != 0 && kernel_type != 1) throw std::invalid_argument("DSLT kernel type must be 0 (Gaussian) or 1 (mean)");
+    if (!std::isfinite(constant_c_xy)) throw std::invalid_argument("DSLT C must be finite");
+    if (!std::isfinite(z_correction_factor) || z_correction_factor < 0.0F) {
+        throw std::invalid_argument("DSLT Z correction factor must be finite and non-negative");
+    }
+    const auto direction_steps = static_cast<std::size_t>(radius) * geodesic_directions(direction_level).size();
+    const auto& descriptor = volume.descriptor();
+    const auto threshold_steps = static_cast<std::size_t>(descriptor.depth) * descriptor.height;
+    const auto total_steps = direction_steps + threshold_steps;
+    const auto response_progress = [&](float value) {
+        return !progress || progress(value * static_cast<float>(direction_steps) / static_cast<float>(total_steps));
+    };
+    const auto threshold_progress = [&](float value) {
+        return !progress || progress((static_cast<float>(direction_steps) + value * static_cast<float>(threshold_steps)) /
+            static_cast<float>(total_steps));
+    };
+    const auto response = dslt_response(volume, radius, direction_level, kernel_type, response_progress);
+    const auto source = selected_channel(volume);
+    return apply_dslt_threshold(
+        source, descriptor, response, constant_c_xy, z_correction_factor, threshold_progress);
 }
 
 std::vector<float> window_level(const Volume& volume, float minimum, float maximum, const Engine::Progress& progress) {
@@ -278,34 +316,62 @@ std::vector<float> smooth(const Volume& volume, int radius, bool gaussian, const
     return result;
 }
 
-std::vector<float> morphology(const Volume& volume, int radius, bool dilate, bool spherical, const Engine::Progress& progress) {
+std::vector<float> morphology_buffer(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    int radius,
+    bool dilate,
+    bool spherical,
+    const Engine::Progress& progress) {
     if (radius < 0 || radius > 64) throw std::invalid_argument("morphology radius must be between 0 and 64");
-    if (radius == 0) return selected_channel(volume);
-    const auto source = selected_channel(volume);
-    const auto& d = volume.descriptor();
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
+    if (source.size() != expected) throw std::invalid_argument("morphology buffer dimensions do not match");
+    if (radius == 0) return {source.begin(), source.end()};
     std::vector<float> result(source.size());
-    for (std::size_t z = 0; z < d.depth; ++z) {
-        for (std::size_t y = 0; y < d.height; ++y) {
-            for (std::size_t x = 0; x < d.width; ++x) {
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t y = 0; y < descriptor.height; ++y) {
+            for (std::size_t x = 0; x < descriptor.width; ++x) {
                 float chosen = dilate ? -std::numeric_limits<float>::infinity() : std::numeric_limits<float>::infinity();
                 for (int dz = -radius; dz <= radius; ++dz) {
-                    const auto zz = std::clamp<long long>(static_cast<long long>(z) + dz, 0, d.depth - 1);
+                    const auto zz = std::clamp<long long>(static_cast<long long>(z) + dz, 0, descriptor.depth - 1);
                     for (int dy = -radius; dy <= radius; ++dy) {
-                        const auto yy = std::clamp<long long>(static_cast<long long>(y) + dy, 0, d.height - 1);
+                        const auto yy = std::clamp<long long>(static_cast<long long>(y) + dy, 0, descriptor.height - 1);
                         for (int dx = -radius; dx <= radius; ++dx) {
                             if (spherical && dx * dx + dy * dy + dz * dz > radius * radius) continue;
-                            const auto xx = std::clamp<long long>(static_cast<long long>(x) + dx, 0, d.width - 1);
-                            const float value = source[flat(xx, yy, zz, d.width, d.height)];
+                            const auto xx = std::clamp<long long>(static_cast<long long>(x) + dx, 0, descriptor.width - 1);
+                            const float value = source[flat(xx, yy, zz, descriptor.width, descriptor.height)];
                             chosen = dilate ? std::max(chosen, value) : std::min(chosen, value);
                         }
                     }
                 }
-                result[flat(x, y, z, d.width, d.height)] = chosen;
+                result[flat(x, y, z, descriptor.width, descriptor.height)] = chosen;
             }
         }
-        report(progress, z + 1, d.depth);
+        report(progress, z + 1, descriptor.depth);
     }
     return result;
+}
+
+std::vector<float> morphology(const Volume& volume, int radius, bool dilate, bool spherical, const Engine::Progress& progress) {
+    const auto source = selected_channel(volume);
+    return morphology_buffer(source, volume.descriptor(), radius, dilate, spherical, progress);
+}
+
+std::vector<float> spherical_closing(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    int radius,
+    const Engine::Progress& progress) {
+    if (radius < 0 || radius > 64) throw std::invalid_argument("closing radius must be between 0 and 64");
+    if (radius == 0) return {source.begin(), source.end()};
+    const auto dilation_progress = [&](float value) {
+        return !progress || progress(value * 0.5F);
+    };
+    const auto erosion_progress = [&](float value) {
+        return !progress || progress(0.5F + value * 0.5F);
+    };
+    auto closed = morphology_buffer(source, descriptor, radius, true, true, dilation_progress);
+    return morphology_buffer(closed, descriptor, radius, false, true, erosion_progress);
 }
 
 std::vector<std::int32_t> connected_components(
@@ -373,6 +439,69 @@ std::vector<std::int32_t> connected_components(
         report(progress, z + 1, d.depth);
     }
     return labels;
+}
+
+ComponentLabels connected_components_low_6(
+    std::span<const float> source,
+    const dslt_volume_descriptor& descriptor,
+    float maximum_value,
+    int minimum_size_exclusive,
+    const Engine::Progress& progress) {
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height * descriptor.depth;
+    if (source.size() != expected) throw std::invalid_argument("component buffer dimensions do not match");
+    if (!std::isfinite(maximum_value)) throw std::invalid_argument("component maximum value must be finite");
+    if (minimum_size_exclusive < 0) throw std::invalid_argument("exclusive minimum component size must be non-negative");
+
+    ComponentLabels result{std::vector<std::int32_t>(source.size(), -1), 0};
+    std::vector<std::uint8_t> visited(source.size(), 0);
+    std::vector<std::size_t> queue;
+    std::vector<std::size_t> component;
+    constexpr std::array<std::array<int, 3>, 6> neighbors{{
+        {{-1, 0, 0}}, {{1, 0, 0}}, {{0, -1, 0}},
+        {{0, 1, 0}}, {{0, 0, -1}}, {{0, 0, 1}},
+    }};
+
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t y = 0; y < descriptor.height; ++y) {
+            for (std::size_t x = 0; x < descriptor.width; ++x) {
+                const auto seed = flat(x, y, z, descriptor.width, descriptor.height);
+                if (visited[seed] != 0 || source[seed] > maximum_value) continue;
+                queue.clear();
+                component.clear();
+                queue.push_back(seed);
+                visited[seed] = 1;
+                for (std::size_t head = 0; head < queue.size(); ++head) {
+                    const auto id = queue[head];
+                    component.push_back(id);
+                    const auto cz = id / (descriptor.width * descriptor.height);
+                    const auto remainder = id % (descriptor.width * descriptor.height);
+                    const auto cy = remainder / descriptor.width;
+                    const auto cx = remainder % descriptor.width;
+                    for (const auto& offset : neighbors) {
+                        const auto nx = static_cast<long long>(cx) + offset[0];
+                        const auto ny = static_cast<long long>(cy) + offset[1];
+                        const auto nz = static_cast<long long>(cz) + offset[2];
+                        if (nx < 0 || ny < 0 || nz < 0 ||
+                            nx >= descriptor.width || ny >= descriptor.height || nz >= descriptor.depth) continue;
+                        const auto neighbor = flat(nx, ny, nz, descriptor.width, descriptor.height);
+                        if (visited[neighbor] == 0 && source[neighbor] <= maximum_value) {
+                            visited[neighbor] = 1;
+                            queue.push_back(neighbor);
+                        }
+                    }
+                }
+                if (component.size() > static_cast<std::size_t>(minimum_size_exclusive)) {
+                    if (result.component_count >= static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+                        throw std::overflow_error("component label count exceeds int32 capacity");
+                    }
+                    const auto label = static_cast<std::int32_t>(result.component_count++);
+                    for (const auto id : component) result.labels[id] = label;
+                }
+            }
+        }
+        report(progress, z + 1, descriptor.depth);
+    }
+    return result;
 }
 
 std::vector<float> height_map(const Volume& volume, float threshold_value, const Engine::Progress& progress) {

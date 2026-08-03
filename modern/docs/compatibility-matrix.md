@@ -23,9 +23,9 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | 6/18/26 connectivity | `ConnectedComponents` | implemented | Touching-object fixtures |
 | Flood-fill segmentation | Connected-components request | implemented | Noise/min-size fixtures |
 | h-minima segmentation | `HMinima` | pending-reference | Legacy comparison required |
-| DSLT directional threshold basis | Ordered geodesic directions, multi-radius line response, directional C | scaffolded | Scalar CPU operation and constant/tie ABI fixture implemented; full oracle matrix pending |
+| DSLT directional threshold basis | Ordered geodesic directions, multi-radius line response, directional C | scaffolded | Scalar CPU operation plus direction/weight/interpolation/boundary native fixtures implemented; ramp and legacy-binary oracles pending |
 | Sobel-like iterative segmentation | `SobelLike` | pending-reference | DSLT sweep workflow specified; legacy runtime comparison required |
-| Threshold sweep | `ThresholdSweep` | scaffolded | Legacy comparison required |
+| Threshold sweep | `ThresholdSweep` | scaffolded | Reusable response, spherical closing, and strict low-valued 6-connectivity primitives implemented; crop/validation/sweep orchestration pending |
 | Watershed | `Watershed` | pending-reference | Legacy comparison required |
 | Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity and undo fixtures |
 | Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |

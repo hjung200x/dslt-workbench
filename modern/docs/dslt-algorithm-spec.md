@@ -15,11 +15,14 @@ the compatibility behavior where it is unambiguous. Any behavior marked
 `capture-required` must be measured with the legacy executable before
 Workbench may claim legacy equivalence.
 
-Implementation status: **scalar CPU threshold basis implemented; full fixture
-set and iterative segmentation pending**. The initial operation covers ordered
-directions, every-radius response, trilinear clamp sampling, direction-dependent
-C, and strict binarization. Closing, validation, and the C sweep remain in
-Stage 7.
+Implementation status: **scalar CPU threshold basis and reusable segmentation
+primitives implemented; iterative segmentation pending**. The operation covers
+ordered directions, every-radius response, trilinear clamp sampling,
+direction-dependent C, and strict binarization. The response and C application
+are separate internal operations so one response can be reused throughout the
+future C sweep. Buffer-based spherical closing and low-valued 6-connected
+component extraction are also implemented. Crop and invalid-structure
+validation, append-only labeling, and C-sweep control remain in Stage 7.
 
 ## Terminology and coordinates
 
@@ -229,6 +232,13 @@ CPU results.
 | Sphere/shell and touching cells | Closing, 6-connectivity, component count, bounding boxes, and volume match expected values |
 | C sweep with staged defects | Existing labels are not overwritten; C order, early stop, and final-pass behavior are exact |
 | Cancellation/work limit | No partial result replaces the last valid result and the estimate is reported |
+
+The native `dslt_algorithm_tests` target currently fixes the 21/81/321
+direction counts and antipodal uniqueness, mean/Gaussian formulae for radii
+1/2/14, oblique and clamp-to-edge interpolation, constant-response tie order,
+strict threshold boundary, spherical closing, and the legacy-exclusive
+low-component size rule. Ramp response oracles, staged sweep defects, work
+limits, and archived-binary comparisons are still outstanding.
 
 Until the same fixtures can be run through an archived legacy binary, the
 result level is **synthetic-data validated**, not legacy compared or
