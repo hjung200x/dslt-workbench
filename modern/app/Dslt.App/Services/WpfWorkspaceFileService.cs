@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Globalization;
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -37,27 +39,188 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
 
     internal static VolumeData ReadStack(string path, CancellationToken cancellationToken)
     {
+        var metadata = TiffMetadataReader.Read(path);
+        if (metadata.SamplesPerPixel != 1)
+            throw new NotSupportedException("Only grayscale TIFF directories with one sample per pixel are supported.");
+        if (metadata.Photometric is not (0 or 1))
+            throw new NotSupportedException("Only grayscale TIFF photometric interpretation is supported.");
+
         using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var decoder = new TiffBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
         if (decoder.Frames.Count == 0) throw new InvalidDataException("TIFF stack contains no frames.");
         var width = decoder.Frames[0].PixelWidth;
         var height = decoder.Frames[0].PixelHeight;
-        var depth = decoder.Frames.Count;
-        var sliceLength = checked(width * height);
-        var samples = new float[checked(sliceLength * depth)];
-        var bytes = new byte[checked(sliceLength * sizeof(float))];
+        var imageJ = ParseImageJDescription(metadata.ImageDescription);
+        var channels = ReadPositiveImageJInteger(imageJ, "channels", 1);
+        var timeFrames = ReadPositiveImageJInteger(imageJ, "frames", 1);
+        if (timeFrames != 1)
+            throw new NotSupportedException("Time-series ImageJ hyperstacks are not supported; select or export one time point.");
+        var declaredImages = ReadPositiveImageJInteger(imageJ, "images", decoder.Frames.Count);
+        if (declaredImages != decoder.Frames.Count)
+            throw new InvalidDataException(
+                $"ImageJ metadata declares {declaredImages} images, but TIFF contains {decoder.Frames.Count} directories.");
+        var depth = ReadPositiveImageJInteger(imageJ, "slices", decoder.Frames.Count / channels);
+        if (checked(channels * depth) != decoder.Frames.Count)
+            throw new InvalidDataException(
+                $"ImageJ metadata declares {channels} channels and {depth} slices, but TIFF contains {decoder.Frames.Count} directories.");
 
-        for (var z = 0; z < depth; z++)
+        var sliceLength = checked(width * height);
+        var voxelCount = checked(sliceLength * depth);
+        var sampleCount = checked(voxelCount * channels);
+        var voxelType = ResolveVoxelType(metadata);
+        var bytesPerSample = BytesPerSample(voxelType);
+        ValidateAllocationBudget(
+            checked((long)sampleCount * sizeof(float) +
+                    (long)sampleCount * bytesPerSample +
+                    (long)sliceLength * bytesPerSample));
+        var samples = new float[sampleCount];
+        var rawSamples = new byte[checked(sampleCount * bytesPerSample)];
+        var pageBytes = new byte[checked(sliceLength * bytesPerSample)];
+
+        for (var page = 0; page < decoder.Frames.Count; page++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var frame = decoder.Frames[z];
+            var frame = decoder.Frames[page];
             if (frame.PixelWidth != width || frame.PixelHeight != height)
                 throw new InvalidDataException("All TIFF frames must have the same dimensions.");
-            var converted = new FormatConvertedBitmap(frame, PixelFormats.Gray32Float, null, 0);
-            converted.CopyPixels(bytes, width * sizeof(float), 0);
-            Buffer.BlockCopy(bytes, 0, samples, z * bytes.Length, bytes.Length);
+            var source = PrepareFrame(frame, voxelType);
+            source.CopyPixels(pageBytes, checked(width * bytesPerSample), 0);
+
+            var channel = page % channels;
+            var z = page / channels;
+            var destinationSample = checked(channel * voxelCount + z * sliceLength);
+            var destinationByte = checked(destinationSample * bytesPerSample);
+            Buffer.BlockCopy(pageBytes, 0, rawSamples, destinationByte, pageBytes.Length);
+            ConvertSamples(pageBytes, samples.AsSpan(destinationSample, sliceLength), voxelType);
         }
 
-        return new VolumeData(width, height, depth, 1, 0, Calibration.Unit, samples);
+        NormalizeChannels(samples, voxelCount, channels);
+        var calibration = ResolveCalibration(metadata, imageJ);
+        var container = metadata.HasLsmInfo || Path.GetExtension(path).Equals(".lsm", StringComparison.OrdinalIgnoreCase)
+            ? "LSM"
+            : "TIFF";
+        return new VolumeData(
+            width,
+            height,
+            depth,
+            channels,
+            0,
+            calibration,
+            samples,
+            new VolumeSourceInfo(voxelType, container, metadata.ImageDescription, rawSamples));
     }
+
+    private static BitmapSource PrepareFrame(BitmapSource frame, VolumeVoxelType voxelType)
+    {
+        var expected = voxelType switch
+        {
+            VolumeVoxelType.UnsignedInt8 => PixelFormats.Gray8,
+            VolumeVoxelType.UnsignedInt16 or VolumeVoxelType.SignedInt16 => PixelFormats.Gray16,
+            VolumeVoxelType.Float32 => PixelFormats.Gray32Float,
+            _ => throw new NotSupportedException($"TIFF sample type {voxelType} is not supported by the WIC pixel path."),
+        };
+        if (frame.Format == expected) return frame;
+        if (voxelType == VolumeVoxelType.SignedInt16)
+            throw new NotSupportedException("The installed TIFF codec did not expose signed 16-bit pixels without conversion.");
+        return new FormatConvertedBitmap(frame, expected, null, 0);
+    }
+
+    private static VolumeVoxelType ResolveVoxelType(TiffMetadata metadata) => (metadata.BitsPerSample, metadata.SampleFormat) switch
+    {
+        (8, 1) => VolumeVoxelType.UnsignedInt8,
+        (16, 1) => VolumeVoxelType.UnsignedInt16,
+        (16, 2) => VolumeVoxelType.SignedInt16,
+        (32, 3) => VolumeVoxelType.Float32,
+        (32, 1) => throw new NotSupportedException("Unsigned 32-bit integer TIFF requires the raw TIFF path, which is not enabled yet."),
+        (32, 2) => throw new NotSupportedException("Signed 32-bit image TIFF requires the raw TIFF path; signed 32-bit label TIFF is supported separately."),
+        _ => throw new NotSupportedException(
+            $"Unsupported TIFF sample type: BitsPerSample={metadata.BitsPerSample}, SampleFormat={metadata.SampleFormat}."),
+    };
+
+    private static int BytesPerSample(VolumeVoxelType voxelType) => voxelType switch
+    {
+        VolumeVoxelType.UnsignedInt8 => 1,
+        VolumeVoxelType.UnsignedInt16 or VolumeVoxelType.SignedInt16 => 2,
+        VolumeVoxelType.Float32 => 4,
+        _ => throw new NotSupportedException($"TIFF sample type {voxelType} is not supported by the WIC pixel path."),
+    };
+
+    private static void ConvertSamples(ReadOnlySpan<byte> source, Span<float> destination, VolumeVoxelType voxelType)
+    {
+        for (var i = 0; i < destination.Length; i++)
+        {
+            destination[i] = voxelType switch
+            {
+                VolumeVoxelType.UnsignedInt8 => source[i],
+                VolumeVoxelType.UnsignedInt16 => BinaryPrimitives.ReadUInt16LittleEndian(source[(i * 2)..]),
+                VolumeVoxelType.SignedInt16 => BinaryPrimitives.ReadInt16LittleEndian(source[(i * 2)..]),
+                VolumeVoxelType.Float32 => BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(source[(i * 4)..])),
+                _ => throw new NotSupportedException($"TIFF sample type {voxelType} is not supported by the WIC pixel path."),
+            };
+            if (!float.IsFinite(destination[i]))
+                throw new InvalidDataException("TIFF contains a non-finite floating-point sample.");
+        }
+    }
+
+    private static void NormalizeChannels(float[] samples, int voxelCount, int channels)
+    {
+        for (var channel = 0; channel < channels; channel++)
+        {
+            var values = samples.AsSpan(channel * voxelCount, voxelCount);
+            var maximumAbsolute = 0f;
+            foreach (var value in values) maximumAbsolute = Math.Max(maximumAbsolute, Math.Abs(value));
+            if (maximumAbsolute == 0) continue;
+            for (var i = 0; i < values.Length; i++) values[i] /= maximumAbsolute;
+        }
+    }
+
+    private static void ValidateAllocationBudget(long requiredBytes)
+    {
+        var available = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        if (available <= 0) return;
+        var budget = available - available / 4;
+        if (requiredBytes > budget)
+            throw new InsufficientMemoryException(
+                $"TIFF decode requires at least {requiredBytes:N0} bytes for Workbench buffers; the current 75% memory budget is {budget:N0} bytes.");
+    }
+
+    private static Calibration ResolveCalibration(TiffMetadata metadata, Dictionary<string, string> imageJ)
+    {
+        var spacingX = ReadPositiveImageJDouble(imageJ, "pixel_width") ?? InvertResolution(metadata.XResolution);
+        var spacingY = ReadPositiveImageJDouble(imageJ, "pixel_height") ?? InvertResolution(metadata.YResolution);
+        var spacingZ = ReadPositiveImageJDouble(imageJ, "spacing") ?? 1;
+        var unit = imageJ.TryGetValue("unit", out var value) && !string.IsNullOrWhiteSpace(value) ? value : "pixel";
+        var calibrated = spacingX != 1 || spacingY != 1 || spacingZ != 1 || !unit.Equals("pixel", StringComparison.OrdinalIgnoreCase);
+        return new Calibration(spacingX, spacingY, spacingZ, calibrated, unit);
+    }
+
+    private static double InvertResolution(double? resolution) =>
+        resolution is > 0 && double.IsFinite(resolution.Value) ? 1 / resolution.Value : 1;
+
+    private static Dictionary<string, string> ParseImageJDescription(string? description)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(description)) return values;
+        foreach (var line in description.Split('\n'))
+        {
+            var separator = line.IndexOf('=');
+            if (separator <= 0) continue;
+            values[line[..separator].Trim()] = line[(separator + 1)..].Trim();
+        }
+        return values;
+    }
+
+    private static int ReadPositiveImageJInteger(Dictionary<string, string> values, string key, int defaultValue) =>
+        values.TryGetValue(key, out var text) &&
+        int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : defaultValue;
+
+    private static double? ReadPositiveImageJDouble(Dictionary<string, string> values, string key) =>
+        values.TryGetValue(key, out var text) &&
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) &&
+        value > 0 && double.IsFinite(value)
+            ? value
+            : null;
+
 }

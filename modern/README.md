@@ -44,4 +44,6 @@ stacks and accepted reference results are available. See
 `docs/validation-policy.md`. Legacy-to-Workbench parameters and error rules are
 tracked in `docs/functional-spec.md` and `docs/compatibility-matrix.md`. The
 directional threshold equations, sampling rules, parameter mapping, and
-required fixtures are fixed in `docs/dslt-algorithm-spec.md`.
+required fixtures are fixed in `docs/dslt-algorithm-spec.md`. Decoded image
+types, ImageJ ordering, calibration, LSM limitations, and signed label export
+are defined in `docs/tiff-io-spec.md`.

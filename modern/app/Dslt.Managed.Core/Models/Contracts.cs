@@ -37,7 +37,37 @@ public enum OutputKind
     ImageFloat32 = 3,
 }
 
-public sealed record Calibration(double SpacingX, double SpacingY, double SpacingZ, bool IsCalibrated)
+public enum VolumeVoxelType
+{
+    UnsignedInt8 = 1,
+    UnsignedInt16 = 2,
+    SignedInt16 = 3,
+    UnsignedInt32 = 4,
+    SignedInt32 = 5,
+    Float32 = 6,
+}
+
+public sealed record VolumeSourceInfo(
+    VolumeVoxelType VoxelType,
+    string Container,
+    string? ImageDescription,
+    byte[] ChannelPlanarRawSamples)
+{
+    public int BytesPerSample => VoxelType switch
+    {
+        VolumeVoxelType.UnsignedInt8 => 1,
+        VolumeVoxelType.UnsignedInt16 or VolumeVoxelType.SignedInt16 => 2,
+        VolumeVoxelType.UnsignedInt32 or VolumeVoxelType.SignedInt32 or VolumeVoxelType.Float32 => 4,
+        _ => throw new ArgumentOutOfRangeException(nameof(VoxelType)),
+    };
+}
+
+public sealed record Calibration(
+    double SpacingX,
+    double SpacingY,
+    double SpacingZ,
+    bool IsCalibrated,
+    string UnitName = "pixel")
 {
     public static Calibration Unit { get; } = new(1, 1, 1, false);
 }
@@ -49,7 +79,8 @@ public sealed record VolumeData(
     int Channels,
     int SelectedChannel,
     Calibration Calibration,
-    float[] Samples)
+    float[] Samples,
+    VolumeSourceInfo? Source = null)
 {
     public int VoxelCount => checked(Width * Height * Depth);
 
@@ -59,9 +90,27 @@ public sealed record VolumeData(
             throw new ArgumentOutOfRangeException(nameof(Width), "Volume dimensions and channels must be positive.");
         if (SelectedChannel < 0 || SelectedChannel >= Channels)
             throw new ArgumentOutOfRangeException(nameof(SelectedChannel));
+        if (Calibration is null ||
+            !double.IsFinite(Calibration.SpacingX) || Calibration.SpacingX <= 0 ||
+            !double.IsFinite(Calibration.SpacingY) || Calibration.SpacingY <= 0 ||
+            !double.IsFinite(Calibration.SpacingZ) || Calibration.SpacingZ <= 0 ||
+            string.IsNullOrWhiteSpace(Calibration.UnitName))
+            throw new ArgumentOutOfRangeException(
+                nameof(Calibration),
+                "Voxel spacing must be finite and positive, and the calibration unit is required.");
         var expected = checked(VoxelCount * Channels);
         if (Samples.Length != expected)
             throw new ArgumentException($"Expected {expected} samples but received {Samples.Length}.", nameof(Samples));
+        if (Source is not null)
+        {
+            if (string.IsNullOrWhiteSpace(Source.Container) || Source.ChannelPlanarRawSamples is null)
+                throw new ArgumentException("Source container and decoded sample bytes are required.", nameof(Source));
+            var expectedBytes = checked(expected * Source.BytesPerSample);
+            if (Source.ChannelPlanarRawSamples.Length != expectedBytes)
+                throw new ArgumentException(
+                    $"Expected {expectedBytes} source bytes but received {Source.ChannelPlanarRawSamples.Length}.",
+                    nameof(Source));
+        }
     }
 }
 
@@ -95,4 +144,3 @@ public sealed record ProcessingResult(
     int ComponentCount,
     float[]? FloatData,
     int[]? Labels);
-

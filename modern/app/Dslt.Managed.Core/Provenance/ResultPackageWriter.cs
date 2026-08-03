@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
 
 namespace Dslt.Managed.Core.Provenance;
@@ -43,9 +44,27 @@ public static class ResultPackageWriter
         }
 
         await File.WriteAllBytesAsync(rawPath, bytes, cancellationToken).ConfigureAwait(false);
-        var provenance = ProcessingProvenance.Create(input, operation, result);
+        string? labelTiffEncoding = null;
+        string? compatibilityWarning = null;
+        if (result.Labels is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var encoding = LabelTiffCodec.SelectEncoding(result.Labels);
+            var suffix = encoding == LabelTiffEncoding.SignedInt16 ? ".labels.i16.tif" : ".labels.i32.tif";
+            LabelTiffCodec.Write(
+                fullBasePath + suffix,
+                result.Width,
+                result.Height,
+                result.Depth,
+                result.Labels,
+                input.Calibration,
+                encoding);
+            labelTiffEncoding = encoding.ToString();
+            if (encoding == LabelTiffEncoding.SignedInt32)
+                compatibilityWarning = "Labels exceed the legacy signed 16-bit TIFF range; a signed 32-bit TIFF was written.";
+        }
+        var provenance = ProcessingProvenance.Create(input, operation, result, labelTiffEncoding, compatibilityWarning);
         await using var stream = File.Create(metadataPath);
         await JsonSerializer.SerializeAsync(stream, provenance, JsonOptions, cancellationToken).ConfigureAwait(false);
     }
 }
-

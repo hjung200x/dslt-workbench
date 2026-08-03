@@ -14,6 +14,8 @@ The project must not claim level 2 or 3 while only level 1 evidence exists.
 ## Automated acceptance criteria
 
 - Lossless volume and label round trips: bit-identical samples and metadata.
+- TIFF input preservation is measured on decoded channel-planar sample bytes;
+  whole-container byte identity is not implied.
 - Deterministic masks and labels: exact voxel equality away from threshold ties.
 - Components, bounding boxes, and topology: exact equality.
 - Floating CPU/GPU outputs: absolute error <= `1e-5` or relative error <= `1e-4`.
