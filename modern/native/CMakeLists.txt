@@ -54,5 +54,26 @@ if(DSLT_BUILD_TESTS)
     target_compile_features(dslt_native_tests PRIVATE cxx_std_20)
     target_link_libraries(dslt_native_tests PRIVATE dslt_core)
     dslt_enable_address_sanitizer(dslt_native_tests)
+    if(MSVC)
+        target_compile_options(dslt_native_tests PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(dslt_native_tests PRIVATE -UNDEBUG)
+    endif()
     add_test(NAME dslt_native_tests COMMAND dslt_native_tests)
+
+    add_executable(dslt_algorithm_tests
+        tests/algorithm_tests.cpp
+        src/engine.cpp
+        src/operations.cpp
+        src/cuda_backend_stub.cpp
+    )
+    target_compile_features(dslt_algorithm_tests PRIVATE cxx_std_20)
+    target_include_directories(dslt_algorithm_tests PRIVATE include src)
+    dslt_enable_address_sanitizer(dslt_algorithm_tests)
+    if(MSVC)
+        target_compile_options(dslt_algorithm_tests PRIVATE /W4 /permissive- /EHsc /utf-8 /UNDEBUG)
+    else()
+        target_compile_options(dslt_algorithm_tests PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
+    endif()
+    add_test(NAME dslt_algorithm_tests COMMAND dslt_algorithm_tests)
 endif()
