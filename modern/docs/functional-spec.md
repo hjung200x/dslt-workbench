@@ -68,5 +68,8 @@ See [`tiff-io-spec.md`](tiff-io-spec.md).
   error text.
 - Progress callbacks can cancel long CPU operations. Cancellation returns the
   dedicated cancelled status.
-- Explicit CUDA requests fail when CUDA is unavailable. `Auto` currently uses
-  the CPU reference path until individual CUDA operations pass parity tests.
+- Explicit CUDA requests fail when CUDA is unavailable or the selected
+  operation has no validated CUDA implementation. `Auto` selects CUDA for the
+  pointwise copy, window/level, and 2D/3D threshold operations when a device is
+  available; CUDA initialization failure falls back to CPU. Other operations
+  remain on the CPU reference path.

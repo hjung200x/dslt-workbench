@@ -43,12 +43,23 @@ struct BackendState final {
     std::string device_name;
 };
 
+struct CudaRunResult final {
+    dslt_status status{DSLT_NOT_IMPLEMENTED};
+    std::vector<float> output;
+    std::string error;
+};
+
 struct CropState final {
     dslt_crop_options options{};
     std::vector<float> height_map;
 };
 
 BackendState query_cuda_backend() noexcept;
+bool cuda_supports_operation(std::int32_t operation) noexcept;
+CudaRunResult run_cuda_operation(
+    const Volume& volume,
+    const dslt_operation_request& request,
+    const std::function<bool(float)>& progress);
 
 class Engine final {
 public:

@@ -104,11 +104,19 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
     }
 
     const auto cuda = cuda_state();
-    if (request.backend == DSLT_BACKEND_CUDA) {
-        set_error(cuda.available
-            ? "CUDA execution is not implemented for this operation"
-            : "CUDA backend is unavailable; choose Auto or CPU");
-        return cuda.available ? DSLT_NOT_IMPLEMENTED : DSLT_BACKEND_UNAVAILABLE;
+    if (request.backend != DSLT_BACKEND_AUTO &&
+        request.backend != DSLT_BACKEND_CPU &&
+        request.backend != DSLT_BACKEND_CUDA) {
+        set_error("unknown backend identifier");
+        return DSLT_INVALID_ARGUMENT;
+    }
+    if (request.backend == DSLT_BACKEND_CUDA && !cuda.available) {
+        set_error("CUDA backend is unavailable; choose Auto or CPU");
+        return DSLT_BACKEND_UNAVAILABLE;
+    }
+    if (request.backend == DSLT_BACKEND_CUDA && !cuda_supports_operation(request.operation)) {
+        set_error("CUDA execution is not implemented for this operation");
+        return DSLT_NOT_IMPLEMENTED;
     }
 
     result_ = {};
@@ -119,6 +127,24 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
     labels_.clear();
 
     try {
+        const auto should_try_cuda = request.backend != DSLT_BACKEND_CPU &&
+            cuda.available && cuda_supports_operation(request.operation);
+        if (should_try_cuda) {
+            auto cuda_result = run_cuda_operation(source_, request, progress);
+            if (cuda_result.status == DSLT_OK) {
+                output_ = std::move(cuda_result.output);
+                result_.used_backend = DSLT_BACKEND_CUDA;
+                result_.output_kind = DSLT_OUTPUT_VOLUME_FLOAT32;
+                result_.element_count = output_.size();
+                last_error_.clear();
+                return DSLT_OK;
+            }
+            if (request.backend == DSLT_BACKEND_CUDA || cuda_result.status != DSLT_BACKEND_UNAVAILABLE) {
+                set_error(cuda_result.error.empty() ? "CUDA operation failed" : std::move(cuda_result.error));
+                return cuda_result.status;
+            }
+        }
+
         switch (request.operation) {
         case DSLT_OP_COPY:
             output_ = ops::selected_channel(source_);
