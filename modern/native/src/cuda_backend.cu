@@ -587,6 +587,102 @@ __global__ void depth_column_kernel(
     }
 }
 
+__global__ void initialize_component_roots_kernel(
+    const float* source,
+    unsigned long long* roots,
+    std::size_t count,
+    float threshold) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        roots[index] = !(source[index] < threshold)
+            ? static_cast<unsigned long long>(index)
+            : ~0ULL;
+    }
+}
+
+__global__ void propagate_component_roots_kernel(
+    const float* source,
+    const unsigned long long* current,
+    unsigned long long* next,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    float threshold,
+    int connectivity,
+    int* changed) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        auto minimum = current[index];
+        if (minimum == ~0ULL) {
+            next[index] = minimum;
+            continue;
+        }
+        const auto z = index / plane;
+        const auto remainder = index % plane;
+        const auto y = remainder / width;
+        const auto x = remainder % width;
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    const auto manhattan = abs(dx) + abs(dy) + abs(dz);
+                    if (connectivity == 6 && manhattan != 1) continue;
+                    if (connectivity == 18 && manhattan == 3) continue;
+                    const auto nx = static_cast<long long>(x) + dx;
+                    const auto ny = static_cast<long long>(y) + dy;
+                    const auto nz = static_cast<long long>(z) + dz;
+                    if (nx < 0 || ny < 0 || nz < 0 ||
+                        nx >= static_cast<long long>(width) ||
+                        ny >= static_cast<long long>(height) ||
+                        nz >= static_cast<long long>(depth)) continue;
+                    const auto neighbor = flat_index(
+                        static_cast<std::size_t>(nx),
+                        static_cast<std::size_t>(ny),
+                        static_cast<std::size_t>(nz), width, height);
+                    if (source[neighbor] >= threshold && current[neighbor] < minimum) {
+                        minimum = current[neighbor];
+                    }
+                }
+            }
+        }
+        next[index] = minimum;
+        if (minimum != current[index]) atomicExch(changed, 1);
+    }
+}
+
+__global__ void count_component_sizes_kernel(
+    const unsigned long long* roots,
+    unsigned long long* sizes,
+    std::size_t count) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        const auto root = roots[index];
+        if (root != ~0ULL) atomicAdd(sizes + root, 1ULL);
+    }
+}
+
+__global__ void compact_component_labels_kernel(
+    const unsigned long long* roots,
+    const std::int32_t* mapping,
+    std::int32_t* output,
+    std::size_t count) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        const auto root = roots[index];
+        output[index] = root == ~0ULL ? -1 : mapping[root];
+    }
+}
+
 [[nodiscard]] unsigned int block_count(std::size_t count) noexcept {
     constexpr std::size_t threads = 256;
     constexpr std::size_t maximum_blocks = 65535;
@@ -630,7 +726,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_EXTRACT_ZX ||
         operation == DSLT_OP_HEIGHT_MAP ||
         operation == DSLT_OP_DEPTH_MAP ||
-        operation == DSLT_OP_HEIGHT_PROJECTION;
+        operation == DSLT_OP_HEIGHT_PROJECTION ||
+        operation == DSLT_OP_CONNECTED_COMPONENTS;
 }
 
 CudaRunResult run_cuda_operation(
@@ -655,6 +752,7 @@ CudaRunResult run_cuda_operation(
     const auto height_processing = request.operation == DSLT_OP_HEIGHT_MAP ||
         request.operation == DSLT_OP_DEPTH_MAP ||
         request.operation == DSLT_OP_HEIGHT_PROJECTION;
+    const auto labeling = request.operation == DSLT_OP_CONNECTED_COMPONENTS;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
     }
@@ -703,6 +801,15 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "height projection parameters must be finite"};
     }
+    if (labeling &&
+        request.connectivity != 6 && request.connectivity != 18 && request.connectivity != 26) {
+        return {CudaRunStatus::invalid_argument, {},
+            "connectivity must be 6, 18, or 26"};
+    }
+    if (labeling && request.minimum_component_size < 1) {
+        return {CudaRunStatus::invalid_argument, {},
+            "minimum component size must be positive"};
+    }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height = static_cast<std::size_t>(descriptor.height);
     const auto depth = static_cast<std::size_t>(descriptor.depth);
@@ -717,7 +824,9 @@ CudaRunResult run_cuda_operation(
     auto output_height = descriptor.height;
     auto output_depth = descriptor.depth;
     auto output_kind = DSLT_OUTPUT_VOLUME_FLOAT32;
-    if (request.operation == DSLT_OP_HEIGHT_MAP ||
+    if (labeling) {
+        output_kind = DSLT_OUTPUT_LABELS_INT32;
+    } else if (request.operation == DSLT_OP_HEIGHT_MAP ||
         request.operation == DSLT_OP_HEIGHT_PROJECTION) {
         output_depth = 1;
         output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
@@ -784,15 +893,20 @@ CudaRunResult run_cuda_operation(
             request.operation == DSLT_OP_HEIGHT_PROJECTION
             ? plane_count
             : 0;
-        const auto add_required_buffer = [&](std::size_t count) {
-            if (count > std::numeric_limits<std::size_t>::max() / sizeof(float)) return false;
-            const auto bytes = count * sizeof(float);
+        const auto add_required_buffer = [&](std::size_t count, std::size_t element_size) {
+            if (count > std::numeric_limits<std::size_t>::max() / element_size) return false;
+            const auto bytes = count * element_size;
             if (required_bytes > std::numeric_limits<std::size_t>::max() - bytes) return false;
             required_bytes += bytes;
             return true;
         };
-        if (!add_required_buffer(source.size()) || !add_required_buffer(output_count) ||
-            !add_required_buffer(scratch_count) || !add_required_buffer(auxiliary_count)) {
+        if (!add_required_buffer(source.size(), sizeof(float)) ||
+            !add_required_buffer(output_count, sizeof(float)) ||
+            !add_required_buffer(scratch_count, sizeof(float)) ||
+            !add_required_buffer(auxiliary_count, sizeof(float)) ||
+            (labeling &&
+             (!add_required_buffer(source.size(), sizeof(unsigned long long)) ||
+              !add_required_buffer(source.size(), sizeof(unsigned long long))))) {
             return {CudaRunStatus::out_of_memory, {},
                 "CUDA input and output size overflow addressable memory"};
         }
@@ -810,13 +924,21 @@ CudaRunResult run_cuda_operation(
         DeviceBuffer<float> device_output(output_count);
         std::unique_ptr<DeviceBuffer<float>> device_scratch;
         std::unique_ptr<DeviceBuffer<float>> device_auxiliary;
+        std::unique_ptr<DeviceBuffer<unsigned long long>> device_component_roots_a;
+        std::unique_ptr<DeviceBuffer<unsigned long long>> device_component_roots_b;
         if (scratch_count != 0) {
             device_scratch = std::make_unique<DeviceBuffer<float>>(scratch_count);
         }
         if (auxiliary_count != 0) {
             device_auxiliary = std::make_unique<DeviceBuffer<float>>(auxiliary_count);
         }
-        std::vector<float> output(output_count);
+        if (labeling) {
+            device_component_roots_a =
+                std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
+            device_component_roots_b =
+                std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
+        }
+        std::vector<float> output(labeling ? 0 : output_count);
 
         check_cuda(cudaMemcpyAsync(
             device_source.get(), source.data(), input_bytes,
@@ -830,6 +952,7 @@ CudaRunResult run_cuda_operation(
         const auto blocks = block_count(source.size());
         const auto zero_radius_filter = (smoothing || morphology) && request.radius == 0;
         const auto slice_based_filter = (smoothing || morphology) && !zero_radius_filter;
+        std::uint32_t cuda_component_count = 0;
         const auto run_height_map = [&](float* surface, float final_progress) {
             line_convolve_kernel<<<blocks, threads, 0, stream.get()>>>(
                 device_source.get(), device_scratch->get(), source.size(), width, height, depth,
@@ -979,17 +1102,103 @@ CudaRunResult run_cuda_operation(
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA height projection output");
             if (!report(progress, 0.75F)) return cancelled();
             break;
+        case DSLT_OP_CONNECTED_COMPONENTS: {
+            auto* current_roots = device_component_roots_a->get();
+            auto* next_roots = device_component_roots_b->get();
+            initialize_component_roots_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(), current_roots, source.size(), request.threshold);
+            check_cuda(cudaGetLastError(), "launching CUDA component-root initialization");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA component-root initialization");
+            if (!report(progress, 0.30F)) return cancelled();
+
+            auto converged = false;
+            for (std::size_t pass = 0; pass < source.size(); ++pass) {
+                auto* changed = reinterpret_cast<int*>(device_output.get());
+                check_cuda(cudaMemsetAsync(changed, 0, sizeof(int), stream.get()),
+                    "resetting CUDA component convergence flag");
+                propagate_component_roots_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_source.get(), current_roots, next_roots,
+                    width, height, depth, request.threshold, request.connectivity, changed);
+                check_cuda(cudaGetLastError(), "launching CUDA component-root propagation");
+                int host_changed = 0;
+                check_cuda(cudaMemcpyAsync(
+                    &host_changed, changed, sizeof(int), cudaMemcpyDeviceToHost, stream.get()),
+                    "copying CUDA component convergence flag");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA component-root propagation");
+                std::swap(current_roots, next_roots);
+                const auto propagation_progress = 0.30F + 0.35F *
+                    static_cast<float>(pass + 1) / static_cast<float>(source.size());
+                if (!report(progress, propagation_progress)) return cancelled();
+                if (host_changed == 0) {
+                    converged = true;
+                    break;
+                }
+            }
+            if (!converged) {
+                return {CudaRunStatus::internal_error, {},
+                    "CUDA connected-components propagation did not converge"};
+            }
+
+            check_cuda(cudaMemsetAsync(
+                next_roots, 0, source.size() * sizeof(unsigned long long), stream.get()),
+                "clearing CUDA component sizes");
+            count_component_sizes_kernel<<<blocks, threads, 0, stream.get()>>>(
+                current_roots, next_roots, source.size());
+            check_cuda(cudaGetLastError(), "launching CUDA component-size kernel");
+            std::vector<unsigned long long> component_sizes(source.size());
+            check_cuda(cudaMemcpyAsync(
+                component_sizes.data(), next_roots,
+                component_sizes.size() * sizeof(unsigned long long),
+                cudaMemcpyDeviceToHost, stream.get()), "copying CUDA component sizes");
+            check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA component sizes");
+            if (!report(progress, 0.70F)) return cancelled();
+
+            std::vector<std::int32_t> mapping(source.size(), -1);
+            for (std::size_t root = 0; root < component_sizes.size(); ++root) {
+                if (component_sizes[root] <
+                    static_cast<unsigned long long>(request.minimum_component_size)) continue;
+                if (cuda_component_count >=
+                    static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+                    throw std::overflow_error("component label count exceeds int32 capacity");
+                }
+                mapping[root] = static_cast<std::int32_t>(cuda_component_count++);
+            }
+            auto* device_mapping = reinterpret_cast<std::int32_t*>(next_roots);
+            check_cuda(cudaMemcpyAsync(
+                device_mapping, mapping.data(), mapping.size() * sizeof(std::int32_t),
+                cudaMemcpyHostToDevice, stream.get()), "copying CUDA component label mapping");
+            compact_component_labels_kernel<<<blocks, threads, 0, stream.get()>>>(
+                current_roots, device_mapping,
+                reinterpret_cast<std::int32_t*>(device_output.get()), source.size());
+            check_cuda(cudaGetLastError(), "launching CUDA component label compaction");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA component label compaction");
+            if (!report(progress, 0.75F)) return cancelled();
+            break;
+        }
         default:
             return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
         }
 
-        if (!slice_based_filter && !resampling && !height_processing && !report(progress, 0.75F)) {
+        if (!slice_based_filter && !resampling && !height_processing && !labeling &&
+            !report(progress, 0.75F)) {
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing cancelled CUDA operation");
             return cancelled();
         }
-        check_cuda(cudaMemcpyAsync(
-            output.data(), device_output.get(), output_bytes,
-            cudaMemcpyDeviceToHost, stream.get()), "copying CUDA output to host");
+        std::vector<std::int32_t> label_output;
+        if (labeling) {
+            label_output.resize(output_count);
+            check_cuda(cudaMemcpyAsync(
+                label_output.data(), reinterpret_cast<std::int32_t*>(device_output.get()),
+                label_output.size() * sizeof(std::int32_t),
+                cudaMemcpyDeviceToHost, stream.get()), "copying CUDA labels to host");
+        } else {
+            check_cuda(cudaMemcpyAsync(
+                output.data(), device_output.get(), output_bytes,
+                cudaMemcpyDeviceToHost, stream.get()), "copying CUDA output to host");
+        }
         check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA operation");
         if (!report(progress, 1.0F)) return cancelled();
         return {
@@ -1000,6 +1209,9 @@ CudaRunResult run_cuda_operation(
             output_height,
             output_depth,
             output_kind,
+            std::move(label_output),
+            cuda_component_count,
+            0,
         };
     } catch (const CudaError& error) {
         if (error.code() == cudaErrorMemoryAllocation) {

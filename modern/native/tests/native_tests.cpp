@@ -89,6 +89,24 @@ std::vector<float> run_float_operation(
     return run_float_operation_result(handle, request, expected_backend).values;
 }
 
+struct LabelOperationOutput final {
+    std::vector<std::int32_t> values;
+    dslt_operation_result result{};
+};
+
+LabelOperationOutput run_label_operation_result(
+    dslt_handle handle,
+    dslt_operation_request request,
+    dslt_backend expected_backend) {
+    LabelOperationOutput output{};
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &output.result));
+    assert(output.result.used_backend == expected_backend);
+    assert(output.result.output_kind == DSLT_OUTPUT_LABELS_INT32);
+    output.values.resize(output.result.element_count);
+    require(dslt_copy_labels_i32(handle, output.values.data(), output.values.size()));
+    return output;
+}
+
 void cuda_pointwise_parity_test() {
     dslt_handle handle = nullptr;
     require(dslt_create(&handle));
@@ -358,6 +376,67 @@ void cuda_pointwise_parity_test() {
     assert(automatic_height.result.width == projection_desc.width);
     assert(automatic_height.result.height == projection_desc.height);
 
+    auto components_desc = descriptor(4, 4, 3);
+    std::vector<float> components_source(components_desc.element_count, 0.0F);
+    const auto component_index = [&](std::size_t x, std::size_t y, std::size_t z) {
+        return z * components_desc.width * components_desc.height +
+            y * components_desc.width + x;
+    };
+    for (const auto index : {
+             component_index(0, 0, 0), component_index(1, 0, 0),
+             component_index(2, 1, 0), component_index(3, 2, 1),
+             component_index(0, 3, 1), component_index(0, 3, 2)}) {
+        components_source[index] = 1.0F;
+    }
+    require(dslt_set_volume_f32(
+        handle, &components_desc, components_source.data(), components_source.size()));
+
+    for (const auto connectivity : {6, 18, 26}) {
+        for (const auto minimum_size : {1, 2}) {
+            dslt_operation_request component_request{};
+            component_request.operation = DSLT_OP_CONNECTED_COMPONENTS;
+            component_request.threshold = 0.5F;
+            component_request.connectivity = connectivity;
+            component_request.minimum_component_size = minimum_size;
+            component_request.backend = DSLT_BACKEND_CPU;
+            const auto cpu = run_label_operation_result(
+                handle, component_request, DSLT_BACKEND_CPU);
+            component_request.backend = DSLT_BACKEND_CUDA;
+            const auto cuda = run_label_operation_result(
+                handle, component_request, DSLT_BACKEND_CUDA);
+            assert(cuda.result.width == components_desc.width);
+            assert(cuda.result.height == components_desc.height);
+            assert(cuda.result.depth == components_desc.depth);
+            assert(cpu.result.component_count == cuda.result.component_count);
+            assert(cpu.values == cuda.values);
+        }
+    }
+
+    dslt_operation_request nan_component_request{};
+    nan_component_request.operation = DSLT_OP_CONNECTED_COMPONENTS;
+    nan_component_request.threshold = std::numeric_limits<float>::quiet_NaN();
+    nan_component_request.connectivity = 26;
+    nan_component_request.minimum_component_size = 1;
+    nan_component_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_nan_components = run_label_operation_result(
+        handle, nan_component_request, DSLT_BACKEND_CPU);
+    nan_component_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_nan_components = run_label_operation_result(
+        handle, nan_component_request, DSLT_BACKEND_CUDA);
+    assert(cpu_nan_components.result.component_count == components_source.size());
+    assert(cpu_nan_components.result.component_count == cuda_nan_components.result.component_count);
+    assert(cpu_nan_components.values == cuda_nan_components.values);
+
+    request = {};
+    request.operation = DSLT_OP_CONNECTED_COMPONENTS;
+    request.threshold = 0.5F;
+    request.connectivity = 18;
+    request.minimum_component_size = 1;
+    request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic_components = run_label_operation_result(
+        handle, request, DSLT_BACKEND_CUDA);
+    assert(automatic_components.result.component_count > 0);
+
     dslt_operation_result result{};
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
@@ -416,6 +495,18 @@ void cuda_pointwise_parity_test() {
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
+    request.operation = DSLT_OP_CONNECTED_COMPONENTS;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.threshold = 0.5F;
+    request.connectivity = 12;
+    request.minimum_component_size = 1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request.connectivity = 6;
+    request.minimum_component_size = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
     request.backend = DSLT_BACKEND_CUDA;
     request.target_spacing_z = 0.5F;
@@ -434,13 +525,25 @@ void cuda_pointwise_parity_test() {
         handle, &request, cancel_depth, nullptr, &result), DSLT_CANCELLED);
 
     request = {};
+    request.operation = DSLT_OP_CONNECTED_COMPONENTS;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.threshold = 0.5F;
+    request.connectivity = 26;
+    request.minimum_component_size = 1;
+    const auto cancel_components = [](float progress, void*) -> std::int32_t {
+        return progress >= 0.31F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_components, nullptr, &result), DSLT_CANCELLED);
+
+    request = {};
     request.operation = DSLT_OP_DILATE_SPHERE;
     request.backend = DSLT_BACKEND_CUDA;
     request.radius = 65;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
-    request.operation = DSLT_OP_CONNECTED_COMPONENTS;
+    request.operation = DSLT_OP_H_MINIMA;
     request.backend = DSLT_BACKEND_CUDA;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
 
@@ -492,11 +595,18 @@ void cuda_pointwise_parity_test() {
     memory_projection.window_max = 0.0F;
     (void)run_float_operation_result(
         handle, memory_projection, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+    dslt_operation_request memory_components{};
+    memory_components.operation = DSLT_OP_CONNECTED_COMPONENTS;
+    memory_components.backend = DSLT_BACKEND_CUDA;
+    memory_components.threshold = 0.5F;
+    memory_components.connectivity = 26;
+    memory_components.minimum_component_size = 1;
+    (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);
 
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        switch (iteration % 4) {
+        switch (iteration % 5) {
         case 0:
             (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
             break;
@@ -507,10 +617,13 @@ void cuda_pointwise_parity_test() {
         case 2:
             (void)run_float_operation(handle, memory_depth, DSLT_BACKEND_CUDA);
             break;
-        default:
+        case 3:
             memory_projection.target_spacing_z = iteration % 8 == 3 ? 0.0F : 1.0F;
             (void)run_float_operation_result(
                 handle, memory_projection, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+            break;
+        default:
+            (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);
             break;
         }
     }

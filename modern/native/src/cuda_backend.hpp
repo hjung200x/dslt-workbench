@@ -27,6 +27,9 @@ struct CudaRunResult final {
     std::uint32_t height{};
     std::uint32_t depth{};
     dslt_output_kind output_kind{DSLT_OUTPUT_VOLUME_FLOAT32};
+    std::vector<std::int32_t> labels;
+    std::uint32_t component_count{};
+    std::uint32_t passes_completed{};
 };
 
 [[nodiscard]] bool cuda_supports_operation(dslt_operation operation) noexcept;

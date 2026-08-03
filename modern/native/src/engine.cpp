@@ -152,9 +152,17 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
             result_.width = cuda_result.width;
             result_.height = cuda_result.height;
             result_.depth = cuda_result.depth;
-            output_ = std::move(cuda_result.output);
-            result_.element_count = output_.size();
-            labels_.clear();
+            result_.component_count = cuda_result.component_count;
+            result_.reserved = cuda_result.passes_completed;
+            if (cuda_result.output_kind == DSLT_OUTPUT_LABELS_INT32) {
+                labels_ = std::move(cuda_result.labels);
+                output_.clear();
+                result_.element_count = labels_.size();
+            } else {
+                output_ = std::move(cuda_result.output);
+                labels_.clear();
+                result_.element_count = output_.size();
+            }
             selection_.clear();
             last_error_.clear();
             return DSLT_OK;
