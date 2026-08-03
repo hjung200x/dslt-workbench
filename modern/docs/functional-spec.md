@@ -31,7 +31,7 @@ The detailed DSLT mathematical and ordering contract is maintained in
 | Height map | XY/Z block, threshold, threshold type, smooth level | Z block 4, threshold 0.25, smooth level 1 | Simplified first-hit height map is synthetic-validated; full legacy parameterization is pending |
 | Depth map/projection | height map, offset, range, depth-code settings | Depth code off | Simplified calibrated Z depth is synthetic-validated; projection parity is pending |
 | H-minima | h, check interval | h 0.1, interval 50 (hidden) | Not exposed until legacy result capture |
-| DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | radius 14, level 2, Z factor 0.2, mean | CPU threshold and iterative sweep implemented with synthetic fixtures; crop contract and archived-runtime comparison pending |
+| DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | radius 14, level 2, Z factor 0.2, mean | CPU threshold, iterative sweep, and fixed/height-map crop implemented with synthetic fixtures; work limits and archived-runtime comparison pending |
 | Threshold sweep | min, max, interval, minimum volumes, closing | interval 0.02, closing 2 | ABI ID reserved; returns `not implemented` |
 | Watershed | stride, minimum segment volume | stride 0.001 (hidden) | Not exposed until seed and tie-breaking behavior is captured |
 

@@ -52,6 +52,12 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         var descriptor = MapDescriptor(volume);
         ThrowIfFailed(NativeMethods.dslt_set_volume_f32(
             _handle, in descriptor, volume.Samples, (ulong)volume.Samples.LongLength));
+        var crop = MapCrop(parameters);
+        var heightMap = parameters.CropEnabled && parameters.CropUseHeightMap
+            ? parameters.CropHeightMap
+            : null;
+        ThrowIfFailed(NativeMethods.dslt_set_crop(
+            _handle, in crop, heightMap, checked((ulong)(heightMap?.LongLength ?? 0))));
 
         NativeMethods.ProgressCallback callback = (value, _) =>
         {
@@ -131,6 +137,15 @@ public sealed class NativeProcessingEngine : IProcessingEngine
             SpacingZ = volume.Calibration.SpacingZ,
             Calibrated = volume.Calibration.IsCalibrated ? (byte)1 : (byte)0,
         },
+    };
+
+    private static NativeCropOptions MapCrop(OperationParameters value) => new()
+    {
+        Enabled = value.CropEnabled ? (byte)1 : (byte)0,
+        UseHeightMap = value.CropUseHeightMap ? (byte)1 : (byte)0,
+        Upper = value.CropUpper,
+        Lower = value.CropLower,
+        BorderXy = value.CropBorderXy,
     };
 
     private static NativeOperationRequest MapRequest(OperationParameters value)

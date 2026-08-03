@@ -68,8 +68,33 @@ void Engine::set_volume(const dslt_volume_descriptor& descriptor, std::span<cons
     output_.clear();
     labels_.clear();
     selection_.clear();
+    crop_ = {};
     result_ = {};
     last_error_.clear();
+}
+
+void Engine::set_crop(const dslt_crop_options& options, std::span<const float> height_map) {
+    if (options.enabled > 1 || options.use_height_map > 1) {
+        throw std::invalid_argument("crop flags must be 0 or 1");
+    }
+    if (options.enabled == 0) {
+        crop_ = {};
+        return;
+    }
+    if (source_.empty()) throw std::invalid_argument("a volume must be loaded before crop configuration");
+    if (options.upper > options.lower) throw std::invalid_argument("crop upper bound must not exceed lower bound");
+    if (options.border_xy < 0) throw std::invalid_argument("crop XY border must be non-negative");
+    const auto expected = static_cast<std::size_t>(source_.descriptor().width) * source_.descriptor().height;
+    if (options.use_height_map != 0) {
+        if (height_map.size() != expected) throw std::invalid_argument("crop height map dimensions do not match the volume");
+        if (!std::all_of(height_map.begin(), height_map.end(), [](float value) { return std::isfinite(value); })) {
+            throw std::invalid_argument("crop height map must contain only finite values");
+        }
+    }
+    crop_.options = options;
+    crop_.height_map = options.use_height_map != 0
+        ? std::vector<float>(height_map.begin(), height_map.end())
+        : std::vector<float>{};
 }
 
 dslt_status Engine::run(const dslt_operation_request& request, const Progress& progress) {
@@ -180,6 +205,14 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
                 request.slice_index,
                 request.minimum_component_size,
                 static_cast<int>(request.threshold),
+                ops::CropParameters{
+                    crop_.options.enabled != 0,
+                    crop_.options.use_height_map != 0,
+                    crop_.options.upper,
+                    crop_.options.lower,
+                    crop_.options.border_xy,
+                    crop_.height_map,
+                },
             };
             auto segmentation = ops::dslt_segmentation(source_, parameters, progress);
             labels_ = std::move(segmentation.labels);

@@ -24,6 +24,15 @@ struct ComponentLabels final {
     std::uint32_t passes_completed{};
 };
 
+struct CropParameters final {
+    bool enabled{};
+    bool use_height_map{};
+    int upper{};
+    int lower{};
+    int border_xy{};
+    std::span<const float> height_map{};
+};
+
 struct DsltSegmentationParameters final {
     int radius;
     int direction_level;
@@ -35,6 +44,7 @@ struct DsltSegmentationParameters final {
     int closing_radius;
     int minimum_component_size;
     int minimum_invalid_structure_area;
+    CropParameters crop{};
 };
 
 std::vector<float> selected_channel(const Volume& volume);

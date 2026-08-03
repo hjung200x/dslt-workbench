@@ -142,7 +142,13 @@ public sealed record OperationParameters(
     float MaximumC = 0,
     float CInterval = 0.002f,
     int ClosingRadius = 2,
-    int MinimumInvalidStructureArea = 500);
+    int MinimumInvalidStructureArea = 500,
+    bool CropEnabled = false,
+    bool CropUseHeightMap = false,
+    int CropUpper = 0,
+    int CropLower = 0,
+    int CropBorderXy = 0,
+    float[]? CropHeightMap = null);
 
 public sealed record BackendInformation(
     bool CpuAvailable,

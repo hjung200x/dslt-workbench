@@ -16,6 +16,7 @@ static void Equal<T>(T expected, T actual, string message) where T : IEquatable<
 Equal(32, Marshal.SizeOf<NativeCalibration>(), "NativeCalibration ABI size");
 Equal(64, Marshal.SizeOf<NativeVolumeDescriptor>(), "NativeVolumeDescriptor ABI size");
 Equal(48, Marshal.SizeOf<NativeOperationRequest>(), "NativeOperationRequest ABI size");
+Equal(16, Marshal.SizeOf<NativeCropOptions>(), "NativeCropOptions ABI size");
 Equal(40, Marshal.SizeOf<NativeOperationResult>(), "NativeOperationResult ABI size");
 Equal(144, Marshal.SizeOf<NativeBackendInfo>(), "NativeBackendInfo ABI size");
 
@@ -102,12 +103,20 @@ if (engine.IsAvailable)
             MaximumC: 0,
             CInterval: 0.1f,
             ClosingRadius: 0,
-            MinimumInvalidStructureArea: 0),
+            MinimumInvalidStructureArea: 0,
+            CropEnabled: true,
+            CropUseHeightMap: true,
+            CropUpper: 0,
+            CropLower: 0,
+            CropBorderXy: 1,
+            CropHeightMap: Enumerable.Repeat(1.0f, 9).ToArray()),
         null,
         CancellationToken.None);
     Equal(1, dsltSegmentation.ComponentCount, "DSLT segmentation component count");
     Equal(1, dsltSegmentation.CompletedPasses, "DSLT segmentation completed passes");
-    Equal(27, dsltSegmentation.Labels!.Count(label => label == 0), "DSLT segmentation labels");
+    var croppedLabels = dsltSegmentation.Labels!;
+    Equal(1, croppedLabels.Count(label => label == 0), "DSLT cropped segmentation labels");
+    Equal(0, croppedLabels[1 * 9 + 1 * 3 + 1], "DSLT height-map crop center label");
 
     for (var iteration = 0; iteration < 100; iteration++)
     {
