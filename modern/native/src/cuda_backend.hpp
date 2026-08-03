@@ -33,12 +33,19 @@ struct CudaRunResult final {
     std::uint32_t passes_completed{};
 };
 
+struct CudaOperationState final {
+    std::span<const std::int32_t> labels;
+    std::span<const std::int32_t> selected_labels;
+    const CropState* crop{};
+};
+
 [[nodiscard]] bool cuda_supports_operation(dslt_operation operation) noexcept;
 
 [[nodiscard]] CudaRunResult run_cuda_operation(
     std::span<const float> source,
     const dslt_volume_descriptor& descriptor,
     const dslt_operation_request& request,
+    const CudaOperationState& state,
     const Engine::Progress& progress) noexcept;
 
 } // namespace dslt

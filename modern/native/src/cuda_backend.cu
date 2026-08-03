@@ -658,6 +658,177 @@ __global__ void h_minima_residual_kernel(
     }
 }
 
+__device__ bool watershed_neighbor(
+    std::size_t x,
+    std::size_t y,
+    std::size_t z,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    int priority,
+    std::size_t& neighbor) {
+    auto nx = static_cast<long long>(x);
+    auto ny = static_cast<long long>(y);
+    auto nz = static_cast<long long>(z);
+    switch (priority) {
+    case 0: --nz; break;
+    case 1: --nx; break;
+    case 2: --ny; break;
+    case 3: ++nx; break;
+    case 4: ++ny; break;
+    default: ++nz; break;
+    }
+    if (nx < 0 || ny < 0 || nz < 0 ||
+        nx >= static_cast<long long>(width) ||
+        ny >= static_cast<long long>(height) ||
+        nz >= static_cast<long long>(depth)) return false;
+    neighbor = flat_index(
+        static_cast<std::size_t>(nx),
+        static_cast<std::size_t>(ny),
+        static_cast<std::size_t>(nz), width, height);
+    return true;
+}
+
+__global__ void watershed_crop_intensity_kernel(
+    const float* source,
+    float* intensity,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    bool crop_enabled,
+    bool use_height_map,
+    const float* height_map,
+    int upper,
+    int lower,
+    int border_xy) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto border = static_cast<std::size_t>(border_xy);
+    const auto maximum = __int_as_float(0x7f7fffff);
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        if (!crop_enabled) {
+            intensity[index] = source[index];
+            continue;
+        }
+        const auto z = index / plane;
+        const auto remainder = index % plane;
+        const auto y = remainder / width;
+        const auto x = remainder % width;
+        const auto outside_border =
+            border >= width || border >= height ||
+            x < border || x >= width - border ||
+            y < border || y >= height - border;
+        const auto outside_depth = use_height_map
+            ? static_cast<float>(z) < height_map[y * width + x] + static_cast<float>(upper) ||
+                static_cast<float>(z) > height_map[y * width + x] + static_cast<float>(lower)
+            : static_cast<long long>(z) < upper || static_cast<long long>(z) > lower;
+        intensity[index] = outside_border || outside_depth ? maximum : source[index];
+    }
+}
+
+__global__ void watershed_flood_kernel(
+    const float* intensity,
+    const std::int32_t* current,
+    std::int32_t* next,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth,
+    float threshold,
+    int* changed) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        auto label = current[index];
+        if (label < 0 && intensity[index] <= threshold) {
+            const auto z = index / plane;
+            const auto remainder = index % plane;
+            const auto y = remainder / width;
+            const auto x = remainder % width;
+            for (int priority = 0; priority < 6; ++priority) {
+                std::size_t neighbor = 0;
+                if (watershed_neighbor(
+                        x, y, z, width, height, depth, priority, neighbor) &&
+                    current[neighbor] >= 0) {
+                    label = current[neighbor];
+                    atomicExch(changed, 1);
+                    break;
+                }
+            }
+        }
+        next[index] = label;
+    }
+}
+
+__global__ void watershed_erode_labels_kernel(
+    const std::int32_t* current,
+    std::int32_t* next,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        auto label = current[index];
+        if (label >= 0) {
+            const auto z = index / plane;
+            const auto remainder = index % plane;
+            const auto y = remainder / width;
+            const auto x = remainder % width;
+            for (int priority = 0; priority < 6; ++priority) {
+                std::size_t neighbor = 0;
+                if (watershed_neighbor(
+                        x, y, z, width, height, depth, priority, neighbor) &&
+                    current[neighbor] != label) {
+                    label = -1;
+                    break;
+                }
+            }
+        }
+        next[index] = label;
+    }
+}
+
+__global__ void watershed_dilate_labels_kernel(
+    const std::int32_t* current,
+    std::int32_t* next,
+    std::size_t width,
+    std::size_t height,
+    std::size_t depth) {
+    const auto plane = width * height;
+    const auto count = plane * depth;
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        auto label = current[index];
+        if (label < 0) {
+            const auto z = index / plane;
+            const auto remainder = index % plane;
+            const auto y = remainder / width;
+            const auto x = remainder % width;
+            for (int priority = 0; priority < 6; ++priority) {
+                std::size_t neighbor = 0;
+                if (watershed_neighbor(
+                        x, y, z, width, height, depth, priority, neighbor) &&
+                    current[neighbor] >= 0) {
+                    label = current[neighbor];
+                    break;
+                }
+            }
+        }
+        next[index] = label;
+    }
+}
+
 __global__ void initialize_component_roots_kernel(
     const float* source,
     unsigned long long* roots,
@@ -799,13 +970,15 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_DEPTH_MAP ||
         operation == DSLT_OP_HEIGHT_PROJECTION ||
         operation == DSLT_OP_CONNECTED_COMPONENTS ||
-        operation == DSLT_OP_H_MINIMA;
+        operation == DSLT_OP_H_MINIMA ||
+        operation == DSLT_OP_WATERSHED;
 }
 
 CudaRunResult run_cuda_operation(
     std::span<const float> source,
     const dslt_volume_descriptor& descriptor,
     const dslt_operation_request& request,
+    const CudaOperationState& state,
     const Engine::Progress& progress) noexcept {
     if (!cuda_supports_operation(request.operation)) {
         return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
@@ -824,7 +997,9 @@ CudaRunResult run_cuda_operation(
     const auto height_processing = request.operation == DSLT_OP_HEIGHT_MAP ||
         request.operation == DSLT_OP_DEPTH_MAP ||
         request.operation == DSLT_OP_HEIGHT_PROJECTION;
-    const auto labeling = request.operation == DSLT_OP_CONNECTED_COMPONENTS;
+    const auto connected_components = request.operation == DSLT_OP_CONNECTED_COMPONENTS;
+    const auto watershed = request.operation == DSLT_OP_WATERSHED;
+    const auto labeling = connected_components || watershed;
     const auto h_minima = request.operation == DSLT_OP_H_MINIMA;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
@@ -874,12 +1049,12 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "height projection parameters must be finite"};
     }
-    if (labeling &&
+    if (connected_components &&
         request.connectivity != 6 && request.connectivity != 18 && request.connectivity != 26) {
         return {CudaRunStatus::invalid_argument, {},
             "connectivity must be 6, 18, or 26"};
     }
-    if (labeling && request.minimum_component_size < 1) {
+    if (connected_components && request.minimum_component_size < 1) {
         return {CudaRunStatus::invalid_argument, {},
             "minimum component size must be positive"};
     }
@@ -893,6 +1068,10 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {},
             "h-minima check interval must be between 1 and 10000"};
     }
+    if (watershed && request.minimum_component_size < 0) {
+        return {CudaRunStatus::invalid_argument, {},
+            "watershed minimum seed size must be non-negative"};
+    }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height = static_cast<std::size_t>(descriptor.height);
     const auto depth = static_cast<std::size_t>(descriptor.depth);
@@ -902,6 +1081,7 @@ CudaRunResult run_cuda_operation(
         source.size() != width * height * depth) {
         return {CudaRunStatus::invalid_argument, {}, "CUDA source dimensions do not match the selected channel"};
     }
+    const auto plane_count = width * height;
     if (h_minima && !std::all_of(source.begin(), source.end(), [](float value) {
             return std::isfinite(value);
         })) {
@@ -922,6 +1102,66 @@ CudaRunResult run_cuda_operation(
                 "h-minima iteration limit overflowed size_t"};
         }
         h_minima_maximum_iterations = source.size() + checkpoint_margin;
+    }
+    const CropState empty_crop_state{};
+    const auto& crop_state = state.crop == nullptr ? empty_crop_state : *state.crop;
+    if (watershed && state.labels.size() != source.size()) {
+        return {CudaRunStatus::invalid_argument, {},
+            "watershed seed dimensions do not match the volume"};
+    }
+    if (watershed && state.selected_labels.empty()) {
+        return {CudaRunStatus::invalid_argument, {},
+            "watershed requires at least one selected seed label"};
+    }
+    if (watershed && crop_state.options.enabled != 0 &&
+        (crop_state.options.upper > crop_state.options.lower ||
+         crop_state.options.border_xy < 0)) {
+        return {CudaRunStatus::invalid_argument, {}, "crop bounds are invalid"};
+    }
+    const auto watershed_height_map_count = watershed &&
+        crop_state.options.enabled != 0 && crop_state.options.use_height_map != 0
+        ? plane_count
+        : 0;
+    if (watershed && watershed_height_map_count != 0 &&
+        crop_state.height_map.size() != plane_count) {
+        return {CudaRunStatus::invalid_argument, {},
+            "crop height map dimensions do not match"};
+    }
+    if (watershed && watershed_height_map_count != 0 &&
+        !std::all_of(crop_state.height_map.begin(), crop_state.height_map.end(),
+            [](float value) { return std::isfinite(value); })) {
+        return {CudaRunStatus::invalid_argument, {},
+            "crop height map must contain only finite values"};
+    }
+    if (watershed && std::any_of(
+            state.selected_labels.begin(), state.selected_labels.end(),
+            [](std::int32_t label) { return label < 0; })) {
+        return {CudaRunStatus::invalid_argument, {},
+            "watershed selected seed labels must be non-negative"};
+    }
+    if (watershed && std::any_of(
+            state.labels.begin(), state.labels.end(),
+            [](std::int32_t label) { return label < -1; })) {
+        return {CudaRunStatus::invalid_argument, {},
+            "watershed seed labels must be -1 or non-negative"};
+    }
+    auto watershed_has_accepted_seed = false;
+    if (watershed) {
+        for (const auto selected_label : state.selected_labels) {
+            const auto seed_size = static_cast<std::size_t>(std::count(
+                state.labels.begin(), state.labels.end(), selected_label));
+            if (seed_size == 0) {
+                return {CudaRunStatus::invalid_argument, {},
+                    "watershed selected seed label does not exist"};
+            }
+            if (seed_size >= static_cast<std::size_t>(request.minimum_component_size)) {
+                watershed_has_accepted_seed = true;
+            }
+        }
+    }
+    if (watershed && !watershed_has_accepted_seed) {
+        return {CudaRunStatus::invalid_argument, {},
+            "watershed has no selected seeds at the requested minimum size"};
     }
 
     auto output_width = descriptor.width;
@@ -982,21 +1222,22 @@ CudaRunResult run_cuda_operation(
         }
         const auto input_bytes = source.size() * sizeof(float);
         const auto output_bytes = output_count * sizeof(float);
-        const auto plane_count = width * height;
         if (request.operation == DSLT_OP_DEPTH_MAP &&
             plane_count > std::numeric_limits<std::size_t>::max() / 2) {
             return {CudaRunStatus::out_of_memory, {},
                 "CUDA depth-map workspace overflows addressable memory"};
         }
-        const auto scratch_count = height_processing || h_minima
+        const auto scratch_count = height_processing || h_minima || watershed
             ? std::max(
                 source.size(),
                 request.operation == DSLT_OP_DEPTH_MAP ? plane_count * 2 : source.size())
             : 0;
-        const auto auxiliary_count = request.operation == DSLT_OP_DEPTH_MAP ||
-            request.operation == DSLT_OP_HEIGHT_PROJECTION
-            ? plane_count
-            : 0;
+        const auto auxiliary_count = watershed
+            ? source.size()
+            : request.operation == DSLT_OP_DEPTH_MAP ||
+                request.operation == DSLT_OP_HEIGHT_PROJECTION
+                ? plane_count
+                : 0;
         const auto add_required_buffer = [&](std::size_t count, std::size_t element_size) {
             if (count > std::numeric_limits<std::size_t>::max() / element_size) return false;
             const auto bytes = count * element_size;
@@ -1008,8 +1249,10 @@ CudaRunResult run_cuda_operation(
             !add_required_buffer(output_count, sizeof(float)) ||
             !add_required_buffer(scratch_count, sizeof(float)) ||
             !add_required_buffer(auxiliary_count, sizeof(float)) ||
-            (h_minima && !add_required_buffer(1, sizeof(int))) ||
-            (labeling &&
+            ((h_minima || watershed) && !add_required_buffer(1, sizeof(int))) ||
+            (watershed_height_map_count != 0 &&
+             !add_required_buffer(watershed_height_map_count, sizeof(float))) ||
+            (connected_components &&
              (!add_required_buffer(source.size(), sizeof(unsigned long long)) ||
               !add_required_buffer(source.size(), sizeof(unsigned long long))))) {
             return {CudaRunStatus::out_of_memory, {},
@@ -1032,20 +1275,25 @@ CudaRunResult run_cuda_operation(
         std::unique_ptr<DeviceBuffer<unsigned long long>> device_component_roots_a;
         std::unique_ptr<DeviceBuffer<unsigned long long>> device_component_roots_b;
         std::unique_ptr<DeviceBuffer<int>> device_convergence_flag;
+        std::unique_ptr<DeviceBuffer<float>> device_crop_height_map;
         if (scratch_count != 0) {
             device_scratch = std::make_unique<DeviceBuffer<float>>(scratch_count);
         }
         if (auxiliary_count != 0) {
             device_auxiliary = std::make_unique<DeviceBuffer<float>>(auxiliary_count);
         }
-        if (labeling) {
+        if (connected_components) {
             device_component_roots_a =
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
             device_component_roots_b =
                 std::make_unique<DeviceBuffer<unsigned long long>>(source.size());
         }
-        if (h_minima) {
+        if (h_minima || watershed) {
             device_convergence_flag = std::make_unique<DeviceBuffer<int>>(1);
+        }
+        if (watershed_height_map_count != 0) {
+            device_crop_height_map =
+                std::make_unique<DeviceBuffer<float>>(watershed_height_map_count);
         }
         std::vector<float> output(labeling ? 0 : output_count);
 
@@ -1062,6 +1310,7 @@ CudaRunResult run_cuda_operation(
         const auto zero_radius_filter = (smoothing || morphology) && request.radius == 0;
         const auto slice_based_filter = (smoothing || morphology) && !zero_radius_filter;
         std::uint32_t cuda_component_count = 0;
+        std::uint32_t cuda_passes_completed = 0;
         const auto run_height_map = [&](float* surface, float final_progress) {
             line_convolve_kernel<<<blocks, threads, 0, stream.get()>>>(
                 device_source.get(), device_scratch->get(), source.size(), width, height, depth,
@@ -1337,6 +1586,112 @@ CudaRunResult run_cuda_operation(
             if (!report(progress, 0.95F)) return cancelled();
             break;
         }
+        case DSLT_OP_WATERSHED: {
+            std::vector<std::size_t> selected_sizes(state.selected_labels.size(), 0);
+            for (std::size_t selected = 0; selected < state.selected_labels.size(); ++selected) {
+                selected_sizes[selected] = static_cast<std::size_t>(std::count(
+                    state.labels.begin(), state.labels.end(), state.selected_labels[selected]));
+            }
+            std::vector<std::int32_t> initial_labels(source.size(), -1);
+            for (std::size_t index = 0; index < state.labels.size(); ++index) {
+                const auto seed_label = state.labels[index];
+                if (seed_label < 0) continue;
+                for (std::size_t selected = 0; selected < state.selected_labels.size(); ++selected) {
+                    if (seed_label == state.selected_labels[selected] &&
+                        selected_sizes[selected] >=
+                            static_cast<std::size_t>(request.minimum_component_size)) {
+                        initial_labels[index] = seed_label;
+                        break;
+                    }
+                }
+            }
+
+            if (device_crop_height_map) {
+                check_cuda(cudaMemcpyAsync(
+                    device_crop_height_map->get(), crop_state.height_map.data(),
+                    watershed_height_map_count * sizeof(float),
+                    cudaMemcpyHostToDevice, stream.get()),
+                    "copying CUDA watershed crop height map");
+            }
+            watershed_crop_intensity_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(), device_scratch->get(), width, height, depth,
+                crop_state.options.enabled != 0,
+                crop_state.options.use_height_map != 0,
+                device_crop_height_map ? device_crop_height_map->get() : nullptr,
+                crop_state.options.upper, crop_state.options.lower,
+                crop_state.options.border_xy);
+            check_cuda(cudaGetLastError(), "launching CUDA watershed crop kernel");
+            auto* current_labels = reinterpret_cast<std::int32_t*>(device_output.get());
+            auto* next_labels = reinterpret_cast<std::int32_t*>(device_auxiliary->get());
+            check_cuda(cudaMemcpyAsync(
+                current_labels, initial_labels.data(),
+                initial_labels.size() * sizeof(std::int32_t),
+                cudaMemcpyHostToDevice, stream.get()),
+                "copying CUDA watershed seed labels");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA watershed initialization");
+            if (!report(progress, 0.25F)) return cancelled();
+
+            for (std::size_t level = 1; level <= 256; ++level) {
+                auto converged = false;
+                for (std::size_t pass = 0; pass < source.size(); ++pass) {
+                    check_cuda(cudaMemsetAsync(
+                        device_convergence_flag->get(), 0, sizeof(int), stream.get()),
+                        "resetting CUDA watershed convergence flag");
+                    watershed_flood_kernel<<<blocks, threads, 0, stream.get()>>>(
+                        device_scratch->get(), current_labels, next_labels,
+                        width, height, depth, static_cast<float>(level) / 256.0F,
+                        device_convergence_flag->get());
+                    check_cuda(cudaGetLastError(), "launching CUDA watershed flood pass");
+                    int host_changed = 0;
+                    check_cuda(cudaMemcpyAsync(
+                        &host_changed, device_convergence_flag->get(), sizeof(int),
+                        cudaMemcpyDeviceToHost, stream.get()),
+                        "copying CUDA watershed convergence flag");
+                    check_cuda(cudaStreamSynchronize(stream.get()),
+                        "synchronizing CUDA watershed flood pass");
+                    std::swap(current_labels, next_labels);
+                    const auto flood_progress = 0.25F + 0.50F *
+                        static_cast<float>(level - 1) / 256.0F;
+                    if (!report(progress, flood_progress)) {
+                        return cancelled();
+                    }
+                    if (host_changed == 0) {
+                        converged = true;
+                        break;
+                    }
+                }
+                if (!converged) {
+                    return {CudaRunStatus::resource_limit, {},
+                        "CUDA watershed flood did not converge within the volume-derived pass limit"};
+                }
+
+                watershed_erode_labels_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    current_labels, next_labels, width, height, depth);
+                check_cuda(cudaGetLastError(), "launching CUDA watershed label erosion");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA watershed label erosion");
+                std::swap(current_labels, next_labels);
+                watershed_dilate_labels_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    current_labels, next_labels, width, height, depth);
+                check_cuda(cudaGetLastError(), "launching CUDA watershed label dilation");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA watershed label dilation");
+                std::swap(current_labels, next_labels);
+                const auto level_progress = 0.25F + 0.50F *
+                    static_cast<float>(level) / 256.0F;
+                if (!report(progress, level_progress)) return cancelled();
+            }
+            if (current_labels != reinterpret_cast<std::int32_t*>(device_output.get())) {
+                check_cuda(cudaMemcpyAsync(
+                    device_output.get(), current_labels,
+                    source.size() * sizeof(std::int32_t),
+                    cudaMemcpyDeviceToDevice, stream.get()),
+                    "copying CUDA watershed final labels");
+            }
+            cuda_passes_completed = 256;
+            break;
+        }
         default:
             return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
         }
@@ -1359,6 +1714,14 @@ CudaRunResult run_cuda_operation(
                 cudaMemcpyDeviceToHost, stream.get()), "copying CUDA output to host");
         }
         check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA operation");
+        if (watershed) {
+            for (const auto selected_label : state.selected_labels) {
+                if (std::find(label_output.begin(), label_output.end(), selected_label) !=
+                    label_output.end()) {
+                    ++cuda_component_count;
+                }
+            }
+        }
         if (!report(progress, 1.0F)) return cancelled();
         return {
             CudaRunStatus::success,
@@ -1370,7 +1733,7 @@ CudaRunResult run_cuda_operation(
             output_kind,
             std::move(label_output),
             cuda_component_count,
-            0,
+            cuda_passes_completed,
         };
     } catch (const CudaError& error) {
         if (error.code() == cudaErrorMemoryAllocation) {

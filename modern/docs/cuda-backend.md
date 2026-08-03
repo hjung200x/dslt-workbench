@@ -24,7 +24,8 @@ The currently ported groups are:
 - filtered height maps and normal/Z height projection; and
 - 3D depth maps derived from the filtered height surface; and
 - 6/18/26-connected component labeling with minimum-size filtering; and
-- H-minima reconstruction with exact fixed-point detection.
+- H-minima reconstruction with exact fixed-point detection; and
+- selected-seed watershed with the fixed 256-level legacy schedule.
 
 ## Resource ownership and execution
 
@@ -70,6 +71,15 @@ current/next buffers, performs exact change detection, and is cancellable after
 synchronization. The volume-derived iteration bound and its overflow use the
 same resource-limit status as CPU; the validated check interval remains part of
 the request even though consecutive exact equality can finish earlier.
+
+Watershed accepts the engine's current labels, selected seed labels, and crop
+state through a request-local state view. It preserves the CPU reference's
+ordered six-neighbor flooding, synchronous radius-one label opening after each
+of 256 levels, minimum seed-size filtering, fixed or height-map crop, and Int32
+labels. Separate current/next label buffers and a convergence flag are included
+in VRAM preflight. Progress remains monotonic after input transfer, cancellation
+is checked only after synchronized work, and failure never replaces the prior
+engine result.
 
 ## Validation gates
 
@@ -258,3 +268,25 @@ The runtime fixture proves voxel-exact binary masks for deep and shallow 3D
 pits, zero height, and check intervals 1 and 50. It also executes `Auto`,
 invalid parameter and source rejection, iteration cancellation, and repeated
 reconstruction workspace allocation.
+
+## Recorded seeded-watershed runtime evidence
+
+The first selected-seed watershed runtime gate was completed on 2026-08-04
+(Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `a5983463ea317ff5ba5944f405fd01672eafbf2c` |
+| Hosted build | GitHub Actions run `30859907320`, job `cuda-build-only` |
+| Compiler | CUDA 13.2.86 with Visual Studio 2022 |
+| Runtime GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| `dslt_core.dll` SHA-256 | `02620DD4391F376BAD3F0199DD4761B7DFD1DCACA300E526D81559CC04E7400E` |
+| `dslt_native_tests.exe` SHA-256 | `3A3D9E5E6D045D8130013C5285B9DECF736901C8C26A1781BCE530D97061EC63` |
+| Result | `DSLT native synthetic tests passed`; `CUDA artifact runtime tests passed` |
+
+The runtime fixture proves voxel-exact CPU/CUDA labels and component counts for
+two competing seeds. It also covers selected-seed restriction, minimum seed
+size, fixed crop, all 256 levels, `Auto`, invalid state and parameters,
+mid-level cancellation, and repeated watershed workspace allocation in the
+mixed-operation memory gate.

@@ -26,13 +26,15 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_DEPTH_MAP ||
         operation == DSLT_OP_HEIGHT_PROJECTION ||
         operation == DSLT_OP_CONNECTED_COMPONENTS ||
-        operation == DSLT_OP_H_MINIMA;
+        operation == DSLT_OP_H_MINIMA ||
+        operation == DSLT_OP_WATERSHED;
 }
 
 CudaRunResult run_cuda_operation(
     std::span<const float>,
     const dslt_volume_descriptor&,
     const dslt_operation_request&,
+    const CudaOperationState&,
     const Engine::Progress&) noexcept {
     return {CudaRunStatus::unavailable, {}, "CUDA backend is not compiled"};
 }

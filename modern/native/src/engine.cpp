@@ -132,6 +132,9 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
     const auto cuda = cuda_state();
     const auto explicit_cuda = request.backend == DSLT_BACKEND_CUDA;
     const auto supports_cuda = cuda_supports_operation(request.operation);
+    auto cuda_selected_labels = request.operation == DSLT_OP_WATERSHED
+        ? std::vector<std::int32_t>(selection_.begin(), selection_.end())
+        : std::vector<std::int32_t>{};
     if (explicit_cuda && !cuda.available) {
         set_error("CUDA backend is unavailable; choose Auto or CPU");
         return DSLT_BACKEND_UNAVAILABLE;
@@ -144,7 +147,15 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
     if (request.backend != DSLT_BACKEND_CPU && cuda.available && supports_cuda) {
         const auto channel_offset = source_.voxel_count() * source_.descriptor().selected_channel;
         const auto channel = source_.data().subspan(channel_offset, source_.voxel_count());
-        auto cuda_result = run_cuda_operation(channel, source_.descriptor(), request, progress);
+        const CudaOperationState cuda_operation_state{
+            request.operation == DSLT_OP_WATERSHED
+                ? std::span<const std::int32_t>(labels_)
+                : std::span<const std::int32_t>{},
+            cuda_selected_labels,
+            &crop_,
+        };
+        auto cuda_result = run_cuda_operation(
+            channel, source_.descriptor(), request, cuda_operation_state, progress);
         if (cuda_result.status == CudaRunStatus::success) {
             result_ = {};
             result_.used_backend = DSLT_BACKEND_CUDA;

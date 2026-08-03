@@ -503,7 +503,109 @@ void cuda_pointwise_parity_test() {
         handle, request, DSLT_BACKEND_CUDA);
     assert(automatic_h_minima.values[h_minima_center] == 0.0F);
 
+    auto watershed_desc = descriptor(5, 1, 1);
+    const std::vector<float> watershed_source(watershed_desc.element_count, 0.0F);
+    const std::vector<std::int32_t> watershed_seeds{10, -1, -1, -1, 20};
+    const std::vector<std::int32_t> watershed_selected{10, 20};
+    require(dslt_set_volume_f32(
+        handle, &watershed_desc, watershed_source.data(), watershed_source.size()));
+    const auto run_watershed_backend = [&handle](
+        const std::vector<std::int32_t>& seeds,
+        const std::vector<std::int32_t>& selected,
+        dslt_operation_request watershed_request,
+        dslt_backend backend) {
+        require(dslt_set_label_state_i32(
+            handle, seeds.data(), seeds.size(), selected.data(), selected.size()));
+        watershed_request.backend = backend;
+        return run_label_operation_result(handle, watershed_request, backend);
+    };
+
+    dslt_operation_request watershed_request{};
+    watershed_request.operation = DSLT_OP_WATERSHED;
+    watershed_request.minimum_component_size = 0;
+    const auto cpu_watershed = run_watershed_backend(
+        watershed_seeds, watershed_selected, watershed_request, DSLT_BACKEND_CPU);
+    const auto cuda_watershed = run_watershed_backend(
+        watershed_seeds, watershed_selected, watershed_request, DSLT_BACKEND_CUDA);
+    assert(cpu_watershed.result.component_count == 2);
+    assert(cpu_watershed.result.component_count == cuda_watershed.result.component_count);
+    assert(cuda_watershed.result.reserved == 256);
+    assert(cpu_watershed.values == cuda_watershed.values);
+    assert((cuda_watershed.values == std::vector<std::int32_t>{10, 10, 10, 20, 20}));
+
+    const std::vector<std::int32_t> single_selected{20};
+    const auto cpu_single_watershed = run_watershed_backend(
+        watershed_seeds, single_selected, watershed_request, DSLT_BACKEND_CPU);
+    const auto cuda_single_watershed = run_watershed_backend(
+        watershed_seeds, single_selected, watershed_request, DSLT_BACKEND_CUDA);
+    assert(cpu_single_watershed.values == cuda_single_watershed.values);
+    assert(cuda_single_watershed.result.component_count == 1);
+
+    const std::vector<std::int32_t> sized_watershed_seeds{10, 10, -1, -1, 20};
+    watershed_request.minimum_component_size = 2;
+    const auto cpu_sized_watershed = run_watershed_backend(
+        sized_watershed_seeds, watershed_selected, watershed_request, DSLT_BACKEND_CPU);
+    const auto cuda_sized_watershed = run_watershed_backend(
+        sized_watershed_seeds, watershed_selected, watershed_request, DSLT_BACKEND_CUDA);
+    assert(cpu_sized_watershed.values == cuda_sized_watershed.values);
+    assert(cuda_sized_watershed.result.component_count == 1);
+
+    watershed_request.minimum_component_size = 0;
+    require(dslt_set_label_state_i32(
+        handle, watershed_seeds.data(), watershed_seeds.size(),
+        watershed_selected.data(), watershed_selected.size()));
+    watershed_request.backend = DSLT_BACKEND_AUTO;
+    const auto automatic_watershed = run_label_operation_result(
+        handle, watershed_request, DSLT_BACKEND_CUDA);
+    assert(automatic_watershed.result.used_backend == DSLT_BACKEND_CUDA);
+    assert(automatic_watershed.values == cuda_watershed.values);
+
+    auto crop_watershed_desc = descriptor(5, 1, 3);
+    const std::vector<float> crop_watershed_source(crop_watershed_desc.element_count, 0.0F);
+    std::vector<std::int32_t> crop_watershed_seeds(crop_watershed_desc.element_count, -1);
+    crop_watershed_seeds[5] = 10;
+    crop_watershed_seeds[9] = 20;
+    require(dslt_set_volume_f32(
+        handle, &crop_watershed_desc,
+        crop_watershed_source.data(), crop_watershed_source.size()));
+    dslt_crop_options crop_options{};
+    crop_options.enabled = 1;
+    crop_options.upper = 1;
+    crop_options.lower = 1;
+    require(dslt_set_crop(handle, &crop_options, nullptr, 0));
+    const auto cpu_crop_watershed = run_watershed_backend(
+        crop_watershed_seeds, watershed_selected, watershed_request, DSLT_BACKEND_CPU);
+    require(dslt_set_volume_f32(
+        handle, &crop_watershed_desc,
+        crop_watershed_source.data(), crop_watershed_source.size()));
+    require(dslt_set_crop(handle, &crop_options, nullptr, 0));
+    const auto cuda_crop_watershed = run_watershed_backend(
+        crop_watershed_seeds, watershed_selected, watershed_request, DSLT_BACKEND_CUDA);
+    assert(cpu_crop_watershed.values == cuda_crop_watershed.values);
+    assert(cpu_crop_watershed.result.component_count == cuda_crop_watershed.result.component_count);
+
+    require(dslt_set_volume_f32(
+        handle, &watershed_desc, watershed_source.data(), watershed_source.size()));
+
     dslt_operation_result result{};
+    request = {};
+    request.operation = DSLT_OP_WATERSHED;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.minimum_component_size = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    require(dslt_set_label_state_i32(
+        handle, watershed_seeds.data(), watershed_seeds.size(),
+        watershed_selected.data(), watershed_selected.size()));
+    request.minimum_component_size = -1;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    require(dslt_set_label_state_i32(
+        handle, watershed_seeds.data(), watershed_seeds.size(),
+        watershed_selected.data(), watershed_selected.size()));
+    request.minimum_component_size = 2;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
     request = {};
     request.operation = DSLT_OP_RESAMPLE_Z_AREA;
     request.backend = DSLT_BACKEND_CUDA;
@@ -520,7 +622,7 @@ void cuda_pointwise_parity_test() {
     request = {};
     request.operation = DSLT_OP_EXTRACT_YZ;
     request.backend = DSLT_BACKEND_CUDA;
-    request.slice_index = static_cast<std::int32_t>(projection_desc.width);
+    request.slice_index = static_cast<std::int32_t>(watershed_desc.width);
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
@@ -634,6 +736,21 @@ void cuda_pointwise_parity_test() {
     require(dslt_run_operation(
         handle, &request, cancel_h_minima, nullptr, &result), DSLT_CANCELLED);
 
+    require(dslt_set_volume_f32(
+        handle, &watershed_desc, watershed_source.data(), watershed_source.size()));
+    require(dslt_set_label_state_i32(
+        handle, watershed_seeds.data(), watershed_seeds.size(),
+        watershed_selected.data(), watershed_selected.size()));
+    request = {};
+    request.operation = DSLT_OP_WATERSHED;
+    request.backend = DSLT_BACKEND_CUDA;
+    request.minimum_component_size = 0;
+    const auto cancel_watershed = [](float progress, void*) -> std::int32_t {
+        return progress > 0.25F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &request, cancel_watershed, nullptr, &result), DSLT_CANCELLED);
+
     request = {};
     request.operation = DSLT_OP_DILATE_SPHERE;
     request.backend = DSLT_BACKEND_CUDA;
@@ -641,7 +758,7 @@ void cuda_pointwise_parity_test() {
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     request = {};
-    request.operation = DSLT_OP_WATERSHED;
+    request.operation = DSLT_OP_DSLT_THRESHOLD;
     request.backend = DSLT_BACKEND_CUDA;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
 
@@ -706,11 +823,19 @@ void cuda_pointwise_parity_test() {
     memory_h_minima.threshold = 0.5F;
     memory_h_minima.radius = 50;
     (void)run_float_operation(handle, memory_h_minima, DSLT_BACKEND_CUDA);
+    dslt_operation_request memory_watershed{};
+    memory_watershed.operation = DSLT_OP_WATERSHED;
+    memory_watershed.backend = DSLT_BACKEND_CUDA;
+    memory_watershed.minimum_component_size = 0;
+    require(dslt_set_label_state_i32(
+        handle, watershed_seeds.data(), watershed_seeds.size(),
+        watershed_selected.data(), watershed_selected.size()));
+    (void)run_label_operation_result(handle, memory_watershed, DSLT_BACKEND_CUDA);
 
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        switch (iteration % 6) {
+        switch (iteration % 7) {
         case 0:
             (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
             break;
@@ -728,6 +853,12 @@ void cuda_pointwise_parity_test() {
             break;
         case 5:
             (void)run_float_operation(handle, memory_h_minima, DSLT_BACKEND_CUDA);
+            break;
+        case 6:
+            require(dslt_set_label_state_i32(
+                handle, watershed_seeds.data(), watershed_seeds.size(),
+                watershed_selected.data(), watershed_selected.size()));
+            (void)run_label_operation_result(handle, memory_watershed, DSLT_BACKEND_CUDA);
             break;
         default:
             (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);
