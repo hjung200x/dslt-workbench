@@ -13,9 +13,9 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Z area-average scaling | `ResampleZArea` | implemented | Ramp and impulse fixtures |
 | Z Lanczos 2/3 scaling | `ResampleZLanczos` | implemented | Ramp and impulse fixtures |
 | Orthogonal XY/YZ/ZX views | `ExtractPlane` + synchronized WPF planes | implemented | Native coordinate fixtures + WPF axis-dimension fixture |
-| Brightness/contrast | `WindowLevel` | implemented | Range fixtures |
+| Brightness/contrast | `WindowLevel` | implemented | CPU range fixtures + CUDA absolute-error parity fixture (NVIDIA runner required) |
 | Mean/Gaussian smoothing | `SmoothMean`, `SmoothGaussian` | implemented | Impulse fixture |
-| Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures |
+| Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | CPU boundary fixtures + bit-exact CUDA parity fixture (NVIDIA runner required) |
 | Adaptive 2D/3D threshold | Extended operation contract | pending-reference | Legacy block/C/boundary fixtures |
 | Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures |
 | Simplified height/depth map | `HeightMap`, `DepthMap` | implemented | Sloped-surface fixture |

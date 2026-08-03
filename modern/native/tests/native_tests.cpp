@@ -69,6 +69,15 @@ int main() {
     dslt_backend_info backend{};
     require(dslt_get_backend_info(handle, &backend));
     assert(backend.cpu_available == 1);
+    std::cout << "CUDA backend: compiled=" << backend.cuda_compiled
+              << " available=" << backend.cuda_available
+              << " free_device_bytes=" << backend.device_memory_bytes << '\n';
+#ifdef DSLT_TEST_REQUIRE_CUDA
+    if (backend.cuda_compiled == 0 || backend.cuda_available == 0) {
+        std::cerr << "CUDA-enabled test build requires an initialized NVIDIA backend\n";
+        std::abort();
+    }
+#endif
 
     auto desc = descriptor(5, 5, 3);
     std::vector<float> impulse(desc.element_count, 0.0F);
@@ -117,11 +126,64 @@ int main() {
     const auto cancel = [](float progress, void*) -> std::int32_t { return progress > 0.0F ? 1 : 0; };
     require(dslt_run_operation(handle, &request, cancel, nullptr, &result), DSLT_CANCELLED);
 
+    std::vector<float> ramp(desc.element_count);
+    for (std::size_t index = 0; index < ramp.size(); ++index)
+        ramp[index] = static_cast<float>(index) / static_cast<float>(ramp.size() - 1);
+    require(dslt_set_volume_f32(handle, &desc, ramp.data(), ramp.size()));
     request = {};
     request.operation = DSLT_OP_COPY;
     request.backend = DSLT_BACKEND_CUDA;
     const auto cuda_status = dslt_run_operation(handle, &request, nullptr, nullptr, &result);
-    assert(cuda_status == DSLT_BACKEND_UNAVAILABLE || cuda_status == DSLT_NOT_IMPLEMENTED);
+    if (backend.cuda_available != 0) {
+        require(cuda_status);
+        assert(result.used_backend == DSLT_BACKEND_CUDA);
+        std::vector<float> cuda_copy(result.element_count);
+        require(dslt_copy_output_f32(handle, cuda_copy.data(), cuda_copy.size()));
+        assert(cuda_copy == ramp);
+
+        request.operation = DSLT_OP_WINDOW_LEVEL;
+        request.backend = DSLT_BACKEND_CPU;
+        request.window_min = 0.17F;
+        request.window_max = 0.83F;
+        require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+        std::vector<float> cpu_window(result.element_count);
+        require(dslt_copy_output_f32(handle, cpu_window.data(), cpu_window.size()));
+        request.backend = DSLT_BACKEND_CUDA;
+        require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+        std::vector<float> cuda_window(result.element_count);
+        require(dslt_copy_output_f32(handle, cuda_window.data(), cuda_window.size()));
+        for (std::size_t index = 0; index < cpu_window.size(); ++index)
+            assert(std::abs(cpu_window[index] - cuda_window[index]) <= 1.0e-5F);
+
+        for (const auto operation : {DSLT_OP_THRESHOLD_2D, DSLT_OP_THRESHOLD_3D}) {
+            request = {};
+            request.operation = operation;
+            request.backend = DSLT_BACKEND_AUTO;
+            request.threshold = 0.47F;
+            require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+            assert(result.used_backend == DSLT_BACKEND_CUDA);
+            std::vector<float> cuda_threshold(result.element_count);
+            require(dslt_copy_output_f32(handle, cuda_threshold.data(), cuda_threshold.size()));
+            for (std::size_t index = 0; index < ramp.size(); ++index)
+                assert(cuda_threshold[index] == (ramp[index] >= request.threshold ? 1.0F : 0.0F));
+        }
+
+        dslt_backend_info memory_before{};
+        require(dslt_get_backend_info(handle, &memory_before));
+        for (int iteration = 0; iteration < 100; ++iteration)
+            require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+        dslt_backend_info memory_after{};
+        require(dslt_get_backend_info(handle, &memory_after));
+        constexpr std::uint64_t memory_tolerance = 64ULL * 1024ULL * 1024ULL;
+        assert(memory_after.device_memory_bytes + memory_tolerance >= memory_before.device_memory_bytes);
+
+        request.operation = DSLT_OP_SMOOTH_MEAN;
+        request.backend = DSLT_BACKEND_CUDA;
+        request.radius = 1;
+        require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_NOT_IMPLEMENTED);
+    } else {
+        require(cuda_status, DSLT_BACKEND_UNAVAILABLE);
+    }
 
     auto invalid = descriptor(2, 2, 2);
     require(dslt_set_volume_f32(handle, &invalid, objects.data(), 3), DSLT_INVALID_ARGUMENT);

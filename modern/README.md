@@ -14,6 +14,8 @@ DSLT Demo while preserving its processing behavior. The original Visual Studio
 
 The CPU backend is the reference implementation. CUDA is an optional backend;
 when it is unavailable, `Auto` always selects CPU and reports the fallback.
+Validated pointwise CUDA operations are documented in
+`docs/cuda-backend.md`; unlisted operations continue to use the CPU reference.
 
 ## Build
 

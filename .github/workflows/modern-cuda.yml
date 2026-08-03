@@ -6,13 +6,33 @@ on:
     branches: [ main, master, 'codex/**' ]
     paths:
       - 'modern/native/**'
+      - 'modern/scripts/package-preview.ps1'
+      - 'modern/scripts/test-cuda-prerequisites.ps1'
+      - 'modern/scripts/verify-preview-package.ps1'
+      - 'modern/docs/**'
+      - 'modern/README.md'
+      - 'COPYING.GPLv3'
+      - 'license.txt'
       - '.github/workflows/modern-cuda.yml'
+
+concurrency:
+  group: dslt-cuda-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   cuda-parity:
     runs-on: [self-hosted, Windows, X64, NVIDIA]
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Capture NVIDIA runner evidence
+        shell: pwsh
+        run: ./modern/scripts/test-cuda-prerequisites.ps1 -WriteGitHubSummary
       - name: Configure CUDA backend
         working-directory: modern/native
         run: cmake --preset windows-cuda
@@ -22,3 +42,12 @@ jobs:
       - name: Run CPU reference and CUDA availability tests
         working-directory: modern/native
         run: ctest --preset windows-cuda
+      - name: Build and verify CUDA preview package
+        shell: pwsh
+        run: ./modern/scripts/package-preview.ps1 -Cuda -SkipNativeBuild -Version "0.1.0-preview.${{ github.run_number }}"
+      - name: Upload verified CUDA preview package
+        uses: actions/upload-artifact@v4
+        with:
+          name: dslt-workbench-preview-win-x64-cuda-${{ github.run_number }}
+          path: modern/artifacts/preview/*
+          if-no-files-found: error
