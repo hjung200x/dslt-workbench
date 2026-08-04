@@ -39,6 +39,13 @@ equivalence; that remains gated by representative datasets.
   range 100. The scalar projection, height map, and depth map come from the
   selected CPU/CUDA backend; the deterministic RGB24 display remains separate
   from the exported scalar payload.
+- Run both 2D and 3D global thresholding, cube or sphere morphology, and Z
+  area-average or Lanczos 2/3 resampling from the operation selector. The 2D
+  threshold uses the shared Z cursor; resampling defaults target Z spacing to
+  the input X spacing and records target spacing/order in provenance.
+- `Copy` remains an internal ABI operation, while `ExtractXy/Yz/Zx` back the
+  always-visible synchronized orthogonal views instead of duplicating them in
+  the operation selector.
 - Preserve the last valid result and source volume after cancellation or
   processing failure, including failures or cancellation during auxiliary
   height/depth requests for RGB presentation.
@@ -100,6 +107,10 @@ equivalence; that remains gated by representative datasets.
     runs scalar projection, height map, and depth map in order, publishes one
     RGB24 XY image, and matches the legacy HSV byte oracle. The native-CPU job
     repeats the composition with actual C ABI outputs.
+18. every user-facing native operation is present in the WPF selector; 2D
+    threshold preserves the active Z slice, cube morphology preserves radius,
+    and area/Lanczos Z resampling preserves target spacing, order, output depth,
+    orthogonal result geometry, cancellation state, and Float32 provenance.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.

@@ -109,6 +109,10 @@ The exact 3D Euclidean depth map, scalar Z/normal projection, range and offset
 semantics, threshold behavior, and Z-only RGB depth-color presentation are
 defined in `docs/height-projection-spec.md`.
 
+The WPF operation selector exposes 2D/3D thresholding, cube/sphere morphology,
+and calibrated Z area-average or Lanczos 2/3 resampling. Z resampling defaults
+to the input X spacing and rejects unaddressable output depth before allocation.
+
 The current WPF workflow, state-preservation guarantees, responsive layout, and
 remaining interactive checks are tracked in `docs/ui-workflow.md`. Repeatable
 Windows 10/11 package evidence is collected according to

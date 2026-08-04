@@ -1479,10 +1479,13 @@ CudaRunResult run_cuda_operation(
         output_depth = 1;
         output_kind = DSLT_OUTPUT_IMAGE_FLOAT32;
     } else if (resampling) {
-        const auto physical_depth = static_cast<double>(descriptor.depth) * descriptor.calibration.spacing_z;
-        output_depth = std::max<std::uint32_t>(
-            1,
-            static_cast<std::uint32_t>(std::lround(physical_depth / request.target_spacing_z)));
+        try {
+            output_depth = ops::resample_output_depth(descriptor, request.target_spacing_z);
+        } catch (const ResourceLimitError& error) {
+            return {CudaRunStatus::resource_limit, {}, error.what()};
+        } catch (const std::invalid_argument& error) {
+            return {CudaRunStatus::invalid_argument, {}, error.what()};
+        }
     } else if (request.operation == DSLT_OP_EXTRACT_XY) {
         if (request.slice_index < 0 || request.slice_index >= static_cast<int>(descriptor.depth)) {
             return {CudaRunStatus::invalid_argument, {}, "XY slice is outside the volume"};
