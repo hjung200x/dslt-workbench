@@ -11,6 +11,9 @@ equivalence; that remains gated by representative datasets.
   volume when decoding fails.
 - Generate a deterministic synthetic volume for installation and backend
   checks.
+- Show the main window before native/CUDA discovery completes, initialize the
+  processing engine off the UI thread, and replace the temporary status model
+  only while the window is still active.
 - Select a channel and shared X/Y/Z coordinates with bounds derived from the
   active volume.
 - Render synchronized XY, YZ, and ZX source/result planes, apply one shared zoom
@@ -68,13 +71,27 @@ equivalence; that remains gated by representative datasets.
     bit-exactly, and exported provenance retains the cropped output origin.
 12. Watershed is enabled only with a selected full-volume seed, passes seed
     state to the engine, records seed provenance, and remains undoable.
+13. the real `Application.Run()` startup path creates and loads the main window,
+    keeps the read-only progress property on a one-way binding, and gives every
+    slider, combo box, text box, list, progress indicator, and scrollable view
+    an explicit UI Automation name.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
+
+## Current interactive smoke evidence
+
+On 2026-08-04, a locally published self-contained `win-x64` build was launched
+with the hosted CUDA artifact previously validated on the same RTX 4060. The
+window loaded at 1500 x 920 on a 96-DPI Windows host, reported `CPU + CUDA` and
+the RTX 4060 device, exposed 107 UI Automation descendants, and had zero
+keyboard-focusable elements without an accessible name. The app then accepted
+a normal window-close request and exited. This is one-host startup evidence,
+not completion of the dual-OS and multi-DPI release gate.
 
 ## Remaining UI work
 
 - Recover and add the remaining legacy editing shortcuts. `Ctrl+Z` is currently
   bound to undo; shortcut behavior without source evidence is not guessed.
-- Perform interactive accessibility, DPI, and large-volume responsiveness
-  checks on Windows 10 22H2 and Windows 11.
+- Perform the remaining interactive cancellation, recovery, non-100%-DPI, and
+  large-volume responsiveness checks on Windows 10 22H2 and Windows 11.

@@ -50,24 +50,24 @@
           </StackPanel>
           <StackPanel>
             <TextBlock Text="WORKFLOW" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10" />
-            <ListBox ItemsSource="{Binding WorkflowStages}" SelectedItem="{Binding SelectedStage}" Background="Transparent" BorderThickness="0" />
+            <ListBox AutomationProperties.Name="Workflow stage" ItemsSource="{Binding WorkflowStages}" SelectedItem="{Binding SelectedStage}" Background="Transparent" BorderThickness="0" />
             <Separator Margin="0,12" Background="#283241" />
             <Button Content="Open TIFF / LSM" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" />
             <Button Content="Generate synthetic" Command="{Binding GenerateSyntheticCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <TextBlock Text="CHANNEL" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,14,0,5" />
-            <Slider Minimum="0" Maximum="{Binding MaximumChannelIndex}" Value="{Binding ChannelIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
+            <Slider AutomationProperties.Name="Channel index" Minimum="0" Maximum="{Binding MaximumChannelIndex}" Value="{Binding ChannelIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
             <TextBlock Text="{Binding ChannelIndex, StringFormat=Index {0}}" Foreground="{StaticResource AccentBrush}" />
             <TextBlock Text="X COORDINATE" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,12,0,5" />
-            <Slider Minimum="0" Maximum="{Binding MaximumXIndex}" Value="{Binding XIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
+            <Slider AutomationProperties.Name="X coordinate" Minimum="0" Maximum="{Binding MaximumXIndex}" Value="{Binding XIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
             <TextBlock Text="{Binding XIndex, StringFormat=X {0}}" Foreground="{StaticResource AccentBrush}" />
             <TextBlock Text="Y COORDINATE" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,12,0,5" />
-            <Slider Minimum="0" Maximum="{Binding MaximumYIndex}" Value="{Binding YIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
+            <Slider AutomationProperties.Name="Y coordinate" Minimum="0" Maximum="{Binding MaximumYIndex}" Value="{Binding YIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
             <TextBlock Text="{Binding YIndex, StringFormat=Y {0}}" Foreground="{StaticResource AccentBrush}" />
             <TextBlock Text="Z SLICE" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,14,0,5" />
-            <Slider Minimum="0" Maximum="{Binding MaximumZIndex}" Value="{Binding ZIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
+            <Slider AutomationProperties.Name="Z slice" Minimum="0" Maximum="{Binding MaximumZIndex}" Value="{Binding ZIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
             <TextBlock Text="{Binding ZIndex, StringFormat=Slice {0}}" Foreground="{StaticResource AccentBrush}" />
             <TextBlock Text="SHARED ZOOM" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,12,0,5" />
-            <Slider Minimum="0.25" Maximum="8" Value="{Binding Zoom}" SmallChange="0.25" />
+            <Slider AutomationProperties.Name="Shared zoom" Minimum="0.25" Maximum="8" Value="{Binding Zoom}" SmallChange="0.25" />
             <TextBlock Text="{Binding Zoom, StringFormat={}{0:F2}x}" Foreground="{StaticResource AccentBrush}" />
           </StackPanel>
         </DockPanel>
@@ -93,7 +93,7 @@
           <Border Margin="0,0,5,5" Background="#05080C" BorderBrush="#2D3949" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
             <Grid>
               <TextBlock Text="SOURCE XY" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
-              <ScrollViewer infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
+              <ScrollViewer AutomationProperties.Name="Source XY view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
                 <Image Source="{Binding SourceImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
@@ -103,7 +103,7 @@
           <Border Grid.Column="1" Margin="5,0,5,5" Background="#05080C" BorderBrush="#2D3949" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
             <Grid>
               <TextBlock Text="SOURCE YZ" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
-              <ScrollViewer infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
+              <ScrollViewer AutomationProperties.Name="Source YZ view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
                 <Image Source="{Binding SourceYzImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
@@ -113,7 +113,7 @@
           <Border Grid.Column="2" Margin="5,0,0,5" Background="#05080C" BorderBrush="#2D3949" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
             <Grid>
               <TextBlock Text="SOURCE ZX" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
-              <ScrollViewer infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
+              <ScrollViewer AutomationProperties.Name="Source ZX view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
                 <Image Source="{Binding SourceZxImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
@@ -123,7 +123,7 @@
           <Border Grid.Row="1" Margin="0,5,5,0" Background="#05080C" BorderBrush="#2D3949" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
             <Grid>
               <TextBlock Text="RESULT XY" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
-              <ScrollViewer infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
+              <ScrollViewer AutomationProperties.Name="Result XY view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
                 <Image Source="{Binding ResultImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
@@ -133,7 +133,7 @@
           <Border Grid.Row="1" Grid.Column="1" Margin="5,5,5,0" Background="#05080C" BorderBrush="#2D3949" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
             <Grid>
               <TextBlock Text="RESULT YZ" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
-              <ScrollViewer infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
+              <ScrollViewer AutomationProperties.Name="Result YZ view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
                 <Image Source="{Binding ResultYzImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
@@ -143,7 +143,7 @@
           <Border Grid.Row="1" Grid.Column="2" Margin="5,5,0,0" Background="#05080C" BorderBrush="#2D3949" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
             <Grid>
               <TextBlock Text="RESULT ZX" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
-              <ScrollViewer infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
+              <ScrollViewer AutomationProperties.Name="Result ZX view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
                 <Image Source="{Binding ResultZxImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
@@ -158,33 +158,33 @@
           </Grid.ColumnDefinitions>
           <StackPanel Margin="0,0,10,0">
             <TextBlock Text="Display minimum" Foreground="{StaticResource MutedBrush}" />
-            <Slider Minimum="0" Maximum="0.99" Value="{Binding WindowMinimum}" SmallChange="0.01" />
+            <Slider AutomationProperties.Name="Display minimum" Minimum="0" Maximum="0.99" Value="{Binding WindowMinimum}" SmallChange="0.01" />
           </StackPanel>
           <StackPanel Grid.Column="1" Margin="10,0,0,0">
             <TextBlock Text="Display maximum" Foreground="{StaticResource MutedBrush}" />
-            <Slider Minimum="0.01" Maximum="1" Value="{Binding WindowMaximum}" SmallChange="0.01" />
+            <Slider AutomationProperties.Name="Display maximum" Minimum="0.01" Maximum="1" Value="{Binding WindowMaximum}" SmallChange="0.01" />
           </StackPanel>
         </Grid>
       </Grid>
 
       <Border Grid.Column="2" Background="{StaticResource RaisedBrush}" BorderBrush="#283241" BorderThickness="1,0,0,0">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ScrollViewer AutomationProperties.Name="Processing and editing controls" VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="20">
             <StackPanel IsEnabled="{Binding IsIdle}">
             <TextBlock Text="OPERATION" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10" />
-            <ComboBox ItemsSource="{Binding Operations}" SelectedItem="{Binding SelectedOperation}" />
+            <ComboBox AutomationProperties.Name="Operation" ItemsSource="{Binding Operations}" SelectedItem="{Binding SelectedOperation}" />
             <TextBlock Text="Backend" Margin="0,12,0,5" />
-            <ComboBox ItemsSource="{Binding Backends}" SelectedItem="{Binding Backend}" />
+            <ComboBox AutomationProperties.Name="Backend" ItemsSource="{Binding Backends}" SelectedItem="{Binding Backend}" />
 
             <StackPanel Visibility="{Binding UsesThreshold, Converter={StaticResource BooleanToVisibilityConverter}}">
               <TextBlock Text="Threshold" Margin="0,12,0,5" />
-              <Slider Minimum="0" Maximum="1" Value="{Binding Threshold}" SmallChange="0.01" />
+              <Slider AutomationProperties.Name="Threshold" Minimum="0" Maximum="1" Value="{Binding Threshold}" SmallChange="0.01" />
               <TextBlock Text="{Binding Threshold, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
             </StackPanel>
 
             <StackPanel Visibility="{Binding UsesRadius, Converter={StaticResource BooleanToVisibilityConverter}}">
               <TextBlock Text="Radius" Margin="0,12,0,5" />
-              <Slider Minimum="{Binding MinimumRadius}" Maximum="{Binding MaximumRadius}" Value="{Binding Radius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="Radius" Minimum="{Binding MinimumRadius}" Maximum="{Binding MaximumRadius}" Value="{Binding Radius}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding Radius}" Foreground="{StaticResource AccentBrush}" />
             </StackPanel>
 
@@ -192,9 +192,9 @@
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="ADAPTIVE THRESHOLD" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
               <TextBlock Text="Local kernel" Margin="0,10,0,5" />
-              <ComboBox ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding AdaptiveThresholdKernel}" />
+              <ComboBox AutomationProperties.Name="Adaptive threshold local kernel" ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding AdaptiveThresholdKernel}" />
               <TextBlock Text="C offset (legacy scale)" Margin="0,10,0,5" />
-              <Slider Minimum="-100" Maximum="500" Value="{Binding AdaptiveThresholdOffset}" SmallChange="1" />
+              <Slider AutomationProperties.Name="Adaptive threshold C offset" Minimum="-100" Maximum="500" Value="{Binding AdaptiveThresholdOffset}" SmallChange="1" />
               <TextBlock Text="{Binding AdaptiveThresholdOffset, StringFormat=F1}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Core comparison: source &gt; local mean + 0.002 × offset" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             </StackPanel>
@@ -203,25 +203,25 @@
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="H-MINIMA" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
               <TextBlock Text="Height h" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="1" Value="{Binding HMinimaHeight}" SmallChange="0.01" />
+              <Slider AutomationProperties.Name="H-minima height" Minimum="0" Maximum="1" Value="{Binding HMinimaHeight}" SmallChange="0.01" />
               <TextBlock Text="{Binding HMinimaHeight, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Convergence check interval" Margin="0,10,0,5" />
-              <TextBox Text="{Binding HMinimaCheckInterval, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBox AutomationProperties.Name="H-minima convergence check interval" Text="{Binding HMinimaCheckInterval, UpdateSourceTrigger=PropertyChanged}" />
             </StackPanel>
 
             <StackPanel Visibility="{Binding IsHeightSurfaceOperation, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="HEIGHT MAP" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
               <TextBlock Text="Filter type" Margin="0,10,0,5" />
-              <ComboBox ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding HeightMapKernel}" />
+              <ComboBox AutomationProperties.Name="Height map filter type" ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding HeightMapKernel}" />
               <TextBlock Text="XY smoothing radius" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="64" Value="{Binding HeightMapXyRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="Height map XY smoothing radius" Minimum="0" Maximum="64" Value="{Binding HeightMapXyRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding HeightMapXyRadius}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Z filter radius" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="64" Value="{Binding HeightMapZRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="Height map Z filter radius" Minimum="0" Maximum="64" Value="{Binding HeightMapZRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding HeightMapZRadius}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="XY smoothing passes" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="10" Value="{Binding HeightMapSmoothLevel}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="Height map XY smoothing passes" Minimum="0" Maximum="10" Value="{Binding HeightMapSmoothLevel}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding HeightMapSmoothLevel}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="The filtered surface is shared by height map, depth map, and height projection." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             </StackPanel>
@@ -230,18 +230,18 @@
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="HEIGHT PROJECTION" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
               <TextBlock Text="Sampling direction" Margin="0,10,0,5" />
-              <ComboBox ItemsSource="{Binding ProjectionModes}" SelectedItem="{Binding ProjectionMode}" />
+              <ComboBox AutomationProperties.Name="Height projection sampling direction" ItemsSource="{Binding ProjectionModes}" SelectedItem="{Binding ProjectionMode}" />
               <TextBlock Text="Surface offset" Margin="0,10,0,5" />
-              <Slider Minimum="{Binding MinimumProjectionDepth}" Maximum="{Binding MaximumProjectionDepth}" Value="{Binding ProjectionOffset}" SmallChange="0.25" />
+              <Slider AutomationProperties.Name="Height projection surface offset" Minimum="{Binding MinimumProjectionDepth}" Maximum="{Binding MaximumProjectionDepth}" Value="{Binding ProjectionOffset}" SmallChange="0.25" />
               <TextBlock Text="{Binding ProjectionOffset, StringFormat=F2}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Start depth" Margin="0,10,0,5" />
-              <Slider Minimum="{Binding MinimumProjectionDepth}" Maximum="{Binding MaximumProjectionDepth}" Value="{Binding ProjectionStartDepth}" SmallChange="0.25" />
+              <Slider AutomationProperties.Name="Height projection start depth" Minimum="{Binding MinimumProjectionDepth}" Maximum="{Binding MaximumProjectionDepth}" Value="{Binding ProjectionStartDepth}" SmallChange="0.25" />
               <TextBlock Text="{Binding ProjectionStartDepth, StringFormat=F2}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Projection range" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="{Binding MaximumProjectionDepth}" Value="{Binding ProjectionRange}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="Height projection range" Minimum="0" Maximum="{Binding MaximumProjectionDepth}" Value="{Binding ProjectionRange}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding ProjectionRange}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Projection threshold" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="1" Value="{Binding ProjectionThreshold}" SmallChange="0.01" />
+              <Slider AutomationProperties.Name="Height projection threshold" Minimum="0" Maximum="1" Value="{Binding ProjectionThreshold}" SmallChange="0.01" />
               <TextBlock Text="{Binding ProjectionThreshold, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
             </StackPanel>
 
@@ -258,47 +258,47 @@
               <TextBlock Text="Minimum / maximum threshold" Margin="0,10,0,5" />
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <TextBox Text="{Binding MinimumThreshold, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBox Grid.Column="2" Text="{Binding MaximumThreshold, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox AutomationProperties.Name="Minimum threshold" Text="{Binding MinimumThreshold, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox AutomationProperties.Name="Maximum threshold" Grid.Column="2" Text="{Binding MaximumThreshold, UpdateSourceTrigger=PropertyChanged}" />
               </Grid>
               <TextBlock Text="Threshold interval" Margin="0,10,0,5" />
-              <TextBox Text="{Binding ThresholdInterval, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBox AutomationProperties.Name="Threshold interval" Text="{Binding ThresholdInterval, UpdateSourceTrigger=PropertyChanged}" />
               <TextBlock Text="Closing radius" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="50" Value="{Binding ClosingRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="Threshold sweep closing radius" Minimum="0" Maximum="50" Value="{Binding ClosingRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding ClosingRadius}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Minimum invalid-structure area" Margin="0,10,0,5" />
-              <TextBox Text="{Binding MinimumInvalidStructureArea, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBox AutomationProperties.Name="Threshold sweep minimum invalid-structure area" Text="{Binding MinimumInvalidStructureArea, UpdateSourceTrigger=PropertyChanged}" />
             </StackPanel>
 
             <StackPanel Visibility="{Binding IsDsltOperation, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="DSLT" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
               <TextBlock Text="Direction subdivision level" Margin="0,10,0,5" />
-              <Slider Minimum="1" Maximum="10" Value="{Binding DirectionLevel}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="DSLT direction subdivision level" Minimum="1" Maximum="10" Value="{Binding DirectionLevel}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding DirectionLevel}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Line kernel" Margin="0,10,0,5" />
-              <ComboBox ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding DsltKernel}" />
+              <ComboBox AutomationProperties.Name="DSLT line kernel" ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding DsltKernel}" />
               <TextBlock Text="Z correction factor" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="1" Value="{Binding ZCorrectionFactor}" SmallChange="0.01" />
+              <Slider AutomationProperties.Name="DSLT Z correction factor" Minimum="0" Maximum="1" Value="{Binding ZCorrectionFactor}" SmallChange="0.01" />
               <TextBlock Text="{Binding ZCorrectionFactor, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Preview offset C (legacy scale)" Margin="0,10,0,5" />
-              <Slider Minimum="0" Maximum="200" Value="{Binding PreviewOffset}" SmallChange="1" />
+              <Slider AutomationProperties.Name="DSLT preview offset C" Minimum="0" Maximum="200" Value="{Binding PreviewOffset}" SmallChange="1" />
               <TextBlock Text="{Binding PreviewOffset, StringFormat=F1}" Foreground="{StaticResource AccentBrush}" />
 
               <StackPanel Visibility="{Binding IsDsltSegmentation, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <TextBlock Text="Core C minimum / maximum (capture pending)" Margin="0,12,0,5" />
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                  <TextBox Text="{Binding MinimumC, UpdateSourceTrigger=PropertyChanged}" />
-                  <TextBox Grid.Column="2" Text="{Binding MaximumC, UpdateSourceTrigger=PropertyChanged}" />
+                  <TextBox AutomationProperties.Name="DSLT core C minimum" Text="{Binding MinimumC, UpdateSourceTrigger=PropertyChanged}" />
+                  <TextBox AutomationProperties.Name="DSLT core C maximum" Grid.Column="2" Text="{Binding MaximumC, UpdateSourceTrigger=PropertyChanged}" />
                 </Grid>
                 <TextBlock Text="C interval" Margin="0,10,0,5" />
-                <TextBox Text="{Binding CInterval, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox AutomationProperties.Name="DSLT C interval" Text="{Binding CInterval, UpdateSourceTrigger=PropertyChanged}" />
                 <TextBlock Text="Closing radius" Margin="0,10,0,5" />
-                <Slider Minimum="0" Maximum="50" Value="{Binding ClosingRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
+                <Slider AutomationProperties.Name="DSLT closing radius" Minimum="0" Maximum="50" Value="{Binding ClosingRadius}" TickFrequency="1" IsSnapToTickEnabled="True" />
                 <TextBlock Text="{Binding ClosingRadius}" Foreground="{StaticResource AccentBrush}" />
                 <TextBlock Text="Minimum invalid-structure area" Margin="0,10,0,5" />
-                <TextBox Text="{Binding MinimumInvalidStructureArea, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox AutomationProperties.Name="DSLT minimum invalid-structure area" Text="{Binding MinimumInvalidStructureArea, UpdateSourceTrigger=PropertyChanged}" />
               </StackPanel>
 
               <Button Content="Calculate work estimate" Command="{Binding EstimateCommand}" Margin="0,14,0,0" Background="#39475A" Foreground="White" />
@@ -308,9 +308,9 @@
             </StackPanel>
 
             <TextBlock Text="Connectivity" Margin="0,14,0,5" />
-            <ComboBox ItemsSource="{Binding Connectivities}" SelectedItem="{Binding Connectivity}" />
+            <ComboBox AutomationProperties.Name="Connectivity" ItemsSource="{Binding Connectivities}" SelectedItem="{Binding Connectivity}" />
             <TextBlock Text="{Binding MinimumComponentSizeLabel}" Margin="0,10,0,5" />
-            <TextBox Text="{Binding MinimumComponentSize, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBox AutomationProperties.Name="Minimum component size" Text="{Binding MinimumComponentSize, UpdateSourceTrigger=PropertyChanged}" />
 
             <StackPanel Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
@@ -323,7 +323,7 @@
                 <Button Content="Clear" Command="{Binding ClearSelectionCommand}" Background="#39475A" Foreground="White" />
               </WrapPanel>
               <TextBlock Text="Morphology iterations" Margin="0,6,0,5" />
-              <Slider Minimum="1" Maximum="64" Value="{Binding EditIterations}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <Slider AutomationProperties.Name="Label editing morphology iterations" Minimum="1" Maximum="64" Value="{Binding EditIterations}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding EditIterations}" Foreground="{StaticResource AccentBrush}" />
               <WrapPanel Margin="0,8,0,0">
                 <Button Content="Merge" Command="{Binding MergeSelectionCommand}" />
@@ -336,7 +336,7 @@
             </StackPanel>
             </StackPanel>
 
-            <ProgressBar Height="7" Margin="0,20,0,12" Minimum="0" Maximum="100" Value="{Binding Progress}" Foreground="{StaticResource AccentBrush}" />
+            <ProgressBar AutomationProperties.Name="Operation progress" Height="7" Margin="0,20,0,12" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}" Foreground="{StaticResource AccentBrush}" />
             <WrapPanel>
               <Button Content="Run" Command="{Binding RunCommand}" MinWidth="100" />
               <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="100" Background="#39475A" Foreground="White" />
