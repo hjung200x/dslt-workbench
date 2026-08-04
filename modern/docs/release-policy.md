@@ -16,6 +16,12 @@ SHA-256 checksum file. The archive contains:
 tests the selected native backend unless `-SkipNativeBuild` is supplied by a CI
 job that already did so, publishes the WPF app, writes build metadata, creates
 the archive and checksum, and invokes `verify-preview-package.ps1`.
+On a validation host without the C++ workload, `-SkipNativeBuild` may be paired
+with `-PrebuiltCudaArtifactDirectory` and `-PrebuiltCudaSourceCommit`. This path
+is accepted only when the artifact commit is an ancestor, `modern/native` is
+unchanged between that commit and the package commit, and the complete CUDA
+artifact runtime suite passes again. `BUILD-INFO.json` records both the package
+and native source commits.
 It refuses a dirty Git worktree, a non-preview version, or a preservation tag
 that no longer resolves to the recorded upstream baseline.
 
