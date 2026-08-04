@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "datasetName": "PlantSeg core datasets",
+  "projectUrl": "https://osf.io/uzq3w/",
+  "paperDoi": "10.7554/eLife.57613",
+  "licenseStatus": "No dataset license was declared by the OSF API on 2026-08-04; download in place and do not redistribute without separate permission review.",
+  "items": [
+    {
+      "role": "gate-candidate",
+      "acquisitionId": "lateral-root-movie-3",
+      "organ": "lateral-root-primordium",
+      "split": "train",
+      "nodeId": "9x3g2",
+      "fileId": "5f86d09e084712010efda278",
+      "fileGuid": "6gu8h",
+      "name": "Movie3_T00002_crop_gt.h5",
+      "size": 22319128,
+      "sha256": "feb98780f6c78b961bb5d18757feb8b00a85140b0959b8e62fe4137c8e06c243",
+      "spacingUm": { "x": 0.1625, "y": 0.1625, "z": 0.25 },
+      "representation": { "voxelType": "uint8", "channels": 1 }
+    },
+    {
+      "role": "gate-candidate",
+      "acquisitionId": "lateral-root-movie-1",
+      "organ": "lateral-root-primordium",
+      "split": "train",
+      "nodeId": "9x3g2",
+      "fileId": "5f86cf7dd85b7000fe656928",
+      "fileGuid": "r97av",
+      "name": "Movie1_t00009_crop_gt.h5",
+      "size": 33182649,
+      "sha256": "57a68d6533a4f6090b184aa7b02e49fd1225223868cdcd83338c6cab89ebee2f",
+      "spacingUm": { "x": 0.1625, "y": 0.1625, "z": 0.25 },
+      "representation": { "voxelType": "uint16", "channels": 1 }
+    },
+    {
+      "role": "gate-candidate",
+      "acquisitionId": "ovule-N405",
+      "organ": "ovule",
+      "split": "train",
+      "nodeId": "x9yns",
+      "fileId": "5f872d7437b6bb011630a8e1",
+      "fileGuid": "kjhcw",
+      "name": "N_405_A_ds2x.h5",
+      "size": 20409303,
+      "sha256": "8d5d0386f2d43f33707b8e23df9f92e6195887f45d38023e8fe158d82954c26c",
+      "spacingUm": { "x": 0.075, "y": 0.075, "z": 0.235 },
+      "representation": { "voxelType": "float32", "channels": 1 }
+    },
+    {
+      "role": "gate-candidate",
+      "acquisitionId": "ovule-N422",
+      "organ": "ovule",
+      "split": "train",
+      "nodeId": "x9yns",
+      "fileId": "5f872c1c37b6bb012030bac8",
+      "fileGuid": "n4b36",
+      "name": "N_422_ds2x.h5",
+      "size": 39350499,
+      "sha256": "b8294e57545d4d59bb776c56dc4b5feba7bb6a62646772313963301a8870b6f9",
+      "spacingUm": { "x": 0.075, "y": 0.075, "z": 0.235 },
+      "representation": {
+        "voxelType": "uint8",
+        "channels": 2,
+        "channelNote": "The acquired channel is duplicated solely to exercise HyperStack channel interoperability."
+      }
+    },
+    {
+      "role": "gate-candidate",
+      "acquisitionId": "ovule-N449",
+      "organ": "ovule",
+      "split": "train",
+      "nodeId": "x9yns",
+      "fileId": "5f87267e0847120136fdd5a3",
+      "fileGuid": "ft257",
+      "name": "N_449_ds2x.h5",
+      "size": 44209979,
+      "sha256": "132857f7e8ae7ee54d87e4c45f4e1c231ab05e73db407cc072e3b5c0ca3fed95",
+      "spacingUm": { "x": 0.075, "y": 0.075, "z": 0.235 },
+      "representation": { "voxelType": "uint16", "channels": 1 }
+    },
+    {
+      "role": "spare",
+      "acquisitionId": "lateral-root-movie-2",
+      "organ": "lateral-root-primordium",
+      "split": "train",
+      "nodeId": "9x3g2",
+      "fileId": "5f86daa6d85b70010c65700c",
+      "fileGuid": "y5kb3",
+      "name": "Movie2_T00000_crop_gt.h5",
+      "size": 89091604,
+      "sha256": "1b11243770139a91e80b6871e13993519cf676ed6b615f6a6c94059d503cf49f",
+      "spacingUm": { "x": 0.1625, "y": 0.1625, "z": 0.25 },
+      "representation": { "voxelType": "float32", "channels": 1 }
+    }
+  ]
+}

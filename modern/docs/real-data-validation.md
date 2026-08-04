@@ -36,6 +36,82 @@ linking the sidecar to the candidate labels.
 Do not commit private microscopy data. `modern/validation/data/`, local
 manifests, and generated reports are ignored by Git.
 
+### Fetch and convert the public PlantSeg candidate cohort
+
+Download the five locked gate candidates. Add `-IncludeSpare` for the sixth
+independent acquisition:
+
+```powershell
+.\modern\scripts\fetch-public-plantseg-cohort.ps1
+```
+
+Convert each HDF5 source into a Workbench input and signed label TIFF using the
+spacing and representation stored in
+`modern/validation/public-plantseg-cohort.lock.json`:
+
+```powershell
+dotnet run --project modern\tools\Dslt.Validation.Prepare -- `
+  import-plantseg-hdf5 `
+  --input modern\validation\data\public-plantseg-hdf5\Movie3_T00002_crop_gt.h5 `
+  --output-volume modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_input.tif `
+  --output-labels modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_reference.tif `
+  --spacing-x 0.1625 --spacing-y 0.1625 --spacing-z 0.25 --unit um `
+  --voxel-type uint8 --channels 1
+```
+
+The conversion can also be applied to every selected case directly from the
+lock (use `-Force` only when intentionally regenerating existing local
+outputs):
+
+```powershell
+.\modern\scripts\prepare-public-plantseg-cohort.ps1
+```
+
+The `uint16` and `float32` variants preserve normalized intensity, and a
+two-channel variant duplicates the acquired channel only to test HyperStack
+interoperability. It must not be described as a native multichannel
+acquisition. Source HDF5 files and converted volumes remain ignored local
+data; commit only the lock, scripts, path-independent manifests, and reports.
+
+### Generate a production DSLT candidate without the UI
+
+`Dslt.Validation.Candidate` loads the same TIFF path as the WPF application and
+executes the production `DsltSegmentation` operation through the native C ABI.
+Use `--estimate-only` first; it rejects an unsafe memory/work estimate without
+starting segmentation:
+
+```powershell
+dotnet run --project modern\tools\Dslt.Validation.Candidate --configuration Release -- `
+  --input modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_crop_gt.input.uint8.1c.tif `
+  --native-directory modern\native\out\build\windows-cuda\Release `
+  --backend cuda --radius 1 --direction-level 1 --estimate-only
+```
+
+Run the candidate with an aligned reference and an ignored output base to save
+the int32 payload, signed label TIFF, and provenance 1.8 sidecar before metric
+evaluation:
+
+```powershell
+dotnet run --project modern\tools\Dslt.Validation.Candidate --configuration Release -- `
+  --input modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_crop_gt.input.uint8.1c.tif `
+  --reference modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_crop_gt.reference.signed.tif `
+  --output-base modern\validation\data\public-plantseg-hdf5\candidates\Movie3_T00002_dl1_c0 `
+  --native-directory modern\native\out\build\windows-cuda\Release `
+  --backend cuda --radius 1 --direction-level 1 `
+  --minimum-c 0 --maximum-c 0 --c-interval 0.002 `
+  --closing-radius 2 --minimum-invalid-structure-area 500 `
+  --reference-background 0 --candidate-background -1
+```
+
+Reference existence, dimensions, spacing, and unit are checked before the
+expensive operation. Existing output files are also rejected; use
+`--force-output` only when intentionally replacing the exact output base. Exit
+code `0` means the optional reference metrics passed, `1` means a valid report
+failed the v1 thresholds, and `2` means preflight or execution failed. A
+release-evidence candidate must be built with the exact 40-hex
+`SourceRevisionId`; exploratory local output with an unavailable source identity
+cannot be admitted to a schema-2 v1 manifest.
+
 ### Normalize an external reference mask
 
 Public and laboratory reference masks are often compressed unsigned or binary

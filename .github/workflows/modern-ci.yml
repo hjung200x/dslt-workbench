@@ -34,6 +34,8 @@ jobs:
         run: dotnet build modern/tools/Dslt.Validation/Dslt.Validation.csproj --configuration Release
       - name: Build real-data preparation tool
         run: dotnet build modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj --configuration Release
+      - name: Build headless real-data candidate tool
+        run: dotnet build modern/tools/Dslt.Validation.Candidate/Dslt.Validation.Candidate.csproj --configuration Release
       - name: Test fail-closed v1 release evidence gate
         shell: pwsh
         run: ./modern/scripts/test-v1-release-evidence.ps1

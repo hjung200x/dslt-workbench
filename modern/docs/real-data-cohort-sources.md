@@ -21,7 +21,32 @@ same acquisition count once, so these files alone cannot meet the five-unique-
 acquisition release rule. The source list also provides no accepted label
 output; legacy output or expert review is still required.
 
-## Priority 2: public pipeline preflight
+## Priority 2: public plant-cell volumetric references
+
+The PlantSeg paper's public core datasets contain real 3D plant microscopy
+volumes and voxel-aligned instance labels. The Workbench source lock is
+`modern/validation/public-plantseg-cohort.lock.json`; it selects distinct
+lateral-root movies and ovule specimens instead of counting multiple time
+points from one movie as separate acquisitions. `fetch-public-plantseg-cohort.ps1`
+downloads the original HDF5 byte streams and verifies their OSF SHA-256 values.
+
+The five gate candidates cover two native Z spacings and the Workbench
+`uint8`, `uint16`, and `float32` input paths. Numeric type variants preserve the
+same normalized acquired intensities. The two-channel candidate duplicates the
+single acquired channel only for HyperStack interoperability; it is not a
+native multichannel observation. This limitation must remain explicit in the
+validation record.
+
+The OSF project did not declare a dataset license through its API when audited
+on 2026-08-04. The lock therefore supports download-in-place and deliberately
+does not redistribute the data. These cases are strong plant-cell pipeline
+candidates, but a curator must still approve `representative-real`
+classification for the intended DSLT leaf workflow.
+
+- [PlantSeg core dataset project](https://osf.io/uzq3w/)
+- [PlantSeg paper](https://doi.org/10.7554/eLife.57613)
+
+## Priority 3: public pipeline preflight
 
 The [Broad Bioimage Benchmark Collection](https://bbbc.broadinstitute.org/)
 provides real microscopy data and ground truth with explicit licensing. These
