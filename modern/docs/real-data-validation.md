@@ -76,8 +76,9 @@ acquisition. Source HDF5 files and converted volumes remain ignored local
 data; commit only the lock, scripts, path-independent manifests, and reports.
 
 For parameter exploration, create an aligned physical crop from the same locked
-HDF5 raw/reference pair. A crop is not a substitute for the final full-volume
-gate:
+HDF5 raw/reference pair. When crop coordinates are supplied, the importer uses
+the same HDF5 hyperslab for raw and reference data instead of materializing the
+two full volumes. A crop is not a substitute for the final full-volume gate:
 
 ```powershell
 dotnet run --project modern\tools\Dslt.Validation.Prepare --configuration Release -- `
@@ -142,15 +143,32 @@ processing step, every extracted label is selected as a marker, and Watershed
 fills the remaining boundary voxels as the separate final operation described
 by the paper and version 1.11 manual.
 
-An exploratory CUDA run on the documented Movie3 crop used the same
-preprocessing and segmentation settings except for a single-value DSLT sweep
-of `minimum-c = maximum-c = -0.036`. It produced 26/26 foreground objects,
-Dice `0.9996525032`, volume difference `0.0001531063`, and HD95 `0` voxels.
-This crop was also used to choose the parameter, its development provenance has
-no release source identity, and it is therefore tuning evidence only—not an
-independent test result or v1.0 release evidence. The released manual preset
-remains the UI default; dataset-specific parameters belong in each candidate's
-provenance.
+A source-locked exploratory CUDA run on the documented Movie3 crop used the
+same preprocessing and segmentation settings except for a single-value DSLT
+sweep of `minimum-c = maximum-c = -0.036`. It produced 26/26 foreground
+objects, Dice `0.9996525032`, volume difference `0.0001531063`, and HD95 `0`
+voxels. This crop was also used to choose the parameter, so it is tuning
+evidence only, not an independent test result or v1.0 release evidence.
+
+The value was then held fixed on central crops from the other four locked
+acquisitions. None passed, so the Movie3 setting must not be presented as a
+general preset:
+
+| Case | Role | Objects candidate/reference | Dice | Volume difference | HD95 | Gate |
+|---|---|---:|---:|---:|---:|---:|
+| Movie3 | parameter tuning | 26/26 | 0.999653 | 0.0153% | 0 | pass |
+| Movie1 | fixed-parameter check | 111/6 | 0.999470 | 0.1060% | 9 | fail |
+| N405 | fixed-parameter check | 99/149 | 0.771235 | 58.6053% | 46.1519 | fail |
+| N422 | fixed-parameter check | 130/172 | 0.886910 | 24.6204% | 34.7707 | fail |
+| N449 | fixed-parameter check | 140/168 | 0.786865 | 52.9879% | 45.2769 | fail |
+
+The exact crop origins, input/reference hashes, DSLT seed hashes, final output
+hashes, source commits, parameters, and limitations are recorded in
+`modern/validation/public-plantseg-crop-preflight.json`. This record is
+classified as `external-pipeline-preflight`; PlantSeg lateral-root and ovule
+data have not been accepted as representative DSLT leaf evidence. The released
+manual preset remains the UI default, while dataset-specific parameters belong
+in each candidate's provenance.
 
 ### Normalize an external reference mask
 

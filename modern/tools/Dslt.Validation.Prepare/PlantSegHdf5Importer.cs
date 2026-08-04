@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
 using PureHDF;
+using PureHDF.Selections;
 
 namespace Dslt.Validation.Prepare;
 
@@ -69,22 +70,22 @@ public static class PlantSegHdf5Importer
         if (!rawDimensions.SequenceEqual(labelDimensions))
             throw new InvalidDataException("PlantSeg raw and label datasets must have identical ZYX dimensions.");
 
-        var raw = rawDataset.Read<byte[]>();
-        var sourceLabels = labelDataset.Read<ushort[]>();
-        var voxelCount = checked(rawDimensions[0] * rawDimensions[1] * rawDimensions[2]);
-        if (raw.Length != voxelCount || sourceLabels.Length != voxelCount)
-            throw new InvalidDataException("PlantSeg dataset element count does not match its declared dimensions.");
-
         var sourceDepth = rawDimensions[0];
         var sourceHeight = rawDimensions[1];
         var sourceWidth = rawDimensions[2];
         var crop = options.Crop ?? new PlantSegCrop(0, 0, 0, sourceWidth, sourceHeight, sourceDepth);
         ValidateCrop(crop, sourceWidth, sourceHeight, sourceDepth);
-        if (options.Crop is not null)
-        {
-            raw = Crop(raw, sourceWidth, sourceHeight, sourceDepth, crop);
-            sourceLabels = Crop(sourceLabels, sourceWidth, sourceHeight, sourceDepth, crop);
-        }
+        var fileSelection = options.Crop is null
+            ? null
+            : new HyperslabSelection(
+                rank: 3,
+                starts: [(ulong)crop.Z, (ulong)crop.Y, (ulong)crop.X],
+                blocks: [(ulong)crop.Depth, (ulong)crop.Height, (ulong)crop.Width]);
+        var raw = rawDataset.Read<byte[]>(fileSelection: fileSelection);
+        var sourceLabels = labelDataset.Read<ushort[]>(fileSelection: fileSelection);
+        var voxelCount = checked(crop.Width * crop.Height * crop.Depth);
+        if (raw.Length != voxelCount || sourceLabels.Length != voxelCount)
+            throw new InvalidDataException("PlantSeg dataset selection count does not match the requested crop dimensions.");
         var labels = new int[sourceLabels.Length];
         for (var index = 0; index < sourceLabels.Length; index++) labels[index] = sourceLabels[index];
 
@@ -142,27 +143,6 @@ public static class PlantSegHdf5Importer
             checked((long)crop.Z + crop.Depth) > depth)
             throw new ArgumentOutOfRangeException(nameof(crop), "PlantSeg crop exceeds the source volume.");
         _ = checked(crop.Width * crop.Height * crop.Depth);
-    }
-
-    private static T[] Crop<T>(
-        T[] source,
-        int sourceWidth,
-        int sourceHeight,
-        int sourceDepth,
-        PlantSegCrop crop)
-    {
-        _ = sourceDepth;
-        var result = new T[checked(crop.Width * crop.Height * crop.Depth)];
-        var sourceSlice = checked(sourceWidth * sourceHeight);
-        var targetSlice = checked(crop.Width * crop.Height);
-        for (var z = 0; z < crop.Depth; z++)
-            for (var y = 0; y < crop.Height; y++)
-            {
-                var sourceOffset = checked((crop.Z + z) * sourceSlice + (crop.Y + y) * sourceWidth + crop.X);
-                var targetOffset = checked(z * targetSlice + y * crop.Width);
-                Array.Copy(source, sourceOffset, result, targetOffset, crop.Width);
-            }
-        return result;
     }
 
     private static int[] ValidateDimensions(ulong[] dimensions, string datasetName)
