@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -49,6 +50,7 @@ internal static class Program
                 throw new InvalidOperationException("Gray8 decoded samples were not preserved.");
 
             RunGray16RoundTripTest();
+            RunFileBackedLargeVolumeTest();
             RunGray32FloatRoundTripTest();
             RunUnsignedInt32RoundTripTest();
             RunUnsignedInt32MinIsWhiteTest();
@@ -275,6 +277,73 @@ internal static class Program
                 throw new InvalidOperationException("Gray16 decoded bytes were not bit-exact.");
             if (volume.Samples[^1] != 1f)
                 throw new InvalidOperationException("Gray16 processing samples were not channel-normalized.");
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    private static void RunFileBackedLargeVolumeTest()
+    {
+        const int width = 512;
+        const int height = 512;
+        const int depth = 32;
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-large-gray16-{Guid.NewGuid():N}.tif");
+        try
+        {
+            var encoder = new TiffBitmapEncoder();
+            for (var z = 0; z < depth; z++)
+            {
+                var pixels = new byte[checked(width * height * sizeof(ushort))];
+                for (var y = 0; y < height; y++)
+                for (var x = 0; x < width; x++)
+                {
+                    var value = checked((ushort)(x + y + z * 257));
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        pixels.AsSpan((y * width + x) * sizeof(ushort), sizeof(ushort)),
+                        value);
+                }
+                var bitmap = BitmapSource.Create(
+                    width,
+                    height,
+                    96,
+                    96,
+                    PixelFormats.Gray16,
+                    null,
+                    pixels,
+                    checked(width * sizeof(ushort)));
+                bitmap.Freeze();
+                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            }
+            using (var stream = File.Create(path)) encoder.Save(stream);
+
+            var timer = Stopwatch.StartNew();
+            var volume = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+            timer.Stop();
+            volume.Validate();
+
+            if (volume.Width != width || volume.Height != height || volume.Depth != depth || volume.Channels != 1)
+                throw new InvalidOperationException("The file-backed large TIFF dimensions were not preserved.");
+            if (volume.Source is not
+                {
+                    VoxelType: VolumeVoxelType.UnsignedInt16,
+                    Container: "TIFF",
+                } source ||
+                source.ChannelPlanarRawSamples.Length != checked(width * height * depth * sizeof(ushort)))
+            {
+                throw new InvalidOperationException("The file-backed large TIFF source bytes were not preserved.");
+            }
+
+            var lastRaw = BinaryPrimitives.ReadUInt16LittleEndian(source.ChannelPlanarRawSamples.AsSpan(^2));
+            const ushort expectedLast = 8_989;
+            if (lastRaw != expectedLast || Math.Abs(volume.Samples[^1] - 1) > 1e-6F)
+                throw new InvalidOperationException("The file-backed large TIFF voxel order or normalization changed.");
+            if (timer.Elapsed >= TimeSpan.FromSeconds(30))
+                throw new InvalidOperationException(
+                    $"The file-backed large TIFF decode exceeded 30 seconds: {timer.Elapsed}.");
+            Console.WriteLine(
+                $"File-backed 512 x 512 x 32 Gray16 TIFF decoded in {timer.Elapsed.TotalSeconds:F2} seconds.");
         }
         finally
         {
