@@ -6,6 +6,26 @@ using Dslt.Managed.Core.Models;
 
 namespace Dslt.Managed.Core.Provenance;
 
+public sealed record ProcessingStepProvenance(
+    OperationParameters Operation,
+    ProcessingBackend UsedBackend,
+    OutputKind OutputKind,
+    int OutputWidth,
+    int OutputHeight,
+    int OutputDepth,
+    string OutputSha256)
+{
+    public static ProcessingStepProvenance Create(OperationParameters operation, ProcessingResult result) =>
+        new(
+            operation,
+            result.UsedBackend,
+            result.OutputKind,
+            result.Width,
+            result.Height,
+            result.Depth,
+            ProcessingProvenance.ComputeOutputSha256(result));
+}
+
 public sealed record ProcessingProvenance(
     string SchemaVersion,
     string ValidationLevel,
@@ -21,6 +41,7 @@ public sealed record ProcessingProvenance(
     IReadOnlyList<VolumeChannelInfo> InputChannelMetadata,
     IReadOnlyList<double> InputTimeStampsSeconds,
     Calibration Calibration,
+    IReadOnlyList<ProcessingStepProvenance> ProcessingSteps,
     OperationParameters Operation,
     ProcessingBackend UsedBackend,
     OutputKind OutputKind,
@@ -45,14 +66,15 @@ public sealed record ProcessingProvenance(
         IReadOnlyList<string>? editHistory = null,
         int outputOriginX = 0,
         int outputOriginY = 0,
-        int outputOriginZ = 0)
+        int outputOriginZ = 0,
+        IReadOnlyList<ProcessingStepProvenance>? processingSteps = null)
     {
         ReadOnlySpan<byte> bytes = input.Source is null
             ? MemoryMarshal.AsBytes(input.Samples.AsSpan())
             : input.Source.ChannelPlanarRawSamples;
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         return new ProcessingProvenance(
-            "1.8",
+            "1.9",
             "synthetic-data-validated",
             ResolveSourceCommit(),
             DateTimeOffset.UtcNow,
@@ -66,6 +88,7 @@ public sealed record ProcessingProvenance(
             input.Source?.ChannelMetadata?.ToArray() ?? [],
             input.Source?.TimeStampsSeconds?.ToArray() ?? [],
             input.Calibration,
+            processingSteps?.ToArray() ?? [],
             operation,
             result.UsedBackend,
             result.OutputKind,
@@ -100,7 +123,7 @@ public sealed record ProcessingProvenance(
     public static string ComputeFloatSha256(ReadOnlySpan<float> values) =>
         ComputeLittleEndianSha256(values, static value => BitConverter.SingleToInt32Bits(value));
 
-    private static string ComputeOutputSha256(ProcessingResult result)
+    public static string ComputeOutputSha256(ProcessingResult result)
     {
         if (result.Labels is not null) return ComputeLabelSha256(result.Labels);
         if (result.FloatData is not null) return ComputeFloatSha256(result.FloatData);

@@ -67,7 +67,7 @@ equivalence; that remains gated by representative datasets.
   current labels are passed as seeds, the result is installed as an undoable
   label edit, and cancellation or failure preserves the seed result.
 - Store successful label-edit actions and structured output origin fields in
-  provenance schema 1.8 so an exported result records its source commit and distinguishes processing output
+  provenance schema 1.9 so an exported result records its source commit, ordered prior processing steps, and distinguishes processing output
   from subsequent manual edits and records Watershed seed hash/selection.
 
 ## Automated state checks

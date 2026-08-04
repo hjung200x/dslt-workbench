@@ -11,7 +11,7 @@ The legacy files at the repository root are retained as the behavioral and
 algorithmic reference. DSLT Workbench implementation files are confined to
 `modern/`.
 
-Workbench result provenance schema 1.8 records `sourceCommit` from the managed
+Workbench result provenance schema 1.9 records `sourceCommit` from the managed
 assembly's `SourceCommit` metadata. Release-candidate packaging sets that
 metadata from the exact Git commit in `BUILD-INFO.json`. Schema-2 real-data
 manifests repeat the same commit as `candidateSourceCommit`; the validator
@@ -19,10 +19,18 @@ rejects sidecars from any other build. Development builds without injected
 source identity record `unavailable` and cannot satisfy the v1 source-locked
 gate.
 
-Schema 1.8 also carries the additive optional fields `inputChannelMetadata`
+Schema 1.9 also carries `inputChannelMetadata`
 (channel name and RGBA display color) and `inputTimeStampsSeconds` when the
 source container provides them. Empty arrays preserve compatibility for TIFFs
-and synthetic volumes without those metadata blocks.
+and synthetic volumes without those metadata blocks. The always-present
+`processingSteps` array records each operation before the final operation,
+including its parameters, actual CPU/CUDA backend, output kind and dimensions,
+and canonical output SHA-256. An empty array means no prior processing was
+applied. A final Watershed candidate is accepted only when the last prior step
+is a hashed `DsltSegmentation` label result and its hash matches the Watershed
+seed hash. The source input or last prior step must also have the same
+dimensions as the final DSLT/Watershed result; a broken processing-chain
+adjacency is rejected before metric evaluation.
 
 `operation.depthColorEnabled` and `operation.depthColorRange` record the
 optional Z-projection RGB presentation. The hashed/exported Float32 output stays

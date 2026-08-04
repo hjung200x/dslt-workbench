@@ -40,15 +40,35 @@ internal static class RealDataValidationTests
                 candidatePaths.Add(candidatePath);
 
                 var decodedHash = Sha256(Encoding.UTF8.GetBytes($"decoded-input-{index}"));
+                var outputHash = ProcessingProvenance.ComputeLabelSha256(labels);
+                var usesWatershed = index == 0;
+                object[] processingSteps = usesWatershed
+                    ?
+                    [
+                        new
+                        {
+                            operation = new { operation = (int)ProcessingOperation.DsltSegmentation },
+                            usedBackend = (int)ProcessingBackend.Cpu,
+                            outputKind = (int)OutputKind.LabelsInt32,
+                            outputWidth = 4,
+                            outputHeight = 3,
+                            outputDepth = 2,
+                            outputSha256 = outputHash,
+                        },
+                    ]
+                    : [];
                 var provenancePath = Path.Combine(root, $"candidate-{index}.json");
                 await File.WriteAllTextAsync(
                     provenancePath,
                     JsonSerializer.Serialize(new
                     {
-                        schemaVersion = "1.8",
+                        schemaVersion = "1.9",
                         sourceCommit = CandidateSourceCommit,
                         validationLevel = "synthetic-data-validated",
                         inputSha256 = decodedHash,
+                        inputWidth = 4,
+                        inputHeight = 3,
+                        inputDepth = 2,
                         inputChannels = index is 1 or 3 ? 2 : 1,
                         inputVoxelType = index switch
                         {
@@ -60,13 +80,21 @@ internal static class RealDataValidationTests
                         },
                         inputContainer = "TIFF",
                         calibration,
-                        operation = new { operation = (int)ProcessingOperation.DsltSegmentation },
+                        processingSteps,
+                        operation = new
+                        {
+                            operation = (int)(usesWatershed
+                                ? ProcessingOperation.Watershed
+                                : ProcessingOperation.DsltSegmentation),
+                            seedLabelsSha256 = usesWatershed ? outputHash : null,
+                            selectedSeedLabels = usesWatershed ? new[] { 10, 20 } : null,
+                        },
                         usedBackend = (int)ProcessingBackend.Cpu,
                         outputKind = (int)OutputKind.LabelsInt32,
                         outputWidth = 4,
                         outputHeight = 3,
                         outputDepth = 2,
-                        outputSha256 = ProcessingProvenance.ComputeLabelSha256(labels),
+                        outputSha256 = outputHash,
                     }, JsonOptions));
                 cases.Add(new RealDataValidationCase
                 {
@@ -103,6 +131,39 @@ internal static class RealDataValidationTests
             var sourceLockedProvenancePath = Path.Combine(root, "candidate-0.json");
             var sourceLockedProvenance = JsonNode.Parse(
                 await File.ReadAllTextAsync(sourceLockedProvenancePath))!.AsObject();
+            var watershedSteps = sourceLockedProvenance["processingSteps"]!.DeepClone();
+            sourceLockedProvenance["processingSteps"] = new JsonArray();
+            await File.WriteAllTextAsync(
+                sourceLockedProvenancePath, sourceLockedProvenance.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                CandidateProvenanceSha256 = await Sha256FileAsync(sourceLockedProvenancePath),
+            };
+            await WriteManifestAsync(manifestPath, cases);
+            var watershedChainFailure = await RealDataValidationRunner.EvaluateAsync(manifestPath);
+            Assert(!watershedChainFailure.ReleaseGatePassed,
+                "Watershed provenance without a DSLT seed step must fail the release gate.");
+            Assert(watershedChainFailure.Cases[0].Failures.Any(
+                value => value.Contains("prior DsltSegmentation", StringComparison.Ordinal)),
+                "Watershed chain failure should identify the missing DSLT seed step.");
+
+            sourceLockedProvenance["processingSteps"] = watershedSteps;
+            sourceLockedProvenance["processingSteps"]![0]!["outputWidth"] = 5;
+            await File.WriteAllTextAsync(
+                sourceLockedProvenancePath, sourceLockedProvenance.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                CandidateProvenanceSha256 = await Sha256FileAsync(sourceLockedProvenancePath),
+            };
+            await WriteManifestAsync(manifestPath, cases);
+            var chainDimensionFailure = await RealDataValidationRunner.EvaluateAsync(manifestPath);
+            Assert(!chainDimensionFailure.ReleaseGatePassed,
+                "A processing step with dimensions unrelated to the final result must fail the release gate.");
+            Assert(chainDimensionFailure.Cases[0].Failures.Any(
+                value => value.Contains("immediately preceding", StringComparison.Ordinal)),
+                "Processing-chain dimension failure should identify the broken adjacency.");
+
+            sourceLockedProvenance["processingSteps"]![0]!["outputWidth"] = 4;
             sourceLockedProvenance["sourceCommit"] = new string('0', 40);
             await File.WriteAllTextAsync(
                 sourceLockedProvenancePath, sourceLockedProvenance.ToJsonString(JsonOptions));

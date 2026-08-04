@@ -352,8 +352,19 @@ var provenanceSphere = sphere with
         ],
         [0.0, 1.25]),
 };
+var preprocessingStep = ProcessingStepProvenance.Create(
+    new OperationParameters(
+        ProcessingOperation.SmoothGaussian,
+        ProcessingBackend.Cpu,
+        Radius: 1),
+    syntheticResult);
 await ResultPackageWriter.WriteAsync(
-    temporaryBase, provenanceSphere, operation, syntheticResult, ["selected label 3", "merged labels 3 and 4"]);
+    temporaryBase,
+    provenanceSphere,
+    operation,
+    syntheticResult,
+    ["selected label 3", "merged labels 3 and 4"],
+    processingSteps: [preprocessingStep]);
 var rawPath = temporaryBase + ".f32.raw";
 var jsonPath = temporaryBase + ".json";
 if (!File.Exists(rawPath) || !File.Exists(jsonPath))
@@ -361,7 +372,7 @@ if (!File.Exists(rawPath) || !File.Exists(jsonPath))
 var json = await File.ReadAllTextAsync(jsonPath);
 if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance validation level is missing.");
-if (!json.Contains("\"schemaVersion\": \"1.8\"", StringComparison.Ordinal) ||
+if (!json.Contains("\"schemaVersion\": \"1.9\"", StringComparison.Ordinal) ||
     !json.Contains("\"sourceCommit\":", StringComparison.Ordinal) ||
     !json.Contains("\"inputVoxelType\": \"Float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputContainer\": \"LSM\"", StringComparison.Ordinal) ||
@@ -369,6 +380,8 @@ if (!json.Contains("\"schemaVersion\": \"1.8\"", StringComparison.Ordinal) ||
     !json.Contains("\"name\": \"DAPI\"", StringComparison.Ordinal) ||
     !json.Contains("\"name\": \"GFP\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputTimeStampsSeconds\":", StringComparison.Ordinal) ||
+    !json.Contains("\"processingSteps\":", StringComparison.Ordinal) ||
+    !json.Contains("\"operation\": 5", StringComparison.Ordinal) ||
     !json.Contains("1.25", StringComparison.Ordinal) ||
     !json.Contains("\"outputSha256\":", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance input format identity is missing.");

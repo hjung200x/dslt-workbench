@@ -153,12 +153,12 @@ unambiguous `Cxy` and `Cz` values.
 |---|---|---|---|
 | `radius` | Rejects `<= 0`; active CUDA dispatcher supports odd lengths through 255, so the effective maximum is 127 | 0..100, default 14 | Integer 1..127; UI default 14 and UI maximum 100 |
 | `directionLevel` | Rejects `< 1`; builds `5*4^level+1` directions | 0..10, default 2 | Integer >= 1; checked direction-count/work estimate before allocation; default 2 |
-| `kernelType` | 0 Gaussian, 1 mean | Mean selected | Closed enum `Gaussian` or `Mean`; default `Mean` |
+| `kernelType` | 0 Gaussian, 1 mean | Version 1.11 manual preset is Gaussian; repository XAML selects mean | Closed enum `Gaussian` or `Mean`; UI uses the released manual preset `Gaussian` |
 | `zCorrectionFactor` | Multiplies `Cxy` to obtain `Cz` | 0..1, default 0.2 | Finite float >= 0; default 0.2 |
 | preview `C` | Negated, then scaled by 0.002 | 0..200, default 20 | Finite positive UI offset; default 20; adapter maps to core C values |
-| sweep C bounds | CLR scales all values by 0.002; core requires `minC <= maxC` | XAML names/labels/signs conflict | Core receives increasing finite `Cxy` values and a positive interval; UI compatibility is `capture-required` |
+| sweep C bounds | CLR negates the visible bounds and scales them and the positive interval by 0.002; core requires `minC <= maxC` | Version 1.11 manual preset: visible max C 10, min C 4, interval -1 | Core preset is `-0.020` through `-0.008` with interval `0.002`; installed-runtime behavior remains `capture-required` |
 | `closing` | Spherical maximum then minimum filter | 0..50, default 2 | Integer >= 0; default 2 |
-| `validArea` | Converted to volume by multiplying estimated wall thickness | 0..10000, default 500 | Integer >= 0; exact validation rule remains `capture-required` |
+| `validArea` | Converted to volume by multiplying estimated wall thickness | Version 1.11 manual preset 800; repository XAML 500 | Integer >= 0; UI uses the released manual preset 800; exact runtime validation remains `capture-required` |
 
 Levels can become computationally explosive. `dslt_estimate_operation` and the
 .NET `EstimateAsync` adapter calculate voxel count, direction count,
@@ -173,9 +173,11 @@ performance promises; future tiled execution may raise them without changing
 algorithm parameters.
 
 The legacy segmentation XAML declares values that conflict with slider ranges
-and swaps visible min/max labels (`MainWindow.xaml:694-728`). WPF coercion and
-the intended installed-binary defaults cannot be inferred reliably from source
-alone. Those sweep defaults remain `capture-required`.
+and swaps visible min/max labels (`MainWindow.xaml:694-728`). Workbench therefore
+uses the values visible in the preserved version 1.11 manual as its default
+preset and documents the exact core conversion above. Archived executable
+capture is still required to settle whether the installed binary coerces the
+malformed source declarations differently.
 
 ## Iterative segmentation workflow
 
@@ -214,8 +216,9 @@ count while avoiding a host fallback inside a CUDA request.
 
 Watershed is **not** called by this function. It is a separate selected-segment
 editing action (`filter3d.cpp:6877-6925`, `MainWindow.xaml.cs:1591-1595`). The
-paper-level end-to-end workflow may include watershed, but Workbench must not
-fold it into the DSLT threshold operation implicitly.
+headless validation pipeline can compose it explicitly after DSLT and records
+the DSLT label result as the hashed marker-seed step; the native DSLT operation
+itself remains unchanged.
 
 ## Non-DSLT threshold sweep workflow
 

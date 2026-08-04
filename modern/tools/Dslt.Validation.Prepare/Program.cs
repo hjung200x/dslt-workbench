@@ -59,10 +59,27 @@ static int RunImportPlantSegHdf5(string[] args)
         new PlantSegHdf5ImportOptions(
             calibration,
             voxelType,
-            ParseInt32(options, "--channels", 1)),
+            ParseInt32(options, "--channels", 1),
+            ParsePlantSegCrop(options)),
         options.ContainsKey("--force"));
     WriteJson(result);
     return 0;
+}
+
+static PlantSegCrop? ParsePlantSegCrop(IReadOnlyDictionary<string, string?> options)
+{
+    string[] keys = ["--crop-x", "--crop-y", "--crop-z", "--crop-width", "--crop-height", "--crop-depth"];
+    var present = keys.Count(options.ContainsKey);
+    if (present == 0) return null;
+    if (present != keys.Length)
+        throw new ArgumentException("PlantSeg crop requires --crop-x, --crop-y, --crop-z, --crop-width, --crop-height, and --crop-depth together.");
+    return new PlantSegCrop(
+        ParseInt32(options, "--crop-x", 0),
+        ParseInt32(options, "--crop-y", 0),
+        ParseInt32(options, "--crop-z", 0),
+        ParseInt32(options, "--crop-width", 0),
+        ParseInt32(options, "--crop-height", 0),
+        ParseInt32(options, "--crop-depth", 0));
 }
 
 static int RunNormalizeReference(string[] args)
@@ -192,7 +209,10 @@ static void PrintUsage()
             --input <plantseg.h5>
             --output-volume <input.tif> --output-labels <reference.tif>
             --spacing-x <value> --spacing-y <value> --spacing-z <value> --unit <name>
-            --voxel-type <uint8|uint16|float32> [--channels <1|2>] [--force]
+            --voxel-type <uint8|uint16|float32> [--channels <1|2>]
+            [--crop-x <x> --crop-y <y> --crop-z <z>
+             --crop-width <width> --crop-height <height> --crop-depth <depth>]
+            [--force]
 
         normalize-reference accepts compressed 1- to 16-bit grayscale/indexed TIFF.
         With --binary, other WIC-supported mask images such as PNG are also accepted.
@@ -202,10 +222,12 @@ static void PrintUsage()
         ZYX datasets. uint16 and float32 inputs are intensity-preserving normalized
         encodings of the same acquisition. Two-channel output duplicates the acquired
         signal only to exercise ImageJ HyperStack channel interoperability; it does not
-        claim a native multichannel acquisition. Both outputs are staged before commit.
+        claim a native multichannel acquisition. Optional crop coordinates use source
+        XYZ voxel coordinates and are recorded in the command result. Both outputs are
+        staged before commit.
 
         add-case derives voxel type, container, channels, Z spacing, and decoded input
-        hash from provenance 1.8. It verifies the candidate decoded-label hash and both
+        hash from provenance 1.9. It verifies the candidate decoded-label hash and both
         label volumes before atomically creating or extending a schema-2 manifest.
         Existing manifests require --append. Classification requires the explicit
         --representative-real acknowledgement.
@@ -224,7 +246,8 @@ static bool IsAddCaseOption(string key) => key.ToLowerInvariant() is
 
 static bool IsPlantSegOption(string key) => key.ToLowerInvariant() is
     "--input" or "--output-volume" or "--output-labels" or "--spacing-x" or "--spacing-y" or
-    "--spacing-z" or "--unit" or "--voxel-type" or "--channels" or "--force";
+    "--spacing-z" or "--unit" or "--voxel-type" or "--channels" or "--force" or
+    "--crop-x" or "--crop-y" or "--crop-z" or "--crop-width" or "--crop-height" or "--crop-depth";
 
 static bool IsCommonFlag(string key) => key.ToLowerInvariant() is
     "--binary" or "--force" or "--representative-real" or "--append";

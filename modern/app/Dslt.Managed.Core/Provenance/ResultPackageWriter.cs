@@ -21,6 +21,7 @@ public static class ResultPackageWriter
         int outputOriginX = 0,
         int outputOriginY = 0,
         int outputOriginZ = 0,
+        IReadOnlyList<ProcessingStepProvenance>? processingSteps = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
@@ -76,7 +77,8 @@ public static class ResultPackageWriter
             editHistory,
             outputOriginX,
             outputOriginY,
-            outputOriginZ);
+            outputOriginZ,
+            processingSteps);
         await using var stream = File.Create(metadataPath);
         await JsonSerializer.SerializeAsync(stream, provenance, JsonOptions, cancellationToken).ConfigureAwait(false);
     }

@@ -141,8 +141,13 @@ internal static class WorkflowViewModelTests
             "The work estimate summary was not exposed to the UI.");
         Assert(target.SelectedStage == WorkflowStage.Segment,
             "Selecting DSLT segmentation did not activate the segmentation stage.");
-        Assert(target.Radius == 14 && target.DirectionLevel == 2,
-            "The legacy DSLT radius and direction defaults were not applied.");
+        Assert(target.Radius == 14 && target.DirectionLevel == 2 &&
+               target.DsltKernel == DsltKernelType.Gaussian &&
+               Math.Abs(target.MinimumC - -0.020F) < 1e-6F &&
+               Math.Abs(target.MaximumC - -0.008F) < 1e-6F &&
+               Math.Abs(target.CInterval - 0.002F) < 1e-6F &&
+               target.MinimumInvalidStructureArea == 800 && target.ClosingRadius == 2,
+            "The documented DSLT v1.11 segmentation defaults were not applied.");
 
         target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.DsltThreshold);
