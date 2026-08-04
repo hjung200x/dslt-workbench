@@ -126,12 +126,12 @@ Only bundles produced from the repository's own reviewed commit should be
 executed. The script requires `nvidia-smi`, verifies the expected DLL/executable
 layout, reports the selected GPU, and propagates any native test failure.
 
-`cuda-runtime-parity` uses the `windows-cuda` preset on a self-hosted runner
-with the `Windows`, `X64`, and `NVIDIA` labels. It defines `DSLT_TEST_CUDA` and
-requires a usable NVIDIA device. Until such a runner is registered, this job is
-started only by an explicit `workflow_dispatch`; ordinary pushes run the hosted
-build gate without leaving an unserviceable job queued. Its native test suite
-checks:
+`cuda-runtime-parity` depends on `cuda-build-only`, downloads that job's exact
+artifact on a self-hosted runner with the `Windows`, `X64`, and `NVIDIA` labels,
+and runs the bundle through `run-cuda-artifact-tests.ps1`. The GPU host therefore
+needs a compatible NVIDIA driver but not CMake, MSVC, or a CUDA toolkit. The job
+is started only by an explicit `workflow_dispatch`; ordinary pushes run the
+hosted build gate without occupying the GPU host. Its native test suite checks:
 
 - CPU/CUDA output parity for every ported operation;
 - `Auto` selecting CUDA for a ported operation;
@@ -139,6 +139,24 @@ checks:
 - cancellation propagation; and
 - 100 repeated operations without more than 1 MiB apparent free-memory drift
   after kernel warm-up.
+
+The first fully automated hosted-build/self-hosted-runtime chain passed on
+2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `34f9f6ee3801acba889e06b1595eca91eed7c960` |
+| Workflow run | GitHub Actions run `30865538199` |
+| Hosted job | `cuda-build-only` passed |
+| GPU job | `cuda-runtime-parity` passed |
+| Runner | `SNUPCB-HJUNG-RTX4060-2` (`Windows`, `X64`, `NVIDIA`) |
+| GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| Persistence | Current-user scheduled task `DSLT Workbench GitHub Runner` |
+
+The runner is repository-scoped. Its logon task starts the official GitHub
+Actions runner v2.336.0 with limited user rights; the CUDA workflow remains
+manual-dispatch-only so ordinary pushes cannot occupy the local GPU host.
 
 Pointwise float parity uses an absolute tolerance of `1e-6`, which is stricter
 than the project-wide float gate (`abs <= 1e-5` or `rel <= 1e-4`). Binary

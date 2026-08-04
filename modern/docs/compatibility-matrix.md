@@ -29,7 +29,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Watershed | `Watershed` | scaffolded | CPU and CUDA selected-seed flooding, fixed 256 levels, legacy 6-neighbor priority, per-level label opening, crop, minimum seed size, cancellation, ABI and WPF undo/provenance fixtures implemented; voxel-exact RTX 4060 parity complete, archived-runtime comparison pending |
 | Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity fixtures; WPF edit fixture; crop dimension/origin/label bit-exact undo fixture |
 | Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |
-| Optional CUDA backend | `Auto`, `CPU`, `CUDA` execution policy | scaffolded | Hosted CUDA 13.2 NVCC/MSVC build plus RTX 4060 runtime parity completed through iterative DSLT segmentation, including exact masks/labels, cancellation, validation, and mixed-operation memory fixtures; automated GPU-fleet evidence pending |
+| Optional CUDA backend | `Auto`, `CPU`, `CUDA` execution policy | scaffolded | Hosted CUDA 13.2 NVCC/MSVC build plus registered RTX 4060 self-hosted runtime parity completed through iterative DSLT segmentation, including exact masks/labels, cancellation, validation, and mixed-operation memory fixtures; broader GPU-fleet and legacy-runtime comparison pending |
 | Win32/x86 build | None | excluded | Windows x64 policy |
 
 `pending-reference` algorithms are not exposed as completed UI actions. This
