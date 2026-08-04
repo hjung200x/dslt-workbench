@@ -21,6 +21,7 @@ internal static class WorkflowViewModelTests
     public static async Task RunAsync()
     {
         RunScrollSyncOnSta();
+        await RunOrthogonalViewExportTestsAsync();
         var engine = new FakeProcessingEngine();
         var files = new FakeWorkspaceFileService();
         using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
@@ -632,6 +633,54 @@ internal static class WorkflowViewModelTests
             "A mismatched segment TIFF replaced the last valid editable result.");
     }
 
+    private static async Task RunOrthogonalViewExportTestsAsync()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"dslt-orthogonal-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var xy = CreateGray8Bitmap(2, 1, [10, 20]);
+            var yz = CreateGray8Bitmap(1, 2, [30, 40]);
+            var zx = CreateGray8Bitmap(2, 2, [50, 60, 70, 80]);
+            var paths = await Task.Run(() => WpfWorkspaceFileService.WriteOrthogonalViews(
+                Path.Combine(directory, "planes.tif"), xy, yz, zx, CancellationToken.None));
+            Assert(paths.Select(Path.GetFileName).SequenceEqual(
+                    ["planes.tif", "planesYZ.tif", "planesZX.tif"]) &&
+                   ReadGray8Tiff(paths[0]).SequenceEqual(new byte[] { 10, 20 }) &&
+                   ReadGray8Tiff(paths[1]).SequenceEqual(new byte[] { 30, 40 }) &&
+                   ReadGray8Tiff(paths[2]).SequenceEqual(new byte[] { 50, 60, 70, 80 }),
+                "Orthogonal-view TIFF export did not preserve the legacy plane names or rendered pixels.");
+
+            var files = new FakeWorkspaceFileService();
+            var engine = new FakeProcessingEngine();
+            using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
+            var target = viewModel.Value;
+            await target.SaveSourceViewsCommand.ExecuteAsync();
+            Assert(files.LastOrthogonalViewName == "source" &&
+                   files.LastOrthogonalViews is { Length: 3 } sourceViews &&
+                   sourceViews[0].PixelWidth == target.SourceImage!.Width &&
+                   target.Status.Contains("Saved source XY/YZ/ZX TIFF views", StringComparison.Ordinal),
+                "The source orthogonal-view command did not export the rendered XY/YZ/ZX planes.");
+
+            target.SelectedOperation = target.Operations.Single(option =>
+                option.Operation == ProcessingOperation.Threshold3D);
+            await target.RunCommand.ExecuteAsync();
+            var previousResult = target.LastResult;
+            files.OrthogonalViewFailure = new IOException("simulated view export failure");
+            await target.SaveResultViewsCommand.ExecuteAsync();
+            Assert(files.LastOrthogonalViewName == "result" &&
+                   files.LastOrthogonalViews is { Length: 3 } resultViews &&
+                   ReferenceEquals(resultViews[0], target.ResultImage) &&
+                   ReferenceEquals(previousResult, target.LastResult) &&
+                   target.Status.Contains("workspace was preserved", StringComparison.OrdinalIgnoreCase),
+                "A result-view export failure changed the last valid result or hid recovery status.");
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static async Task RunProcessingChainTestsAsync()
     {
         var samples = Enumerable.Range(0, 48).Select(index => index / 47.0F).ToArray();
@@ -893,6 +942,26 @@ internal static class WorkflowViewModelTests
         return pixels;
     }
 
+    private static BitmapSource CreateGray8Bitmap(int width, int height, byte[] pixels)
+    {
+        var bitmap = BitmapSource.Create(
+            width, height, 96, 96, PixelFormats.Gray8, null, pixels, width);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static byte[] ReadGray8Tiff(string path)
+    {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var decoder = new TiffBitmapDecoder(
+            stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var frame = decoder.Frames.Single();
+        Assert(frame.Format == PixelFormats.Gray8, "Expected an exported Gray8 TIFF view.");
+        var pixels = new byte[checked(frame.PixelWidth * frame.PixelHeight)];
+        frame.CopyPixels(pixels, frame.PixelWidth, 0);
+        return pixels;
+    }
+
     private static void Assert(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
@@ -1062,10 +1131,26 @@ internal static class WorkflowViewModelTests
         public VolumeData? NextVolume { get; set; }
         public LabelTiffVolume? NextLabels { get; set; }
         public string? ExportBasePath { get; set; }
+        public string? LastOrthogonalViewName { get; private set; }
+        public BitmapSource[]? LastOrthogonalViews { get; private set; }
+        public Exception? OrthogonalViewFailure { get; set; }
         public Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken) =>
             Task.FromResult(NextVolume);
         public Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken) =>
             Task.FromResult(NextLabels);
+        public Task<IReadOnlyList<string>?> SaveOrthogonalViewsAsync(
+            string viewName,
+            BitmapSource xy,
+            BitmapSource yz,
+            BitmapSource zx,
+            CancellationToken cancellationToken)
+        {
+            LastOrthogonalViewName = viewName;
+            LastOrthogonalViews = [xy, yz, zx];
+            if (OrthogonalViewFailure is not null) throw OrthogonalViewFailure;
+            return Task.FromResult<IReadOnlyList<string>?>(
+                [$"{viewName}.tif", $"{viewName}YZ.tif", $"{viewName}ZX.tif"]);
+        }
         public string? ChooseExportBasePath() => ExportBasePath;
     }
 }

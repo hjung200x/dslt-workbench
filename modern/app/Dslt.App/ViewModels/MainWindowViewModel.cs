@@ -137,6 +137,12 @@ public sealed class MainWindowViewModel : ObservableObject
         GenerateSyntheticCommand = new RelayCommand(GenerateSynthetic, () => !IsBusy);
         OpenCommand = new AsyncRelayCommand(OpenAsync, () => !IsBusy);
         LoadSegmentsCommand = new AsyncRelayCommand(LoadSegmentsAsync, () => HasVolume && !IsBusy);
+        SaveSourceViewsCommand = new AsyncRelayCommand(
+            () => SaveOrthogonalViewsAsync(resultViews: false),
+            () => CanSaveOrthogonalViews(resultViews: false));
+        SaveResultViewsCommand = new AsyncRelayCommand(
+            () => SaveOrthogonalViewsAsync(resultViews: true),
+            () => CanSaveOrthogonalViews(resultViews: true));
         EstimateCommand = new AsyncRelayCommand(EstimateSelectedOperationAsync, CanEstimate);
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasResult && !IsBusy);
         RunCommand = new AsyncRelayCommand(RunSelectedOperationAsync, CanRun);
@@ -750,6 +756,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand GenerateSyntheticCommand { get; }
     public AsyncRelayCommand OpenCommand { get; }
     public AsyncRelayCommand LoadSegmentsCommand { get; }
+    public AsyncRelayCommand SaveSourceViewsCommand { get; }
+    public AsyncRelayCommand SaveResultViewsCommand { get; }
     public AsyncRelayCommand EstimateCommand { get; }
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand RunCommand { get; }
@@ -844,6 +852,35 @@ public sealed class MainWindowViewModel : ObservableObject
         catch (Exception error) when (error is not OperationCanceledException)
         {
             Status = $"Segment load failed; the previous result was preserved: {error.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SaveOrthogonalViewsAsync(bool resultViews)
+    {
+        var xy = (resultViews ? ResultImage : SourceImage) as BitmapSource;
+        var yz = (resultViews ? ResultYzImage : SourceYzImage) as BitmapSource;
+        var zx = (resultViews ? ResultZxImage : SourceZxImage) as BitmapSource;
+        if (xy is null || yz is null || zx is null) return;
+        IsBusy = true;
+        try
+        {
+            var name = resultViews ? "result" : "source";
+            var paths = await _files.SaveOrthogonalViewsAsync(
+                name, xy, yz, zx, CancellationToken.None);
+            if (paths is null) return;
+            Status = $"Saved {name} XY/YZ/ZX TIFF views: {string.Join(", ", paths.Select(Path.GetFileName))}.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Orthogonal-view export was cancelled; the workspace was preserved.";
+        }
+        catch (Exception error)
+        {
+            Status = $"Orthogonal-view export failed; the workspace was preserved: {error.Message}";
         }
         finally
         {
@@ -1502,6 +1539,11 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private bool CanEstimate() => HasVolume && _engine.IsAvailable && IsDsltOperation && !IsBusy;
 
+    private bool CanSaveOrthogonalViews(bool resultViews) => !IsBusy &&
+        (resultViews ? ResultImage : SourceImage) is BitmapSource &&
+        (resultViews ? ResultYzImage : SourceYzImage) is BitmapSource &&
+        (resultViews ? ResultZxImage : SourceZxImage) is BitmapSource;
+
     private bool CanRun() => HasVolume && _engine.IsAvailable && !IsBusy &&
         (!IsWatershed || (_editingSession is not null && _editingSession.Selection.Count > 0 &&
             _volume is not null && _editingSession.Width == _volume.Width &&
@@ -1512,6 +1554,8 @@ public sealed class MainWindowViewModel : ObservableObject
         GenerateSyntheticCommand.NotifyCanExecuteChanged();
         OpenCommand.NotifyCanExecuteChanged();
         LoadSegmentsCommand.NotifyCanExecuteChanged();
+        SaveSourceViewsCommand.NotifyCanExecuteChanged();
+        SaveResultViewsCommand.NotifyCanExecuteChanged();
         EstimateCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
         RunCommand.NotifyCanExecuteChanged();
