@@ -62,7 +62,10 @@ weights, threshold-crossing interpolation, and optional repeated XY smoothing.
 Normal and Z projections preserve the reference sampling and threshold rules.
 Depth maps run a two-pass squared-distance calculation for each output Z slice.
 These phases synchronize at cancellable boundaries and include their temporary
-volume and plane buffers in the VRAM preflight estimate.
+volume and plane buffers in the VRAM preflight estimate. Optional RGB depth
+coloring requests the same CUDA height surface, depth volume, and scalar Z
+projection sequentially; deterministic HSV-to-RGB byte composition occurs in
+the WPF presentation layer and does not introduce a separate CUDA result kind.
 
 Connected components propagate the minimum linear voxel index through each
 foreground component, then compact accepted roots in ascending index order.

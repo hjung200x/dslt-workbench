@@ -35,8 +35,13 @@ equivalence; that remains gated by representative datasets.
   native safety limits are rejected before processing.
 - Run long operations asynchronously with progress and an enabled cancellation
   command.
+- Optionally compose Z height projection as legacy HSV depth color with default
+  range 100. The scalar projection, height map, and depth map come from the
+  selected CPU/CUDA backend; the deterministic RGB24 display remains separate
+  from the exported scalar payload.
 - Preserve the last valid result and source volume after cancellation or
-  processing failure.
+  processing failure, including failures or cancellation during auxiliary
+  height/depth requests for RGB presentation.
 - Advance label results to the edit stage and export the result with its JSON
   provenance sidecar.
 - Select the label at the shared cursor, optionally add labels to the selection,
@@ -91,6 +96,10 @@ equivalence; that remains gated by representative datasets.
 16. a file-backed 512 x 512 x 32 Gray16 multipage TIFF decodes within the
     30-second gate while preserving dimensions, voxel type, 16 MiB of canonical
     source bytes, page/voxel order, and normalized maximum intensity.
+17. Z-only depth coloring preserves default/range parameters in provenance,
+    runs scalar projection, height map, and depth map in order, publishes one
+    RGB24 XY image, and matches the legacy HSV byte oracle. The native-CPU job
+    repeats the composition with actual C ABI outputs.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.

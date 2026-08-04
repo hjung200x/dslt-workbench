@@ -106,8 +106,8 @@ defaults, and legacy CPU/GPU path distinction are defined in
 `docs/height-map-spec.md`.
 
 The exact 3D Euclidean depth map, scalar Z/normal projection, range and offset
-semantics, threshold behavior, and display-layer boundary are defined in
-`docs/height-projection-spec.md`.
+semantics, threshold behavior, and Z-only RGB depth-color presentation are
+defined in `docs/height-projection-spec.md`.
 
 The current WPF workflow, state-preservation guarantees, responsive layout, and
 remaining interactive checks are tracked in `docs/ui-workflow.md`. Repeatable

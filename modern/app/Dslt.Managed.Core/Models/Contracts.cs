@@ -205,7 +205,9 @@ public sealed record OperationParameters(
     float ProjectionOffset = 0,
     float ProjectionStartDepth = 0,
     int ProjectionRange = 0,
-    float ProjectionThreshold = 0);
+    float ProjectionThreshold = 0,
+    bool DepthColorEnabled = false,
+    int DepthColorRange = 100);
 
 public sealed record ProcessingLabelState(
     int Width,

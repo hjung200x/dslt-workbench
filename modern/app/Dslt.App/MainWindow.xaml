@@ -240,6 +240,11 @@
               <TextBlock Text="Projection threshold" Margin="0,10,0,5" />
               <Slider AutomationProperties.Name="Height projection threshold" Minimum="0" Maximum="1" Value="{Binding ProjectionThreshold}" SmallChange="0.01" />
               <TextBlock Text="{Binding ProjectionThreshold, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
+              <CheckBox AutomationProperties.Name="Enable depth coloring" Content="Depth color (Z mode)" IsChecked="{Binding DepthColorEnabled}" IsEnabled="{Binding CanUseDepthColoring}" Margin="0,12,0,5" />
+              <TextBlock Text="Depth color range" Margin="0,5,0,5" />
+              <Slider AutomationProperties.Name="Depth color range" Minimum="1" Maximum="500" Value="{Binding DepthColorRange}" TickFrequency="1" IsSnapToTickEnabled="True" IsEnabled="{Binding CanUseDepthColoring}" />
+              <TextBlock Text="{Binding DepthColorRange}" Foreground="{StaticResource AccentBrush}" />
+              <TextBlock Text="Maps distance 0..range to HSV hue 0..270° while preserving projection intensity as brightness." Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             </StackPanel>
 
             <StackPanel Visibility="{Binding IsWatershed, Converter={StaticResource BooleanToVisibilityConverter}}">
