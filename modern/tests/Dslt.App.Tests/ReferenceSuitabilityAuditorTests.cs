@@ -15,11 +15,18 @@ internal static class ReferenceSuitabilityAuditorTests
 
     private static void TouchingInstancesRequireProtocolReview()
     {
-        int[] labels = [1, 1, 2, 2, 1, 1, 2, 2];
-        var result = ReferenceSuitabilityAuditor.Analyze(labels, 4, 2, 1);
+        int[] labels =
+        [
+            1, 1, 2, 2,
+            1, 1, 2, 2,
+            1, 1, 2, 2,
+            1, 1, 2, 2,
+        ];
+        var result = ReferenceSuitabilityAuditor.Analyze(labels, 4, 2, 2);
         Equal(ReferenceBoundaryRepresentation.TouchingInstances, result.BoundaryRepresentation, "touching representation");
-        Equal(2L, result.DifferentForegroundLabelFaceCount, "touching faces");
-        Equal(4L, result.DifferentForegroundLabelInterfaceVoxelCount, "touching voxels");
+        Equal(4L, result.DifferentForegroundLabelFaceCount, "touching faces");
+        Equal(8L, result.DifferentForegroundLabelInterfaceVoxelCount, "touching voxels");
+        Assert(result.IsThreeDimensional, "Touching-instance fixture must isolate the 3D rule from planar review.");
         Assert(result.RequiresReferenceProtocolReview, "Touching instance labels must require protocol review.");
     }
 
