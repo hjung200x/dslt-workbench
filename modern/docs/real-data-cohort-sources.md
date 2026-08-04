@@ -52,6 +52,24 @@ These microscopy files have no accepted DSLT leaf labels and are not
 representative leaf acquisitions. They validate the LSM input implementation
 only and contribute zero cases to the v1.0 segmentation metric gate.
 
+## Public Arabidopsis leaf input preflight
+
+The local public-data audit also found one `Col0_07_T1` uint16 ImageJ TIFF:
+`512 x 512 x 223`, one channel, with `0.758317 x 0.758317 x 0.599862 um`
+spacing. Workbench loads it and preserves its decoded pixels and calibration.
+The [MorphoGraphX data page](https://morphographx.org/data/) publishes an
+Arabidopsis leaf bundle with raw confocal data and meshes, but the retained
+local files contain no download metadata that conclusively binds this pair to
+that bundle. The source identity therefore remains curator-confirmation
+required.
+
+Its companion `.mgxm` begins with `MGXM 2.0` and follows the MorphoGraphX
+vertex/cell mesh serialization. It is not a voxel-aligned 3D label volume and
+cannot be passed to the current Dice/object-count/volume/HD95 validator. Exact
+hashes and the fail-closed admission result are recorded in
+[`public-clsm-leaf-preflight.json`](../validation/public-clsm-leaf-preflight.json).
+This is a useful leaf input case but contributes zero approved v1.0 cases.
+
 ## Priority 3: public plant-cell volumetric references
 
 The PlantSeg paper's public core datasets contain real 3D plant microscopy

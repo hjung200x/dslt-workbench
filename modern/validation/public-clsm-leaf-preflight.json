@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "classification": "input-only-leaf-preflight",
+  "capturedAtUtc": "2026-08-04T14:30:00Z",
+  "acquisitionId": "Col0_07_T1",
+  "source": {
+    "sourcePage": "https://morphographx.org/data/",
+    "probableBundle": "Kierzkowski 2019 Arabidopsis Leaf Fig5A-E 6S1A 8JK.tar.gz",
+    "bundleAttributionStatus": "probable-not-confirmed-from-retained-download-metadata",
+    "licenseStatus": "No dataset license was confirmed during this audit; do not redistribute these binaries."
+  },
+  "inputVolume": {
+    "name": "Col0_07_T1.tif",
+    "size": 10208931,
+    "md5": "d62ac782e57f8e8c90c1c6f6ed6a354e",
+    "sha256": "8195692bfd7711d76c41c8a11d6dbb8a684d86f7a0481a8a992538acadceff22",
+    "decodedSha256": "cfefb51daca9f6ac17f582c85f384b3da8d37f576db4d2315f3f235efc57f671",
+    "container": "TIFF",
+    "voxelType": "uint16",
+    "axes": "ZYX",
+    "dimensions": { "width": 512, "height": 512, "depth": 223, "channels": 1 },
+    "calibrationUm": { "x": 0.7583171314928489, "y": 0.7583171314928489, "z": 0.599862 },
+    "workbenchInspectionPassed": true
+  },
+  "companionMesh": {
+    "name": "Col0_07_T1.mgxm",
+    "size": 50199006,
+    "sha256": "29a60a08b3ad1947fe565b1683f8f880b047706e663b3bc3afc49331e460cb7c",
+    "magic": "MGXM 2.0",
+    "kind": "MorphoGraphX vertex/cell mesh with attributes",
+    "isVoxelAligned3dLabelVolume": false
+  },
+  "releaseAdmission": {
+    "distinctAcquisitionCount": 1,
+    "curatorRepresentativeLeafConfirmationAvailable": false,
+    "acceptedLegacyOrExpertVoxelLabelsAvailable": false,
+    "numericMetricGateRunnable": false,
+    "v1GateCaseCount": 0
+  },
+  "limitations": [
+    "The TIFF is a strong leaf-domain input candidate, but its exact download custody and bundle membership need curator confirmation.",
+    "MGXM is a surface/cellular mesh, not a voxel-aligned 3D label TIFF, so it cannot be compared by the current Dice, object-count, volume, and HD95 validator.",
+    "This is one acquisition and cannot satisfy the required five distinct representative acquisitions.",
+    "No binary is redistributed by the repository."
+  ]
+}
