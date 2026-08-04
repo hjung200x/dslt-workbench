@@ -53,6 +53,9 @@ conversion conflict. Their effective runtime defaults are intentionally marked
 The Workbench label model uses signed 32-bit values with `-1` as background.
 `LabelEditingSession` provides label selection, deterministic merge, 6/18/26
 connected-component split, crop, dilation, erosion, and bounded undo.
+It also preserves the manual's image-edge erosion clamp, select-all/deselect,
+active-channel mean-intensity selection, middle-click plane selection, Shift
+zoom, and keyboard command bindings.
 Crop is a dimension-changing undo transaction; result provenance schema 1.6+
 records its output origin in the source coordinate system as structured X/Y/Z
 fields in addition to the ordered edit history. Watershed records the complete

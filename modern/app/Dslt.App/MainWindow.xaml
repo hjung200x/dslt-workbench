@@ -5,6 +5,12 @@
         Title="DSLT Workbench" Width="1500" Height="920" MinWidth="900" MinHeight="500"
         Background="#0B1016" Foreground="#EEF3F8" FontFamily="Segoe UI">
   <Window.InputBindings>
+    <KeyBinding Key="O" Modifiers="Control" Command="{Binding OpenCommand}" />
+    <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
+    <KeyBinding Key="J" Modifiers="Alt" Command="{Binding MergeSelectionCommand}" />
+    <KeyBinding Key="S" Modifiers="Alt" Command="{Binding SplitSelectionCommand}" />
+    <KeyBinding Key="A" Modifiers="Alt" Command="{Binding SelectAllCommand}" />
+    <KeyBinding Key="D" Modifiers="Alt" Command="{Binding ClearSelectionCommand}" />
     <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoEditCommand}" />
   </Window.InputBindings>
   <Grid>
@@ -91,7 +97,7 @@
             <Grid>
               <TextBlock Text="SOURCE XY" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
               <ScrollViewer AutomationProperties.Name="Source XY view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
-                <Image Source="{Binding SourceImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
+                <Image Source="{Binding SourceImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" infra:LegacyImageInteractionBehavior.IsEnabled="True" infra:LegacyImageInteractionBehavior.Plane="Xy">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
               </ScrollViewer>
@@ -101,7 +107,7 @@
             <Grid>
               <TextBlock Text="SOURCE YZ" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
               <ScrollViewer AutomationProperties.Name="Source YZ view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
-                <Image Source="{Binding SourceYzImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
+                <Image Source="{Binding SourceYzImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" infra:LegacyImageInteractionBehavior.IsEnabled="True" infra:LegacyImageInteractionBehavior.Plane="Yz">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
               </ScrollViewer>
@@ -111,7 +117,7 @@
             <Grid>
               <TextBlock Text="SOURCE ZX" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
               <ScrollViewer AutomationProperties.Name="Source ZX view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
-                <Image Source="{Binding SourceZxImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
+                <Image Source="{Binding SourceZxImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" infra:LegacyImageInteractionBehavior.IsEnabled="True" infra:LegacyImageInteractionBehavior.Plane="Zx">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
               </ScrollViewer>
@@ -121,7 +127,7 @@
             <Grid>
               <TextBlock Text="RESULT XY" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
               <ScrollViewer AutomationProperties.Name="Result XY view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
-                <Image Source="{Binding ResultImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
+                <Image Source="{Binding ResultImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" infra:LegacyImageInteractionBehavior.IsEnabled="True" infra:LegacyImageInteractionBehavior.Plane="Xy" infra:LegacyImageInteractionBehavior.SelectLabels="True">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
               </ScrollViewer>
@@ -131,7 +137,7 @@
             <Grid>
               <TextBlock Text="RESULT YZ" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
               <ScrollViewer AutomationProperties.Name="Result YZ view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
-                <Image Source="{Binding ResultYzImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
+                <Image Source="{Binding ResultYzImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" infra:LegacyImageInteractionBehavior.IsEnabled="True" infra:LegacyImageInteractionBehavior.Plane="Yz" infra:LegacyImageInteractionBehavior.SelectLabels="True">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
               </ScrollViewer>
@@ -141,7 +147,7 @@
             <Grid>
               <TextBlock Text="RESULT ZX" Foreground="{StaticResource MutedBrush}" Margin="9" Panel.ZIndex="1" />
               <ScrollViewer AutomationProperties.Name="Result ZX view" infra:ScrollSyncBehavior.Group="OrthogonalViews" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="16">
-                <Image Source="{Binding ResultZxImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor">
+                <Image Source="{Binding ResultZxImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" infra:LegacyImageInteractionBehavior.IsEnabled="True" infra:LegacyImageInteractionBehavior.Plane="Zx" infra:LegacyImageInteractionBehavior.SelectLabels="True">
                   <Image.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" /></Image.LayoutTransform>
                 </Image>
               </ScrollViewer>
@@ -334,11 +340,18 @@
               <CheckBox Content="Add cursor label to selection" IsChecked="{Binding AddToSelection}" Margin="0,0,0,8" />
               <WrapPanel>
                 <Button Content="Select at cursor" Command="{Binding SelectAtCursorCommand}" />
+                <Button Content="Select all" Command="{Binding SelectAllCommand}" />
                 <Button Content="Clear" Command="{Binding ClearSelectionCommand}" Background="#39475A" Foreground="White" />
               </WrapPanel>
+              <TextBlock Text="Active-channel mean threshold" Margin="0,8,0,5" />
+              <Slider AutomationProperties.Name="Segment mean intensity threshold" Minimum="0" Maximum="1" Value="{Binding SelectionThreshold}" SmallChange="0.01" />
+              <TextBlock Text="{Binding SelectionThreshold, StringFormat=F2}" Foreground="{StaticResource AccentBrush}" />
+              <CheckBox Content="Deselect labels above threshold" IsChecked="{Binding DeselectAboveThreshold}" />
+              <Button Content="Apply intensity selection" Command="{Binding SelectByMeanIntensityCommand}" Background="#39475A" Foreground="White" />
               <TextBlock Text="Morphology iterations" Margin="0,6,0,5" />
               <Slider AutomationProperties.Name="Label editing morphology iterations" Minimum="1" Maximum="64" Value="{Binding EditIterations}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding EditIterations}" Foreground="{StaticResource AccentBrush}" />
+              <CheckBox Content="Clamp erosion at image edges" IsChecked="{Binding EditClampImageEdges}" Margin="0,4,0,0" />
               <WrapPanel Margin="0,8,0,0">
                 <Button Content="Merge" Command="{Binding MergeSelectionCommand}" />
                 <Button Content="Split" Command="{Binding SplitSelectionCommand}" />

@@ -448,6 +448,18 @@ Equal(7, morphology.Labels.Span.Count(2), "6-connected label dilation");
 morphology.ErodeSelected();
 Equal(1, morphology.Labels.Span.Count(2), "6-connected label erosion");
 
+var edgeLabels = Enumerable.Repeat(5, 3).ToArray();
+var clampedErosion = new LabelEditingSession(3, 1, 1, edgeLabels);
+clampedErosion.SelectAll();
+clampedErosion.ErodeSelected(clampImageEdges: true);
+Equal(3, clampedErosion.Labels.Span.Count(5), "Clamped erosion preserves image-edge voxels");
+clampedErosion.Undo();
+clampedErosion.ErodeSelected(clampImageEdges: false);
+Equal(0, clampedErosion.Labels.Span.Count(5), "Unclamped erosion removes image-edge voxels");
+clampedErosion.SelectAll();
+clampedErosion.Deselect([5]);
+Equal(0, clampedErosion.Selection.Count, "Explicit deselection");
+
 var cropSource = Enumerable.Repeat(LabelEditingSession.Background, 5 * 5 * 3).ToArray();
 for (var z = 1; z <= 2; z++)
     for (var y = 2; y <= 3; y++)

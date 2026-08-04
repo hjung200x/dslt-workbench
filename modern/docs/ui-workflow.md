@@ -52,9 +52,14 @@ equivalence; that remains gated by representative datasets.
 - Advance label results to the edit stage and export the result with its JSON
   provenance sidecar.
 - Select the label at the shared cursor, optionally add labels to the selection,
-  and merge, split, crop, dilate, erode, clear, or undo through
-  `LabelEditingSession`.
+  select all, select/deselect by strict active-channel mean threshold, and merge,
+  split, crop, dilate, erode with optional image-edge clamp, clear, or undo
+  through `LabelEditingSession`.
   Selected labels are highlighted consistently in all result planes.
+- Preserve the manual's Ctrl+O/Ctrl+S, Alt+J/Alt+S, Ctrl+Z and Alt+A/Alt+D
+  bindings. Shift-left/right-click zooms all synchronized views; middle-click
+  maps a rendered result-plane pixel to its XY/YZ/ZX source coordinate and
+  selects that label without accepting clicks in image letterboxing.
 - Treat crop dimensions, source-coordinate origin, labels, and selection as one
   undoable transaction. Shared source/result coordinates remain meaningful
   after crop.
@@ -111,6 +116,9 @@ equivalence; that remains gated by representative datasets.
     threshold preserves the active Z slice, cube morphology preserves radius,
     and area/Lanczos Z resampling preserves target spacing, order, output depth,
     orthogonal result geometry, cancellation state, and Float32 provenance.
+19. active-channel mean-intensity selection/deselection, select-all, image-edge
+    clamp semantics, and uniform-image pointer mapping match the manual-derived
+    interaction contract.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
@@ -133,8 +141,6 @@ successfully scrolled Open, Run, Cancel, and Export into view independently.
 
 ## Remaining UI work
 
-- Recover and add the remaining legacy editing shortcuts. `Ctrl+Z` is currently
-  bound to undo; shortcut behavior without source evidence is not guessed.
 - Perform the remaining interactive cancellation, recovery, non-100%-DPI, and
   representative file-backed large-volume checks on Windows 10 22H2 and
   Windows 11.

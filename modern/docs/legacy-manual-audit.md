@@ -23,12 +23,12 @@ a secondary aid.
 
 | Pages | Confirmed behavior | Workbench mapping |
 |---|---|---|
-| 1-2 | Source and destination orthogonal views, position/channel/brightness/height-map/segment controls, shared view splitter, Shift-click zoom | Orthogonal views, synchronized coordinates/zoom/scroll, channel selection, and window/level exist; legacy mouse gestures remain pending |
+| 1-2 | Source and destination orthogonal views, position/channel/brightness/height-map/segment controls, shared view splitter, Shift-click zoom | Orthogonal views, synchronized coordinates/zoom/scroll, channel selection, window/level, and Shift-left/right zoom are implemented |
 | 3 | 8/16/32-bit TIFF stacks and ImageJ TIFF HyperStacks; channel 1 is the usual segmentation channel; height-map mean/Gaussian filter, radius, smoothing level, Z radius, threshold, offset and projection range | TIFF/HyperStack, channel selection, height map, and height projection are implemented or explicitly reference-pending in the compatibility matrix |
 | 4 | Depth-dependent brightness formula `Inew = coefficient * z^exp * I`; mean/Gaussian smoothing; apply adjustments to every channel | Window/level and smoothing are implemented; the legacy Z-gradient display transform is not a processing operation yet and remains pending |
 | 5 | DSLT mean/Gaussian kernel, radius, level, Z correction alpha, min/max C, interval, validation threshold and closing; fixed or height-map crop bounds and XY edge | DSLT threshold/segmentation, validation, closing, and fixed/height-map crop are implemented with synthetic/CUDA validation; runtime oracle remains pending |
-| 6 | Segment erosion/dilation, optional clamp, middle-click select, Alt+J merge, Alt+S split, Ctrl+Z undo, Alt+A select all and Alt+D deselect all | Edit algorithms and undo are implemented; legacy keyboard/mouse bindings and clamp selection are tracked separately as pending |
-| 7 | Select/deselect segments by their mean intensity in the active channel | No dedicated mean-intensity auto-selection command yet; pending |
+| 6 | Segment erosion/dilation, optional clamp, middle-click select, Alt+J merge, Alt+S split, Ctrl+Z undo, Alt+A select all and Alt+D deselect all | Edit algorithms, image-edge clamp, keyboard bindings and result-plane middle-click selection are implemented |
+| 7 | Select/deselect segments by their mean intensity in the active channel | Strict active-channel mean-threshold selection/deselection is implemented, including cropped result origin mapping |
 | 8 | Watershed ignores unselected/hidden segments, optional minimum size, morphologic smoothing recipe, save result and save segments | Selected-seed watershed, minimum size, morphology and result/label export are implemented; display-filter semantics remain pending |
 | 9-10 | Qualitative effects of max C, min C and ValidTH; segment validation based on extracted inner structures | Parameter semantics and validation order are fixed in `dslt-algorithm-spec.md`; legacy-runtime comparison remains pending |
 
@@ -55,9 +55,6 @@ remain `capture-required` until the archived executable can be observed.
 The audit prevents implemented algorithms from being mistaken for complete
 legacy interaction equivalence. Before a v1.0 claim, the Workbench still needs:
 
-1. legacy keyboard and mouse gesture coverage;
-2. mean-intensity segment auto-selection/deselection;
-3. the optional erosion clamp behavior;
-4. the depth-dependent Z-gradient display transform;
-5. a real or archived-runtime oracle for ambiguous parameter mappings;
-6. representative original or expert-labelled microscopy data.
+1. the depth-dependent Z-gradient display transform;
+2. a real or archived-runtime oracle for ambiguous parameter mappings;
+3. representative original or expert-labelled microscopy data.

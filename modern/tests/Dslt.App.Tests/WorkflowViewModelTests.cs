@@ -395,6 +395,20 @@ internal static class WorkflowViewModelTests
             "Failure did not report result preservation.");
 
         var labelCountBeforeEdit = target.LastResult!.Labels!.Count(label => label == 0);
+        target.SelectionThreshold = 0.5F;
+        target.SelectByMeanIntensityCommand.Execute(null);
+        Assert(target.SelectedLabelCount == 1 &&
+               target.Status.Contains("mean intensity above", StringComparison.OrdinalIgnoreCase),
+            "Mean-intensity selection did not select the bright label.");
+        target.DeselectAboveThreshold = true;
+        target.SelectByMeanIntensityCommand.Execute(null);
+        Assert(target.SelectedLabelCount == 0,
+            "Mean-intensity deselection did not remove the bright label.");
+        target.DeselectAboveThreshold = false;
+        target.SelectAllCommand.Execute(null);
+        Assert(target.SelectedLabelCount == 1,
+            "Select-all did not select every editable label.");
+        target.ClearSelectionCommand.Execute(null);
         target.SelectAtCursorCommand.Execute(null);
         Assert(target.SelectedLabelCount == 1 && target.SelectionSummary.Contains("0", StringComparison.Ordinal),
             "Selecting the cursor label did not update editing state.");
