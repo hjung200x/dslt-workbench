@@ -126,12 +126,12 @@ Only bundles produced from the repository's own reviewed commit should be
 executed. The script requires `nvidia-smi`, verifies the expected DLL/executable
 layout, reports the selected GPU, and propagates any native test failure.
 
-`cuda-runtime-parity` uses the `windows-cuda` preset on a self-hosted runner
-with the `Windows`, `X64`, and `NVIDIA` labels. It defines `DSLT_TEST_CUDA` and
-requires a usable NVIDIA device. Until such a runner is registered, this job is
-started only by an explicit `workflow_dispatch`; ordinary pushes run the hosted
-build gate without leaving an unserviceable job queued. Its native test suite
-checks:
+`cuda-runtime-parity` depends on `cuda-build-only`, downloads that job's exact
+artifact on a self-hosted runner with the `Windows`, `X64`, and `NVIDIA` labels,
+and runs the bundle through `run-cuda-artifact-tests.ps1`. The GPU host therefore
+needs a compatible NVIDIA driver but not CMake, MSVC, or a CUDA toolkit. The job
+is started only by an explicit `workflow_dispatch`; ordinary pushes run the
+hosted build gate without occupying the GPU host. Its native test suite checks:
 
 - CPU/CUDA output parity for every ported operation;
 - `Auto` selecting CUDA for a ported operation;

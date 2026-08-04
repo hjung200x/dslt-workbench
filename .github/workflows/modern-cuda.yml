@@ -60,16 +60,20 @@ jobs:
 
   cuda-parity:
     name: cuda-runtime-parity
+    needs: cuda-build
     if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, Windows, X64, NVIDIA]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Configure CUDA backend
-        working-directory: modern/native
-        run: cmake --preset windows-cuda
-      - name: Build CUDA backend
-        working-directory: modern/native
-        run: cmake --build --preset windows-cuda-release
-      - name: Run CPU reference and CUDA availability tests
-        working-directory: modern/native
-        run: ctest --preset windows-cuda
+      - name: Download hosted CUDA build
+        uses: actions/download-artifact@v4
+        with:
+          name: dslt-cuda-tests-win-x64-${{ github.sha }}
+          path: .run/cuda-artifact
+      - name: Run CPU/CUDA parity and memory tests on NVIDIA GPU
+        shell: powershell
+        run: >-
+          powershell.exe -NoProfile -ExecutionPolicy Bypass
+          -File modern/scripts/run-cuda-artifact-tests.ps1
+          -ArtifactDirectory .run/cuda-artifact
