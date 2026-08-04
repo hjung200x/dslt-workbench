@@ -72,7 +72,7 @@ between public pipeline preflight and representative release evidence are
 tracked in `docs/real-data-cohort-sources.md`.
 `tools/Dslt.Validation.Prepare` normalizes external reference masks and builds
 source-locked schema-2 manifest cases directly from candidate provenance.
-The schema-2 manifest and provenance 1.9 sidecars must identify the exact
+The schema-2 manifest and provenance 1.10 sidecars must identify the exact
 release-candidate source commit; results from another build are rejected.
 
 

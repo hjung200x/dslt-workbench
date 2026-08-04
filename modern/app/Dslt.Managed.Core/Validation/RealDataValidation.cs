@@ -32,6 +32,7 @@ public sealed record RealDataValidationCase
     public string VoxelType { get; init; } = string.Empty;
     public string Container { get; init; } = string.Empty;
     public int Channels { get; init; }
+    public int SelectedChannel { get; init; }
     public double SpacingZ { get; init; }
     public int ReferenceBackgroundLabel { get; init; }
     public int CandidateBackgroundLabel { get; init; }
@@ -56,6 +57,7 @@ public sealed record RealDataCaseValidationResult(
     string VoxelType,
     string Container,
     int Channels,
+    int SelectedChannel,
     double SpacingZ,
     SegmentationValidationResult? Metrics,
     bool Passed,
@@ -152,6 +154,8 @@ public static class RealDataValidationRunner
         if (!SupportedContainers.Contains(item.Container))
             failures.Add("container must be tiff or lsm.");
         if (item.Channels <= 0) failures.Add("channels must be positive.");
+        if (item.SelectedChannel < 0 || item.SelectedChannel >= item.Channels)
+            failures.Add("selectedChannel must identify an input channel.");
         if (!double.IsFinite(item.SpacingZ) || item.SpacingZ <= 0) failures.Add("spacingZ must be finite and positive.");
         if (item.ObjectConnectivity is not (6 or 18 or 26)) failures.Add("objectConnectivity must be 6, 18, or 26.");
 
@@ -224,6 +228,7 @@ public static class RealDataValidationRunner
             item.VoxelType ?? string.Empty,
             item.Container ?? string.Empty,
             item.Channels,
+            item.SelectedChannel,
             item.SpacingZ,
             metrics,
             failures.Count == 0 && metrics is not null && metrics.Passed,
@@ -290,17 +295,17 @@ public static class RealDataValidationRunner
             var root = document.RootElement;
             if (!TryGetString(root, "schemaVersion", out var schemaVersion) ||
                 (schemaVersion != "1.5" && schemaVersion != "1.6" && schemaVersion != "1.7" &&
-                 schemaVersion != "1.8" && schemaVersion != "1.9"))
-                failures.Add("Candidate provenance schemaVersion must be 1.5, 1.6, 1.7, 1.8, or 1.9.");
+                 schemaVersion != "1.8" && schemaVersion != "1.9" && schemaVersion != "1.10"))
+                failures.Add("Candidate provenance schemaVersion must be 1.5, 1.6, 1.7, 1.8, 1.9, or 1.10.");
             if (!string.IsNullOrWhiteSpace(candidateSourceCommit))
             {
-                if (schemaVersion != "1.9")
-                    failures.Add("A source-locked manifest requires candidate provenance schemaVersion 1.9.");
+                if (schemaVersion != "1.10")
+                    failures.Add("A source-locked manifest requires candidate provenance schemaVersion 1.10.");
                 if (!TryGetString(root, "sourceCommit", out var sourceCommit) ||
                     !sourceCommit.Equals(candidateSourceCommit, StringComparison.OrdinalIgnoreCase))
                     failures.Add("Candidate provenance sourceCommit does not match candidateSourceCommit.");
             }
-            if (schemaVersion == "1.9") ValidateProcessingSteps(root, failures);
+            if (schemaVersion is "1.9" or "1.10") ValidateProcessingSteps(root, failures);
             if (!TryGetString(root, "validationLevel", out var validationLevel) ||
                 validationLevel != "synthetic-data-validated")
                 failures.Add("Candidate provenance validationLevel is missing or invalid.");
@@ -309,17 +314,30 @@ public static class RealDataValidationRunner
                 failures.Add("Candidate provenance inputSha256 does not match inputDecodedSha256.");
             if (!TryGetInt32(root, "inputChannels", out var inputChannels) || inputChannels != item.Channels)
                 failures.Add("Candidate provenance inputChannels does not match the manifest.");
+            if (schemaVersion == "1.10" &&
+                (!TryGetInt32(root, "inputSelectedChannel", out var selectedChannel) ||
+                 selectedChannel != item.SelectedChannel))
+                failures.Add("Candidate provenance inputSelectedChannel does not match the manifest.");
+            if (schemaVersion == "1.10" &&
+                !TryGetCalibration(root, "inputCalibration", out _))
+                failures.Add("Candidate provenance inputCalibration must be finite and positive.");
             if (!TryGetString(root, "inputVoxelType", out var inputVoxelType) ||
                 !inputVoxelType.Equals(ExpectedProvenanceVoxelType(item.VoxelType), StringComparison.OrdinalIgnoreCase))
                 failures.Add("Candidate provenance inputVoxelType does not match the manifest.");
             if (!TryGetString(root, "inputContainer", out var inputContainer) ||
                 !inputContainer.Equals(item.Container, StringComparison.OrdinalIgnoreCase))
                 failures.Add("Candidate provenance inputContainer does not match the manifest.");
-            if (!root.TryGetProperty("calibration", out var calibration) ||
-                !calibration.TryGetProperty("spacingZ", out var spacingZElement) ||
-                !spacingZElement.TryGetDouble(out var provenanceSpacingZ) ||
-                !NearlyEqual(provenanceSpacingZ, item.SpacingZ))
-                failures.Add("Candidate provenance calibration.spacingZ does not match the manifest.");
+            if (!TryGetCalibration(root, "calibration", out var outputCalibration))
+            {
+                failures.Add("Candidate provenance calibration must be finite and positive.");
+            }
+            else
+            {
+                if (!NearlyEqual(outputCalibration.SpacingZ, item.SpacingZ))
+                    failures.Add("Candidate provenance calibration.spacingZ does not match the manifest.");
+                if (candidate is not null && !CalibrationMatches(outputCalibration, candidate.Calibration))
+                    failures.Add("Candidate provenance calibration does not match the label TIFF.");
+            }
             if (!root.TryGetProperty("operation", out var operation) ||
                 !TryGetEnum(operation, "operation", out ProcessingOperation operationValue) ||
                 operationValue is not (ProcessingOperation.DsltSegmentation or ProcessingOperation.Watershed))
@@ -346,6 +364,27 @@ public static class RealDataValidationRunner
         {
             failures.Add($"Candidate provenance could not be read: {exception.Message}");
         }
+    }
+
+    private static bool TryGetCalibration(
+        JsonElement root,
+        string propertyName,
+        out Calibration calibration)
+    {
+        calibration = Calibration.Unit;
+        if (!root.TryGetProperty(propertyName, out var element) ||
+            !element.TryGetProperty("spacingX", out var spacingXElement) ||
+            !spacingXElement.TryGetDouble(out var spacingX) || !double.IsFinite(spacingX) || spacingX <= 0 ||
+            !element.TryGetProperty("spacingY", out var spacingYElement) ||
+            !spacingYElement.TryGetDouble(out var spacingY) || !double.IsFinite(spacingY) || spacingY <= 0 ||
+            !element.TryGetProperty("spacingZ", out var spacingZElement) ||
+            !spacingZElement.TryGetDouble(out var spacingZ) || !double.IsFinite(spacingZ) || spacingZ <= 0 ||
+            !element.TryGetProperty("isCalibrated", out var calibratedElement) ||
+            calibratedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
+            !TryGetString(element, "unitName", out var unitName))
+            return false;
+        calibration = new Calibration(spacingX, spacingY, spacingZ, calibratedElement.GetBoolean(), unitName);
+        return true;
     }
 
     private static void ValidateProcessingSteps(JsonElement root, List<string> failures)

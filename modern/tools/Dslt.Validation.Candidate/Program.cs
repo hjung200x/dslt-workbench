@@ -390,7 +390,7 @@ static void PrintUsage() => Console.WriteLine("""
 
     The tool always executes the production DsltSegmentation operation through
     NativeProcessingEngine. --estimate-only performs resource preflight without
-    creating a candidate. Candidate packages use provenance schema 1.9 and
+    creating a candidate. Candidate packages use provenance schema 1.10 and
     record every prior processing step with its actual backend and hash. With
     --apply-watershed, the DSLT labels become selected marker seeds and the
     Watershed result is the final candidate.

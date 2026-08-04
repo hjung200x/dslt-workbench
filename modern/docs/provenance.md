@@ -11,7 +11,7 @@ The legacy files at the repository root are retained as the behavioral and
 algorithmic reference. DSLT Workbench implementation files are confined to
 `modern/`.
 
-Workbench result provenance schema 1.9 records `sourceCommit` from the managed
+Workbench result provenance schema 1.10 records `sourceCommit` from the managed
 assembly's `SourceCommit` metadata. Release-candidate packaging sets that
 metadata from the exact Git commit in `BUILD-INFO.json`. Schema-2 real-data
 manifests repeat the same commit as `candidateSourceCommit`; the validator
@@ -19,7 +19,12 @@ rejects sidecars from any other build. Development builds without injected
 source identity record `unavailable` and cannot satisfy the v1 source-locked
 gate.
 
-Schema 1.9 also carries `inputChannelMetadata`
+Schema 1.10 also carries `inputSelectedChannel`, which identifies the zero-based
+channel actually processed and is validated against the source channel count.
+`inputCalibration` records the loaded source spacing while `calibration` records
+the exported result spacing. They differ after Z resampling, and the result
+calibration is also written into exported label TIFF metadata.
+It also carries `inputChannelMetadata`
 (channel name and RGBA display color) and `inputTimeStampsSeconds` when the
 source container provides them. Empty arrays preserve compatibility for TIFFs
 and synthetic volumes without those metadata blocks. The always-present

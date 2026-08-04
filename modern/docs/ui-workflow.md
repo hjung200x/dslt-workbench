@@ -49,6 +49,11 @@ equivalence; that remains gated by representative datasets.
 - Preserve the last valid result and source volume after cancellation or
   processing failure, including failures or cancellation during auxiliary
   height/depth requests for RGB presentation.
+- Allow a successful Float32 volume result to become the next operation's
+  explicit working input, show the ordered processing chain, and restore the
+  immutable loaded source volume on request. Z-resampled working volumes retain
+  their result spacing while source identity and source calibration remain
+  independently recorded.
 - Advance label results to the edit stage and export the result with its JSON
   provenance sidecar.
 - Select the label at the shared cursor, optionally add labels to the selection,
@@ -67,8 +72,10 @@ equivalence; that remains gated by representative datasets.
   current labels are passed as seeds, the result is installed as an undoable
   label edit, and cancellation or failure preserves the seed result.
 - Store successful label-edit actions and structured output origin fields in
-  provenance schema 1.9 so an exported result records its source commit, ordered prior processing steps, and distinguishes processing output
-  from subsequent manual edits and records Watershed seed hash/selection.
+  provenance schema 1.10. An exported result records its source commit,
+  selected input channel, input/result calibration, ordered prior processing
+  steps, actual backend and output hashes; distinguishes processing output from
+  subsequent manual edits; and records Watershed seed hash/selection.
 
 ## Automated state checks
 
@@ -119,6 +126,10 @@ equivalence; that remains gated by representative datasets.
 19. active-channel mean-intensity selection/deselection, select-all, image-edge
     clamp semantics, and uniform-image pointer mapping match the manual-derived
     interaction contract.
+20. promoting a Float32 result preserves an ordered processing chain, reset
+    restores the selected source channel, exports bind the original input hash
+    and selected channel to the final result, and Watershed binds its seed hash
+    to the prior DSLT label step.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.

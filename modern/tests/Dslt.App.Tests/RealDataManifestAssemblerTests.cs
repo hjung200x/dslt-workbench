@@ -64,6 +64,7 @@ internal static class RealDataManifestAssemblerTests
             var item = manifest.Cases.Single();
             if (manifest.SchemaVersion != 2 || manifest.CandidateSourceCommit != SourceCommit ||
                 item.VoxelType != "uint16" || item.Container != "tiff" || item.Channels != 2 ||
+                item.SelectedChannel != 1 ||
                 Math.Abs(item.SpacingZ - 1.5) > 1e-9 || item.InputDecodedSha256 != new string('b', 64) ||
                 !item.InputPath.StartsWith("data/", StringComparison.Ordinal))
                 throw new InvalidOperationException("Manifest fields were not derived from provenance and local paths.");
@@ -200,7 +201,7 @@ internal static class RealDataManifestAssemblerTests
                 SelectedSeedLabels: [1, 2])
             : new OperationParameters(ProcessingOperation.DsltSegmentation, ProcessingBackend.Cpu);
         var provenance = new ProcessingProvenance(
-            "1.9",
+            "1.10",
             "synthetic-data-validated",
             SourceCommit,
             DateTimeOffset.UtcNow,
@@ -209,10 +210,12 @@ internal static class RealDataManifestAssemblerTests
             3,
             2,
             2,
+            1,
             nameof(VolumeVoxelType.UnsignedInt16),
             "tiff",
             [],
             [],
+            calibration,
             calibration,
             processingSteps,
             operation,

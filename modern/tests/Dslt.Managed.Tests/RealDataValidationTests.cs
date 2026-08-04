@@ -62,7 +62,7 @@ internal static class RealDataValidationTests
                     provenancePath,
                     JsonSerializer.Serialize(new
                     {
-                        schemaVersion = "1.9",
+                        schemaVersion = "1.10",
                         sourceCommit = CandidateSourceCommit,
                         validationLevel = "synthetic-data-validated",
                         inputSha256 = decodedHash,
@@ -70,6 +70,7 @@ internal static class RealDataValidationTests
                         inputHeight = 3,
                         inputDepth = 2,
                         inputChannels = index is 1 or 3 ? 2 : 1,
+                        inputSelectedChannel = index == 3 ? 1 : 0,
                         inputVoxelType = index switch
                         {
                             0 => "UnsignedInt8",
@@ -79,6 +80,7 @@ internal static class RealDataValidationTests
                             _ => "UnsignedInt16",
                         },
                         inputContainer = "TIFF",
+                        inputCalibration = calibration,
                         calibration,
                         processingSteps,
                         operation = new
@@ -114,6 +116,7 @@ internal static class RealDataValidationTests
                     VoxelType = index switch { 0 => "uint8", 1 => "uint16", 2 => "float32", 3 => "uint8", _ => "uint16" },
                     Container = "tiff",
                     Channels = index is 1 or 3 ? 2 : 1,
+                    SelectedChannel = index == 3 ? 1 : 0,
                     SpacingZ = calibration.SpacingZ,
                     ObjectConnectivity = 26,
                 });
@@ -131,6 +134,28 @@ internal static class RealDataValidationTests
             var sourceLockedProvenancePath = Path.Combine(root, "candidate-0.json");
             var sourceLockedProvenance = JsonNode.Parse(
                 await File.ReadAllTextAsync(sourceLockedProvenancePath))!.AsObject();
+            sourceLockedProvenance["calibration"]!["spacingX"] = 0.75;
+            await File.WriteAllTextAsync(
+                sourceLockedProvenancePath, sourceLockedProvenance.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                CandidateProvenanceSha256 = await Sha256FileAsync(sourceLockedProvenancePath),
+            };
+            await WriteManifestAsync(manifestPath, cases);
+            var calibrationFailure = await RealDataValidationRunner.EvaluateAsync(manifestPath);
+            Assert(!calibrationFailure.ReleaseGatePassed,
+                "A provenance calibration different from the label TIFF must fail the release gate.");
+            Assert(calibrationFailure.Cases[0].Failures.Any(
+                value => value.Contains("calibration does not match", StringComparison.Ordinal)),
+                "Output-calibration failure should identify the label TIFF mismatch.");
+
+            sourceLockedProvenance["calibration"]!["spacingX"] = 0.5;
+            await File.WriteAllTextAsync(
+                sourceLockedProvenancePath, sourceLockedProvenance.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                CandidateProvenanceSha256 = await Sha256FileAsync(sourceLockedProvenancePath),
+            };
             var watershedSteps = sourceLockedProvenance["processingSteps"]!.DeepClone();
             sourceLockedProvenance["processingSteps"] = new JsonArray();
             await File.WriteAllTextAsync(

@@ -122,6 +122,7 @@ public static class RealDataManifestAssembler
             VoxelType = ManifestVoxelType(provenance.InputVoxelType),
             Container = provenance.InputContainer.ToLowerInvariant(),
             Channels = provenance.InputChannels,
+            SelectedChannel = provenance.InputSelectedChannel,
             SpacingZ = provenance.Calibration.SpacingZ,
             ReferenceBackgroundLabel = request.ReferenceBackgroundLabel,
             CandidateBackgroundLabel = request.CandidateBackgroundLabel,
@@ -173,8 +174,8 @@ public static class RealDataManifestAssembler
 
     private static void ValidateProvenance(ProcessingProvenance provenance, string expectedCommit)
     {
-        if (provenance.SchemaVersion != "1.9")
-            throw new InvalidDataException("Candidate provenance schemaVersion must be 1.9.");
+        if (provenance.SchemaVersion != "1.10")
+            throw new InvalidDataException("Candidate provenance schemaVersion must be 1.10.");
         if (provenance.ValidationLevel != "synthetic-data-validated")
             throw new InvalidDataException("Candidate provenance validationLevel is invalid.");
         if (!string.Equals(provenance.SourceCommit, expectedCommit, StringComparison.OrdinalIgnoreCase))
@@ -183,13 +184,22 @@ public static class RealDataManifestAssembler
             throw new InvalidDataException("Candidate provenance inputSha256 is invalid.");
         if (provenance.InputChannels <= 0)
             throw new InvalidDataException("Candidate provenance inputChannels must be positive.");
+        if (provenance.InputSelectedChannel < 0 || provenance.InputSelectedChannel >= provenance.InputChannels)
+            throw new InvalidDataException("Candidate provenance inputSelectedChannel is invalid.");
+        if (provenance.InputCalibration is null ||
+            !double.IsFinite(provenance.InputCalibration.SpacingX) || provenance.InputCalibration.SpacingX <= 0 ||
+            !double.IsFinite(provenance.InputCalibration.SpacingY) || provenance.InputCalibration.SpacingY <= 0 ||
+            !double.IsFinite(provenance.InputCalibration.SpacingZ) || provenance.InputCalibration.SpacingZ <= 0)
+            throw new InvalidDataException("Candidate provenance input calibration must be finite and positive.");
         _ = ManifestVoxelType(provenance.InputVoxelType);
         if (!string.Equals(provenance.InputContainer, "tiff", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(provenance.InputContainer, "lsm", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Candidate provenance inputContainer must be tiff or lsm.");
-        if (provenance.Calibration is null || !double.IsFinite(provenance.Calibration.SpacingZ) ||
-            provenance.Calibration.SpacingZ <= 0)
-            throw new InvalidDataException("Candidate provenance Z spacing must be finite and positive.");
+        if (provenance.Calibration is null ||
+            !double.IsFinite(provenance.Calibration.SpacingX) || provenance.Calibration.SpacingX <= 0 ||
+            !double.IsFinite(provenance.Calibration.SpacingY) || provenance.Calibration.SpacingY <= 0 ||
+            !double.IsFinite(provenance.Calibration.SpacingZ) || provenance.Calibration.SpacingZ <= 0)
+            throw new InvalidDataException("Candidate provenance output calibration must be finite and positive.");
         if (provenance.Operation is null || provenance.Operation.Operation is not
             (ProcessingOperation.DsltSegmentation or ProcessingOperation.Watershed))
             throw new InvalidDataException("Candidate provenance operation must be DsltSegmentation or Watershed.");
@@ -243,6 +253,8 @@ public static class RealDataManifestAssembler
             throw new InvalidDataException("Reference and candidate label dimensions differ.");
         if (!CalibrationMatches(reference.Calibration, candidate.Calibration))
             throw new InvalidDataException("Reference and candidate label calibration differs.");
+        if (!CalibrationMatches(candidate.Calibration, provenance.Calibration))
+            throw new InvalidDataException("Candidate label calibration does not match provenance output calibration.");
         if (candidate.Width != provenance.OutputWidth || candidate.Height != provenance.OutputHeight ||
             candidate.Depth != provenance.OutputDepth)
             throw new InvalidDataException("Candidate label dimensions do not match provenance.");

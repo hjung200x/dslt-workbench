@@ -372,10 +372,12 @@ if (!File.Exists(rawPath) || !File.Exists(jsonPath))
 var json = await File.ReadAllTextAsync(jsonPath);
 if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance validation level is missing.");
-if (!json.Contains("\"schemaVersion\": \"1.9\"", StringComparison.Ordinal) ||
+if (!json.Contains("\"schemaVersion\": \"1.10\"", StringComparison.Ordinal) ||
     !json.Contains("\"sourceCommit\":", StringComparison.Ordinal) ||
     !json.Contains("\"inputVoxelType\": \"Float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputContainer\": \"LSM\"", StringComparison.Ordinal) ||
+    !json.Contains("\"inputSelectedChannel\": 0", StringComparison.Ordinal) ||
+    !json.Contains("\"inputCalibration\":", StringComparison.Ordinal) ||
     !json.Contains("\"inputChannelMetadata\":", StringComparison.Ordinal) ||
     !json.Contains("\"name\": \"DAPI\"", StringComparison.Ordinal) ||
     !json.Contains("\"name\": \"GFP\"", StringComparison.Ordinal) ||

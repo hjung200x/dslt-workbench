@@ -381,6 +381,16 @@
               <Button Content="Run" Command="{Binding RunCommand}" MinWidth="100" />
               <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="100" Background="#39475A" Foreground="White" />
             </WrapPanel>
+            <Border Padding="10" Background="#10161E" CornerRadius="5" Margin="0,8,0,4">
+              <StackPanel>
+                <TextBlock Text="PROCESSING CHAIN" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding ProcessingChainSummary}" TextWrapping="Wrap" Margin="0,5,0,8" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <WrapPanel>
+                  <Button AutomationProperties.Name="Use result as processing input" Content="Use result as input" Command="{Binding UseResultAsInputCommand}" />
+                  <Button AutomationProperties.Name="Reset processing chain" Content="Reset to loaded input" Command="{Binding ResetProcessingChainCommand}" Background="#39475A" Foreground="White" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
             <Button Content="Export result + provenance" Command="{Binding SaveCommand}" Margin="0,4,0,0" Background="#39475A" Foreground="White" />
           </StackPanel>
         </ScrollViewer>

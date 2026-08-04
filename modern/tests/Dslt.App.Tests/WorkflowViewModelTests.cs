@@ -1,10 +1,12 @@
 using Dslt.App.Infrastructure;
 using Dslt.App.Services;
 using Dslt.App.ViewModels;
+using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Services;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -86,17 +88,17 @@ internal static class WorkflowViewModelTests
 
         target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.ResampleZLanczos);
-        target.TargetSpacingZ = 2.0F;
+        target.TargetSpacingZ = 1.0F;
         target.LanczosOrder = 3;
         await target.RunCommand.ExecuteAsync();
         Assert(target.IsResampleZ && target.IsLanczosResample &&
                target.LastParameters is
                {
                    Operation: ProcessingOperation.ResampleZLanczos,
-                   TargetSpacingZ: 2.0F,
+                   TargetSpacingZ: 1.0F,
                    LanczosOrder: 3,
-               } && target.LastResult is { OutputKind: OutputKind.VolumeFloat32, Depth: 48 } &&
-               target.ResultYzImage is BitmapSource resampledYz && resampledYz.PixelWidth == 48,
+               } && target.LastResult is { OutputKind: OutputKind.VolumeFloat32, Depth: 96 } &&
+               target.ResultYzImage is BitmapSource resampledYz && resampledYz.PixelWidth == 96,
             "Lanczos Z resampling did not preserve order, spacing, or result geometry.");
 
         var resampleExport = Path.Combine(
@@ -105,11 +107,14 @@ internal static class WorkflowViewModelTests
         try
         {
             await target.SaveCommand.ExecuteAsync();
-            var provenance = await File.ReadAllTextAsync(resampleExport + ".json");
-            Assert(provenance.Contains("\"targetSpacingZ\": 2", StringComparison.Ordinal) &&
-                   provenance.Contains("\"lanczosOrder\": 3", StringComparison.Ordinal) &&
+            using var provenance = JsonDocument.Parse(await File.ReadAllBytesAsync(resampleExport + ".json"));
+            var root = provenance.RootElement;
+            Assert(root.GetProperty("operation").GetProperty("targetSpacingZ").GetSingle() == 1 &&
+                   root.GetProperty("operation").GetProperty("lanczosOrder").GetInt32() == 3 &&
+                   root.GetProperty("inputCalibration").GetProperty("spacingZ").GetDouble() == 2 &&
+                   root.GetProperty("calibration").GetProperty("spacingZ").GetDouble() == 1 &&
                    File.Exists(resampleExport + ".f32.raw"),
-                "Z-resampling provenance or Float32 payload was not exported.");
+                "Z-resampling input/result calibration, parameters, or Float32 payload was not exported.");
         }
         finally
         {
@@ -550,7 +555,135 @@ internal static class WorkflowViewModelTests
         Assert(ReadGray8((BitmapSource)target.SourceZxImage!).SequenceEqual(new byte[] { 255, 230, 153, 128 }),
             "The ZX plane did not preserve Z-vertical and X-horizontal coordinate order.");
 
+        await RunProcessingChainTestsAsync();
         await RunLargeVolumeCancellationSmokeAsync();
+    }
+
+    private static async Task RunProcessingChainTestsAsync()
+    {
+        var samples = Enumerable.Range(0, 48).Select(index => index / 47.0F).ToArray();
+        var raw = new byte[samples.Length * sizeof(float)];
+        Buffer.BlockCopy(samples, 0, raw, 0, raw.Length);
+        var files = new FakeWorkspaceFileService
+        {
+            NextVolume = new VolumeData(
+                3,
+                2,
+                4,
+                2,
+                1,
+                new Calibration(0.5, 0.5, 1.25, true, "um"),
+                samples,
+                new VolumeSourceInfo(
+                    VolumeVoxelType.Float32,
+                    "TIFF",
+                    null,
+                    raw,
+                    [new VolumeChannelInfo("A", 255, 0, 0, 255), new VolumeChannelInfo("B", 0, 255, 0, 255)],
+                    [])),
+        };
+        var engine = new FakeProcessingEngine();
+        using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
+        var target = viewModel.Value;
+        await target.OpenCommand.ExecuteAsync();
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.SmoothGaussian);
+        target.Radius = 2;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.CanUseResultAsInput && target.UseResultAsInputCommand.CanExecute(null),
+            "A Float32 volume result could not be promoted to the working input.");
+        target.UseResultAsInputCommand.Execute(null);
+        Assert(target.ProcessingStepCount == 1 && !target.HasResult &&
+               target.ProcessingChainSummary.Contains(nameof(ProcessingOperation.SmoothGaussian), StringComparison.Ordinal),
+            "Promoting a preprocessing result did not update and clear the expected working state.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.ZGradient);
+        target.ZGradientUseHeightMap = false;
+        await target.RunCommand.ExecuteAsync();
+        var floatExport = Path.Combine(Path.GetTempPath(), $"dslt-chain-float-{Guid.NewGuid():N}");
+        files.ExportBasePath = floatExport;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            using var document = JsonDocument.Parse(await File.ReadAllBytesAsync(floatExport + ".json"));
+            var root = document.RootElement;
+            var steps = root.GetProperty("processingSteps");
+            Assert(root.GetProperty("schemaVersion").GetString() == "1.10" &&
+                   root.GetProperty("inputChannels").GetInt32() == 2 &&
+                   root.GetProperty("inputSelectedChannel").GetInt32() == 1 &&
+                   steps.GetArrayLength() == 1 &&
+                   steps[0].GetProperty("operation").GetProperty("operation").GetInt32() ==
+                       (int)ProcessingOperation.SmoothGaussian &&
+                   root.GetProperty("operation").GetProperty("operation").GetInt32() ==
+                       (int)ProcessingOperation.ZGradient,
+                "The WPF export did not preserve the root channel and ordered preprocessing chain.");
+        }
+        finally
+        {
+            DeletePackage(floatExport);
+        }
+
+        Assert(target.ResetProcessingChainCommand.CanExecute(null),
+            "An applied processing chain could not be reset.");
+        target.ResetProcessingChainCommand.Execute(null);
+        Assert(target.ProcessingStepCount == 0 && !target.HasResult &&
+               target.ChannelIndex == 1 && target.MaximumChannelIndex == 1,
+            "Resetting the processing chain did not restore the selected channel of the loaded input.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.ResampleZArea);
+        target.TargetSpacingZ = 0.5F;
+        await target.RunCommand.ExecuteAsync();
+        target.UseResultAsInputCommand.Execute(null);
+        Assert(target.ProcessingStepCount == 1 && target.VolumeSummary.Contains("Z spacing 0.5", StringComparison.Ordinal),
+            "Promoting a Z-resampled result did not preserve its working calibration.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.DsltSegmentation);
+        await target.RunCommand.ExecuteAsync();
+        target.SelectAllCommand.Execute(null);
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.Watershed);
+        await target.RunCommand.ExecuteAsync();
+        var labelExport = Path.Combine(Path.GetTempPath(), $"dslt-chain-label-{Guid.NewGuid():N}");
+        files.ExportBasePath = labelExport;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            using var document = JsonDocument.Parse(await File.ReadAllBytesAsync(labelExport + ".json"));
+            var root = document.RootElement;
+            var steps = root.GetProperty("processingSteps");
+            var seedStep = steps[steps.GetArrayLength() - 1];
+            var labelTiff = LabelTiffCodec.Read(labelExport + ".labels.i16.tif");
+            Assert(steps.GetArrayLength() == 2 &&
+                   steps[0].GetProperty("operation").GetProperty("operation").GetInt32() ==
+                       (int)ProcessingOperation.ResampleZArea &&
+                   seedStep.GetProperty("operation").GetProperty("operation").GetInt32() ==
+                       (int)ProcessingOperation.DsltSegmentation &&
+                   root.GetProperty("operation").GetProperty("operation").GetInt32() ==
+                       (int)ProcessingOperation.Watershed &&
+                   root.GetProperty("operation").GetProperty("seedLabelsSha256").GetString() ==
+                       seedStep.GetProperty("outputSha256").GetString() &&
+                   Math.Abs(root.GetProperty("inputCalibration").GetProperty("spacingZ").GetDouble() - 1.25) < 1e-9 &&
+                   Math.Abs(root.GetProperty("calibration").GetProperty("spacingZ").GetDouble() - 0.5) < 1e-9 &&
+                   Math.Abs(labelTiff.Calibration.SpacingZ - 0.5) < 1e-9,
+                "The WPF Watershed export did not bind its seed chain or preserve input/result calibration.");
+        }
+        finally
+        {
+            DeletePackage(labelExport);
+        }
+    }
+
+    private static void DeletePackage(string basePath)
+    {
+        foreach (var suffix in new[] { ".f32.raw", ".i32.raw", ".labels.i16.tif", ".labels.i32.tif", ".json" })
+        {
+            var path = basePath + suffix;
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 
     private static async Task RunLargeVolumeCancellationSmokeAsync()
