@@ -18,6 +18,12 @@ The original source remains at the repository root as the behavioral reference.
 New implementation files are isolated under `modern/`. `BUILD-INFO.json` in
 each binary package identifies the exact Workbench commit used for that build.
 
+The paper's Appendix S1 identifies the original user manual and states that the
+application, source code, sample data, and manual are licensed under GPL3.0. The
+official publisher byte stream is preserved as
+`modern/legacy/DSLT_Demo_User_Manual_v1.11.pdf`; its provenance and SHA-256 are
+recorded in `modern/legacy/README.md` and `docs/legacy-manual-audit.md`.
+
 The software is provided without warranty. Preview packages are
 synthetic-data-validated research builds and must not be represented as v1.0
 legacy-equivalent releases.

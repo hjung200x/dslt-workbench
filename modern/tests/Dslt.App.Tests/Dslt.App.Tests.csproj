@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\app\Dslt.App\Dslt.App.csproj" />
+    <ProjectReference Include="..\..\tools\Dslt.Validation.Prepare\Dslt.Validation.Prepare.csproj" />
   </ItemGroup>
 </Project>

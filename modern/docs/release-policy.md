@@ -9,8 +9,8 @@ SHA-256 checksum file. The archive contains:
 - `BUILD-INFO.json` with the exact source commit, runtime identifier, backend,
   validation level, and preserved legacy baseline;
 - the complete GPLv3 text, retained third-party notices, source availability,
-  .NET runtime license and notices, plus the complete `modern/docs` release
-  documentation set.
+  .NET runtime license and notices, the hash-locked original DSLT Demo 1.11
+  manual, plus the complete `modern/docs` release documentation set.
 
 `package-preview.ps1` starts from clean publish/package directories, builds and
 tests the selected native backend unless `-SkipNativeBuild` is supplied by a CI
@@ -26,6 +26,7 @@ The verifier rejects:
 - duplicate paths under Windows case-insensitive matching;
 - missing or empty required files;
 - missing GPLv3 completion markers or upstream/baseline provenance;
+- a missing, truncated, or changed original manual;
 - an invalid build manifest;
 - a package filename whose version or backend disagrees with its build manifest;
 - non-x64 application or native PE binaries;

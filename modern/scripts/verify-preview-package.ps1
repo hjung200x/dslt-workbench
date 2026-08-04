@@ -67,6 +67,9 @@ try {
         'docs\adaptive-threshold-spec.md',
         'docs\dslt-algorithm-spec.md',
         'docs\functional-spec.md',
+        'docs\legacy-assets.md',
+        'docs\legacy-manual-audit.md',
+        'docs\DSLT_Demo_User_Manual_v1.11.pdf',
         'docs\h-minima-spec.md',
         'docs\height-map-spec.md',
         'docs\height-projection-spec.md',
@@ -99,6 +102,12 @@ try {
     if ($provenance -notmatch 'takashi310/DSLT' -or
         $provenance -notmatch 'aae2b3e5310fcaad4151a878ad65ed2a3fa29146') {
         throw 'Package provenance does not identify the upstream repository and baseline commit.'
+    }
+    $legacyManualPath = Join-Path $temporaryRoot 'docs\DSLT_Demo_User_Manual_v1.11.pdf'
+    $legacyManualHash = (Get-FileHash -LiteralPath $legacyManualPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($legacyManualHash -ne 'aa2c21a6fe3aafc7a431d117aed4ede66b6878f807304805d73ffea602392014' -or
+        (Get-Item -LiteralPath $legacyManualPath).Length -ne 2192662) {
+        throw 'The preserved DSLT Demo 1.11 manual is missing or has changed.'
     }
 
     $buildInfo = Get-Content -LiteralPath (Join-Path $temporaryRoot 'BUILD-INFO.json') -Raw -Encoding utf8 | ConvertFrom-Json

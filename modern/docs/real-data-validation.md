@@ -36,6 +36,62 @@ linking the sidecar to the candidate labels.
 Do not commit private microscopy data. `modern/validation/data/`, local
 manifests, and generated reports are ignored by Git.
 
+### Normalize an external reference mask
+
+Public and laboratory reference masks are often compressed unsigned or binary
+TIFF stacks, while the release validator deliberately accepts the legacy DSLT
+signed-label interchange format. Normalize a 1- to 16-bit grayscale or indexed
+TIFF stack before adding it to a local manifest. Binary masks may also be read
+from other WIC-supported formats such as PNG when `--binary` is explicit:
+
+```powershell
+dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj -- normalize-reference `
+  --input D:\cohort\expert-mask.tif `
+  --output modern\validation\data\acquisition-01.reference.tif `
+  --spacing-x 0.25 --spacing-y 0.25 --spacing-z 1.0 --unit um
+```
+
+Use `--binary` when every non-background source value is foreground. The
+default source/output background is `0` and the default foreground label is
+`1`; all three labels can be set explicitly. The tool reports source and output
+SHA-256 values and refuses to replace an existing output unless `--force` is
+provided. Keep the original reference file and its license/citation alongside
+the private cohort records so normalization remains auditable.
+
+Normalization only changes the interchange encoding. It does not make a public
+benchmark representative of the DSLT leaf-imaging use case and does not satisfy
+the v1.0 gate without curator confirmation.
+
+### Assemble a source-locked manifest
+
+After Workbench has written the candidate label TIFF and provenance 1.8
+sidecar, create the first schema-2 case without copying metadata by hand:
+
+```powershell
+dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj -- add-case `
+  --manifest modern\validation\real-data-manifest.local.json `
+  --dataset-name leaf-validation-cohort `
+  --candidate-source-commit 0123456789abcdef0123456789abcdef01234567 `
+  --id acquisition-01 --acquisition-id microscope-run-01 `
+  --reference-kind expert `
+  --input-volume modern\validation\data\acquisition-01.tif `
+  --reference-labels modern\validation\data\acquisition-01.reference.tif `
+  --candidate-labels modern\validation\data\acquisition-01.candidate.labels.i16.tif `
+  --candidate-provenance modern\validation\data\acquisition-01.candidate.json `
+  --representative-real
+```
+
+Use `--append` for every later case. The command derives voxel type, container,
+channel count, Z spacing, and decoded-input SHA-256 from the candidate
+provenance. It verifies provenance schema/source identity, candidate operation
+and backend, reference/candidate shape and calibration, decoded candidate-label
+SHA-256, and every file hash before atomically writing the manifest. Existing
+manifests are not changed without `--append`, duplicate case IDs are rejected,
+and a failed append leaves the prior manifest intact.
+
+`--representative-real` is deliberately required on every invocation. It is a
+curator assertion, not a classification inferred by the tool.
+
 ## Run
 
 ```powershell
