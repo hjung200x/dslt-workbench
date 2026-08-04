@@ -48,3 +48,7 @@ A verified preview is not sufficient for v1.0. Approval additionally requires:
   runner;
 - Windows 10 22H2 and Windows 11 interactive DPI, accessibility, cancellation,
   recovery, and large-volume checks.
+
+The repeatable host portion is collected with `test-windows-host.ps1` according
+to `windows-host-validation.md`. v1.0 evidence includes the Windows 10 150% JSON,
+the Windows 11 200% JSON, and their paired manual observations.
