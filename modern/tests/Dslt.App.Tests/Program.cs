@@ -1,7 +1,12 @@
 using System.Buffers.Binary;
 using System.IO;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Dslt.App.Services;
 using Dslt.Managed.Core.Models;
 
@@ -15,6 +20,7 @@ internal static class Program
         var path = Path.Combine(Path.GetTempPath(), $"dslt-stack-{Guid.NewGuid():N}.tif");
         try
         {
+            RunMainWindowStartupSmokeTest();
             var encoder = new TiffBitmapEncoder();
             for (var z = 0; z < 3; z++)
             {
@@ -53,6 +59,103 @@ internal static class Program
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    private static void RunMainWindowStartupSmokeTest()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                RunMainWindowStartupSmokeTestOnSta();
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+            throw new InvalidOperationException("The WPF main-window startup smoke test failed.", failure);
+    }
+
+    private static void RunMainWindowStartupSmokeTestOnSta()
+    {
+        var application = new global::Dslt.App.App();
+        application.InitializeComponent();
+        Exception? inspectionFailure = null;
+        application.Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                var window = application.MainWindow as global::Dslt.App.MainWindow ??
+                    throw new InvalidOperationException("The application did not create its main window.");
+                if (!window.IsLoaded)
+                    throw new InvalidOperationException("The WPF main window did not reach the loaded state.");
+
+                var progress = FindVisualChild<ProgressBar>(window) ??
+                    throw new InvalidOperationException("The WPF main window has no progress indicator.");
+                var binding = BindingOperations.GetBindingExpression(progress, ProgressBar.ValueProperty);
+                if (binding?.ParentBinding.Mode != BindingMode.OneWay)
+                    throw new InvalidOperationException("The read-only progress property must use a OneWay binding.");
+
+                AssertNamedInputControls(window);
+            }
+            catch (Exception error)
+            {
+                inspectionFailure = error;
+            }
+            finally
+            {
+                application.MainWindow?.Close();
+                if (!application.Dispatcher.HasShutdownStarted)
+                    application.Shutdown(inspectionFailure is null ? 0 : 1);
+            }
+        }, DispatcherPriority.ApplicationIdle);
+
+        _ = application.Run();
+        if (inspectionFailure is not null)
+            throw inspectionFailure;
+    }
+
+    private static void AssertNamedInputControls(DependencyObject root)
+    {
+        var unnamed = new List<string>();
+        Visit(root, unnamed);
+        if (unnamed.Count > 0)
+            throw new InvalidOperationException(
+                $"Focusable WPF controls require explicit accessible names: {string.Join(", ", unnamed)}");
+
+        static void Visit(DependencyObject node, ICollection<string> unnamed)
+        {
+            if (node is Slider or ComboBox or TextBox or ListBox or ScrollViewer or ProgressBar)
+            {
+                var name = AutomationProperties.GetName(node);
+                if (string.IsNullOrWhiteSpace(name))
+                    unnamed.Add(node.GetType().Name);
+            }
+
+            foreach (var child in LogicalTreeHelper.GetChildren(node))
+            {
+                if (child is DependencyObject dependencyObject)
+                    Visit(dependencyObject, unnamed);
+            }
+        }
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match) return match;
+            var nested = FindVisualChild<T>(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 
     private static void RunGray16RoundTripTest()
