@@ -98,6 +98,7 @@ The exact 3D Euclidean depth map, scalar Z/normal projection, range and offset
 semantics, threshold behavior, and display-layer boundary are defined in
 `docs/height-projection-spec.md`.
 
-The current WPF workflow, state-preservation guarantees, and the remaining
-orthogonal-view and label-editing UI work are tracked in
-`docs/ui-workflow.md`.
+The current WPF workflow, state-preservation guarantees, responsive layout, and
+remaining interactive checks are tracked in `docs/ui-workflow.md`. Repeatable
+Windows 10/11 package evidence is collected according to
+`docs/windows-host-validation.md`.
