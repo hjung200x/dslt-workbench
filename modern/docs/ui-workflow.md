@@ -16,6 +16,9 @@ equivalence; that remains gated by representative datasets.
   only while the window is still active.
 - Select a channel and shared X/Y/Z coordinates with bounds derived from the
   active volume.
+- Keep navigation/volume and processing/editing controls independently
+  scrollable so the 900 x 500 logical minimum remains usable on a 1920 x 1080
+  display through 200% scaling.
 - Render synchronized XY, YZ, and ZX source/result planes, apply one shared zoom
   factor, and propagate normalized scroll offsets across all six views.
 - Adjust the display window independently of stored voxel values.
@@ -80,6 +83,9 @@ equivalence; that remains gated by representative datasets.
     active Z plane without a two-second caller stall, exposes cancellation while
     work is in flight, returns from the cancel command within one second, and
     preserves the source view and last valid result state.
+15. the 900 x 500 logical minimum fits within 1920 x 1080 at 125%, 150%, and
+    200% scaling, both control columns expose vertical scrolling, and Open, Run,
+    Cancel, and Export can each be scrolled into the live window.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
@@ -94,6 +100,11 @@ descendants, and had zero keyboard-focusable elements without an accessible
 name. The app then accepted a normal window-close request and exited. This is
 one-host startup evidence, not completion of the dual-OS and multi-DPI release
 gate.
+
+The responsive minimum was also exercised as a self-contained build at 900 x
+500 device-independent units. It retained `PerMonitorV2=True`, exposed 144 UI Automation
+descendants with zero unnamed keyboard-focusable elements, and UI Automation
+successfully scrolled Open, Run, Cancel, and Export into view independently.
 
 ## Remaining UI work
 
