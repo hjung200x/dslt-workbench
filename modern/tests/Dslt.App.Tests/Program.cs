@@ -55,6 +55,7 @@ internal static class Program
             RunUnsignedInt32RoundTripTest();
             RunUnsignedInt32MinIsWhiteTest();
             RunSignedInt32BigEndianRoundTripTest();
+            Int32TiffCompressionTests.Run();
             RunMalformedInt32StripTest();
             RunImageJHyperStackTest();
             RunLsmMetadataAndThumbnailTest();

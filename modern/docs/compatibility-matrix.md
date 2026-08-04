@@ -8,7 +8,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | ImageJ HyperStack metadata | `XYCZT` to channel-planar adapter | implemented | Synthetic 2-channel x 2-slice calibration fixture |
 | LSM input | TIFF-compatible WIC pixels + checked CZ_LSMINFO core metadata | scaffolded | Tag 34412 magic/size, X/Y/Z/C/T, meter voxel calibration, C-fastest channel-planar order, reduced-resolution IFD filtering, codec frame-count variants, and malformed magic fixture implemented; channel names/timestamps and real LSM comparison pending |
 | 8/16-bit integer and 32-bit float input | Raw decoded samples + normalized float working volume | implemented | Bit-exact decoded sample fixtures |
-| 32-bit integer image input | Checked raw TIFF strip path | scaffolded | Signed/unsigned, little/big-endian, multi-page, multi-strip, cancellation, bit-exact canonical bytes, normalization, and malformed byte-count fixtures implemented; compressed Int32 and real microscopy comparison pending |
+| 32-bit integer image input | Checked raw TIFF strip path | scaffolded | Signed/unsigned, little/big-endian, multi-page, multi-strip, LZW/Deflate/Adobe Deflate/PackBits, horizontal predictor, LZW EarlyChange dictionary growth, cancellation, bit-exact canonical bytes, normalization, and malformed compressed/uncompressed strip fixtures implemented; real microscopy comparison pending |
 | Channel selection | Explicit `channel` in descriptor/request | implemented | Synthetic multichannel fixture |
 | Z area-average scaling | `ResampleZArea` | implemented | Ramp and impulse fixtures |
 | Z Lanczos 2/3 scaling | `ResampleZLanczos` | implemented | Ramp and impulse fixtures |

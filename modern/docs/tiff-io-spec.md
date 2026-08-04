@@ -9,7 +9,7 @@ Zeiss LSM fixture or a legacy-executable capture.
 
 | Capability | Current level |
 |---|---|
-| Gray8, Gray16, Gray32Float, signed Int32, and unsigned Int32 TIFF pixels | Synthetic-data validated for WIC types and uncompressed raw Int32 strips |
+| Gray8, Gray16, Gray32Float, signed Int32, and unsigned Int32 TIFF pixels | Synthetic-data validated for WIC types and raw Int32 strips using uncompressed, LZW, Deflate, Adobe Deflate, and PackBits encodings |
 | ImageJ `C x Z` hyperstack order and calibration | Synthetic-data validated |
 | Signed 16-bit legacy label TIFF | Synthetic-data validated |
 | Signed 32-bit extended label TIFF | Synthetic-data validated |
@@ -52,7 +52,7 @@ array, decoded raw array, and one page buffer and rejects a request exceeding
 | Unsigned 16-bit | Decoded bytes preserved; processing floats normalized per channel |
 | Signed 16-bit | Accepted only when WIC exposes unconverted Gray16 samples |
 | IEEE float 32-bit | Decoded IEEE bytes preserved; finite values normalized by maximum absolute value per channel |
-| Signed/unsigned image integer 32-bit | Uncompressed strips use a checked raw path; little- or big-endian samples are canonicalized to bit-exact little-endian decoded bytes and normalized per channel |
+| Signed/unsigned image integer 32-bit | Checked raw strips support uncompressed, LZW, Deflate (8/32946), and PackBits compression plus horizontal predictor 2; little- or big-endian samples are canonicalized to bit-exact little-endian decoded bytes and normalized per channel |
 | WIC-supported strip compression | Decoded by the installed Windows TIFF codec |
 
 The original loader calls `getXYZStackFloat(..., normalize=true, channel)` and
@@ -71,10 +71,15 @@ orientation and chunky grayscale layout, validates every strip range and exact
 row byte count, rejects IFD cycles, skips reduced-resolution IFDs, and checks
 cancellation between directories and strips. MinIsWhite samples are inverted
 over the complete signed or unsigned 32-bit range before canonical storage.
-Compressed Int32 strips are rejected explicitly until a codec-backed raw path
-is available. Memory is checked before each page allocation against the peak
-coexistence of decoded pages, channel-planar raw storage, float working storage,
-and a page buffer.
+Compressed Int32 strips are decoded without converting their sample type. LZW
+uses TIFF EarlyChange=1 with checked 9/10/11/12-bit dictionary transitions;
+Deflate accepts zlib-wrapped and raw streams for compression IDs 8 and 32946;
+PackBits bounds every literal and repeated run. Predictor 2 is reversed per row
+with modulo-32-bit arithmetic before endian canonicalization. Every decoder
+requires the exact declared uncompressed byte count and rejects missing LZW EOI,
+trailing PackBits data, truncated streams, unsupported compression/predictor,
+and decompression overflow. Memory is checked before compressed, decoded, raw,
+and float buffers coexist.
 
 ## ImageJ metadata
 
@@ -168,6 +173,6 @@ the lossless internal label array.
 - ImageJ hyperstacks with two or more channels and real X/Y resolution tags;
 - a real `.lsm` with trusted channel count and voxel calibration;
 - a legacy-generated signed 16-bit segment TIFF;
-- compressed 32-bit signed and unsigned image TIFFs for the future codec-backed raw path;
+- real compressed 32-bit signed and unsigned microscopy TIFFs from independent encoders;
 - malformed offsets, strip-count mismatch, truncated file, and allocation-limit
   rejection fixtures.
