@@ -109,8 +109,9 @@ layout fields are read at their source-compatible offsets: dimensions at bytes
 required to be little-endian.
 
 `DimensionX` and `DimensionY` must match the full-resolution TIFF frame. The
-number of non-thumbnail IFDs must equal `Z x C x T`, and time dimension must be
-one. LSM pages are converted from C-fastest Z/C order to internal channel-planar
+number of non-thumbnail IFDs must equal `Z x C x T` for one-sample IFDs or
+`Z x T` when each IFD stores `C` separate planar samples, and time dimension
+must be one. Both forms are converted to internal channel-planar `CZYX`
 storage. IFDs whose NewSubfileType marks reduced resolution are excluded;
 because Windows codecs differ, the loader accepts either all IFDs or only the
 already-filtered full-resolution frames from WIC, and rejects every other frame
@@ -125,19 +126,29 @@ Declared block sizes, relative offsets, channel counts, string lengths, and
 timestamp counts are validated before allocation or reading. Missing optional
 blocks produce empty metadata arrays.
 
-Malformed magic, size, dimensions, voxel sizes, optional block bounds, channel
+The direct planar-sample path accepts uint8/uint16 classic TIFF strips with no
+compression, LZW, Deflate, Adobe Deflate, or PackBits, plus horizontal
+predictor 1/2. It validates per-channel strip layout and decodes every channel
+without color conversion. Malformed magic, size, dimensions, voxel sizes,
+optional block bounds, channel
 metadata, timestamps, IFD cycles, or page-count disagreement fail before the
 active volume is replaced. Spectral metadata, multiple time points, and files
 beyond classic TIFF's 32-bit offsets remain outside this preview contract.
-Complete claims remain blocked until representative real LSM files are
-available.
+
+Real-file evidence is locked in
+[`public-lsm-interoperability.lock.json`](../validation/public-lsm-interoperability.lock.json).
+Independent `tifffile 2026.5.15` and Workbench decodes agree exactly for a
+uint16 single-channel file, a uint8 three-channel planar file, and a uint8
+two-channel 57-Z stack, including calibration, names/colors, and timestamps.
+The original DSLT sample LSMs remain unavailable, so this is format
+interoperability evidence rather than an original-distribution comparison.
 
 Public layout evidence is the BSD-licensed
 [`tifffile` CZ_LSMINFO definition](https://github.com/cgohlke/tifffile/blob/master/tifffile/tifffile.py#L16345-L16360).
 Bio-Formats documents strong LSM pixel and metadata support while noting that
 its Zeiss specification copies cannot be redistributed. Workbench therefore
-keeps real-file comparison as a required gate rather than treating the
-synthetic binary fixture as full compatibility proof.
+uses independently decoded public files in addition to synthetic binary
+fixtures.
 
 ## Label TIFF contract
 

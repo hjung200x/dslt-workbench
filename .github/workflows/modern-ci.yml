@@ -36,6 +36,12 @@ jobs:
         run: dotnet build modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj --configuration Release
       - name: Build headless real-data candidate tool
         run: dotnet build modern/tools/Dslt.Validation.Candidate/Dslt.Validation.Candidate.csproj --configuration Release
+      - name: Verify preserved legacy distribution evidence
+        shell: pwsh
+        run: ./modern/scripts/verify-legacy-distribution.ps1
+      - name: Verify public LSM interoperability lock
+        shell: pwsh
+        run: ./modern/scripts/verify-public-lsm-interoperability.ps1 -LockOnly
       - name: Test fail-closed v1 release evidence gate
         shell: pwsh
         run: ./modern/scripts/test-v1-release-evidence.ps1

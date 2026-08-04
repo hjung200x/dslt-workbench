@@ -24,6 +24,7 @@ static async Task<int> RunAsync(string[] args)
         {
             "normalize-reference" => RunNormalizeReference(commandArgs),
             "import-plantseg-hdf5" => RunImportPlantSegHdf5(commandArgs),
+            "inspect-volume" => RunInspectVolume(commandArgs),
             "add-case" => await RunAddCaseAsync(commandArgs).ConfigureAwait(false),
             _ => throw new ArgumentException($"Unknown command: {args[0]}"),
         };
@@ -34,6 +35,13 @@ static async Task<int> RunAsync(string[] args)
         Console.Error.WriteLine($"Validation preparation failed: {exception.Message}");
         return 2;
     }
+}
+
+static int RunInspectVolume(string[] args)
+{
+    var options = Parse(args, IsInspectOption, IsCommonFlag);
+    WriteJson(VolumeInspector.Inspect(Require(options, "--input"), CancellationToken.None));
+    return 0;
 }
 
 static int RunImportPlantSegHdf5(string[] args)
@@ -205,6 +213,8 @@ static void PrintUsage()
             [--reference-background <label>] [--candidate-background <label>]
             [--connectivity <6|18|26>] [--append]
 
+          Dslt.Validation.Prepare inspect-volume --input <input.tif|input.lsm>
+
           Dslt.Validation.Prepare import-plantseg-hdf5
             --input <plantseg.h5>
             --output-volume <input.tif> --output-labels <reference.tif>
@@ -231,6 +241,9 @@ static void PrintUsage()
         label volumes before atomically creating or extending a schema-2 manifest.
         Existing manifests require --append. Classification requires the explicit
         --representative-real acknowledgement.
+
+        inspect-volume decodes an input through the Workbench loader and emits file,
+        canonical CZYX pixel, calibration, channel, and timestamp evidence as JSON.
         """);
 }
 
@@ -248,6 +261,8 @@ static bool IsPlantSegOption(string key) => key.ToLowerInvariant() is
     "--input" or "--output-volume" or "--output-labels" or "--spacing-x" or "--spacing-y" or
     "--spacing-z" or "--unit" or "--voxel-type" or "--channels" or "--force" or
     "--crop-x" or "--crop-y" or "--crop-z" or "--crop-width" or "--crop-height" or "--crop-depth";
+
+static bool IsInspectOption(string key) => key.Equals("--input", StringComparison.OrdinalIgnoreCase);
 
 static bool IsCommonFlag(string key) => key.ToLowerInvariant() is
     "--binary" or "--force" or "--representative-real" or "--append";

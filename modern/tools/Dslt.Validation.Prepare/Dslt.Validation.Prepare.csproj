@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\app\Dslt.Managed.Core\Dslt.Managed.Core.csproj" />
+    <ProjectReference Include="..\..\app\Dslt.App\Dslt.App.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="PureHDF" Version="2.1.4" />

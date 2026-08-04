@@ -19,7 +19,10 @@ download host is no longer resolvable as of 2026-08-04. A recovered copy must be
 hashed and its provenance recorded before use. TIFF and LSM versions of the
 same acquisition count once, so these files alone cannot meet the five-unique-
 acquisition release rule. The source list also provides no accepted label
-output; legacy output or expert review is still required.
+output; legacy output or expert review is still required. The exhaustive named
+asset inventory, archive result, and offline verification contract are recorded
+in [`legacy-distribution-audit.md`](legacy-distribution-audit.md) and
+[`legacy-distribution.lock.json`](../validation/legacy-distribution.lock.json).
 
 ## Priority 2: local Cortex five-acquisition candidate
 
@@ -36,6 +39,18 @@ no accepted full-volume 3D labels. All five are native three-channel uint8 at
 the same Z spacing, so additional native single-channel, uint16, float32, and
 different-spacing acquisitions are still required. Curator confirmation is
 also required before `representative-real` release classification.
+
+## File-format interoperability cohort (not a segmentation gate)
+
+Three public CC BY 4.0 Zeiss LSM files from Zenodo cover real uint16
+single-channel, uint8 three-channel planar, and uint8 two-channel 57-Z layouts.
+Workbench pixels and metadata match independent `tifffile 2026.5.15` decoding
+exactly. The locked hashes, download-in-place command, and scope boundary are in
+[`public-lsm-interoperability.md`](public-lsm-interoperability.md).
+
+These microscopy files have no accepted DSLT leaf labels and are not
+representative leaf acquisitions. They validate the LSM input implementation
+only and contribute zero cases to the v1.0 segmentation metric gate.
 
 ## Priority 3: public plant-cell volumetric references
 

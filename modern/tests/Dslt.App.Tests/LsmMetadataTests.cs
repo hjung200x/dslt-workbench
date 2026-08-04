@@ -14,10 +14,50 @@ internal static class LsmMetadataTests
     public static void Run()
     {
         RunRoundTrip();
+        RunPackedPlanarRoundTrip();
+        RunPackedPlanarMinIsWhiteRoundTrip();
         RunCoreOnly();
         AssertRejected("magic", validMagic: false, corruptChannelNames: false, corruptTimeStamps: false);
         AssertRejected("channel-names", validMagic: true, corruptChannelNames: true, corruptTimeStamps: false);
         AssertRejected("timestamps", validMagic: true, corruptChannelNames: false, corruptTimeStamps: true);
+    }
+
+    private static void RunPackedPlanarMinIsWhiteRoundTrip()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-lsm-planar-white-{Guid.NewGuid():N}.lsm");
+        try
+        {
+            WriteSyntheticPackedPlanarLsm(path, minIsWhite: true);
+            var volume = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+            if (!(volume.Source?.ChannelPlanarRawSamples ?? []).SequenceEqual(
+                    new byte[] { 245, 244, 235, 234, 155, 154, 55, 54 }))
+                throw new InvalidOperationException("Packed planar MinIsWhite LSM samples were not inverted.");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    private static void RunPackedPlanarRoundTrip()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-lsm-planar-{Guid.NewGuid():N}.lsm");
+        try
+        {
+            WriteSyntheticPackedPlanarLsm(path);
+            var volume = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+            volume.Validate();
+            if (volume.Width != 2 || volume.Height != 1 || volume.Depth != 2 || volume.Channels != 2)
+                throw new InvalidOperationException("Packed planar LSM dimensions were not reconstructed.");
+            if (volume.Source?.VoxelType != Dslt.Managed.Core.Models.VolumeVoxelType.UnsignedInt8 ||
+                volume.Source.Container != "LSM")
+                throw new InvalidOperationException("Packed planar LSM source identity was not preserved.");
+            if (!volume.Source.ChannelPlanarRawSamples.SequenceEqual(
+                    new byte[] { 10, 11, 20, 21, 100, 101, 200, 201 }))
+                throw new InvalidOperationException("Packed planar LSM samples were not reordered from ZCYX to CZYX.");
+            if (Math.Abs(volume.Calibration.SpacingX - 0.25) > 1e-12 ||
+                Math.Abs(volume.Calibration.SpacingY - 0.5) > 1e-12 ||
+                Math.Abs(volume.Calibration.SpacingZ - 1.5) > 1e-12)
+                throw new InvalidOperationException("Packed planar LSM calibration was not preserved.");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
     }
 
     private static void RunRoundTrip()
@@ -163,6 +203,81 @@ internal static class LsmMetadataTests
             }
             stream.WriteByte(reduced ? (byte)255 : fullValues[page / 2]);
         }
+    }
+
+    private static void WriteSyntheticPackedPlanarLsm(string path, bool minIsWhite = false)
+    {
+        const int pageCount = 2;
+        const uint packedLsmInfoSize = 64;
+        var ifdOffsets = new uint[pageCount];
+        var stripOffsetArrayOffsets = new uint[pageCount];
+        var stripCountArrayOffsets = new uint[pageCount];
+        var pixelOffsets = new uint[pageCount];
+        uint cursor = 8;
+        for (var page = 0; page < pageCount; page++)
+        {
+            var entryCount = page == 0 ? 14u : 13u;
+            var ifdBytes = checked(2u + entryCount * 12u + 4u);
+            ifdOffsets[page] = cursor;
+            stripOffsetArrayOffsets[page] = checked(cursor + ifdBytes);
+            stripCountArrayOffsets[page] = checked(stripOffsetArrayOffsets[page] + 8u);
+            pixelOffsets[page] = checked(
+                stripCountArrayOffsets[page] + 8u + (page == 0 ? packedLsmInfoSize : 0u));
+            cursor = checked(pixelOffsets[page] + 4u);
+        }
+
+        var lsmInfoOffset = checked(stripCountArrayOffsets[0] + 8u);
+        using var stream = File.Create(path);
+        stream.WriteByte((byte)'I');
+        stream.WriteByte((byte)'I');
+        WriteUInt16(stream, 42);
+        WriteUInt32(stream, ifdOffsets[0]);
+        for (var page = 0; page < pageCount; page++)
+        {
+            WriteUInt16(stream, page == 0 ? (ushort)14 : (ushort)13);
+            WriteLongEntry(stream, 254, 0);
+            WriteLongEntry(stream, 256, 2);
+            WriteLongEntry(stream, 257, 1);
+            WriteShortEntry(stream, 258, 8);
+            WriteShortEntry(stream, 259, 1);
+            WriteShortEntry(stream, 262, (ushort)(minIsWhite ? 0 : 2));
+            WriteArrayOffsetEntry(stream, 273, 2, stripOffsetArrayOffsets[page], type: 4);
+            WriteShortEntry(stream, 274, 1);
+            WriteShortEntry(stream, 277, 2);
+            WriteLongEntry(stream, 278, 1);
+            WriteArrayOffsetEntry(stream, 279, 2, stripCountArrayOffsets[page], type: 4);
+            WriteShortEntry(stream, 284, 2);
+            WriteShortEntry(stream, 339, 1);
+            if (page == 0)
+                WriteArrayOffsetEntry(stream, 34412, packedLsmInfoSize, lsmInfoOffset, type: 1);
+            WriteUInt32(stream, page + 1 < pageCount ? ifdOffsets[page + 1] : 0);
+
+            WriteUInt32(stream, pixelOffsets[page]);
+            WriteUInt32(stream, checked(pixelOffsets[page] + 2u));
+            WriteUInt32(stream, 2);
+            WriteUInt32(stream, 2);
+            if (page == 0) WritePackedLsmInfo(stream);
+            stream.Write(page == 0
+                ? new byte[] { 10, 11, 100, 101 }
+                : new byte[] { 20, 21, 200, 201 });
+        }
+    }
+
+    private static void WritePackedLsmInfo(Stream stream)
+    {
+        WriteUInt32(stream, 50350412u);
+        WriteInt32(stream, 64);
+        WriteInt32(stream, 2);
+        WriteInt32(stream, 1);
+        WriteInt32(stream, 2);
+        WriteInt32(stream, 2);
+        WriteInt32(stream, 1);
+        WriteInt32(stream, 1);
+        WriteInt32(stream, 1);
+        WriteInt32(stream, 1);
+        WriteDouble(stream, 0.25e-6);
+        WriteDouble(stream, 0.5e-6);
+        WriteDouble(stream, 1.5e-6);
     }
 
     private static void WriteLsmInfo(
