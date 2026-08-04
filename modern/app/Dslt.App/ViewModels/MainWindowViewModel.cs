@@ -5,6 +5,7 @@ using System.Windows.Media.Imaging;
 using Dslt.App.Infrastructure;
 using Dslt.App.Services;
 using Dslt.Managed.Core.IO;
+using Dslt.Managed.Core.Analysis;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Provenance;
 using Dslt.Managed.Core.Segmentation;
@@ -56,6 +57,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _heightMapSmoothLevel = 1;
     private LegacyHeightMap? _activeHeightMap;
     private string? _activeHeightMapSha256;
+    private HeightSurfaceAreaMap? _heightSurfaceAreaMap;
     private bool _cropEnabled;
     private bool _cropUseHeightMap = true;
     private int _cropUpper;
@@ -147,6 +149,10 @@ public sealed class MainWindowViewModel : ObservableObject
         LoadHeightMapCommand = new AsyncRelayCommand(LoadHeightMapAsync, () => HasVolume && !IsBusy);
         SaveHeightMapCommand = new AsyncRelayCommand(
             SaveHeightMapAsync, () => _activeHeightMap is not null && !IsBusy);
+        CalculateHeightSurfaceAreaCommand = new AsyncRelayCommand(
+            CalculateHeightSurfaceAreaAsync, () => _activeHeightMap is not null && !IsBusy);
+        SaveHeightSurfaceAreaCommand = new AsyncRelayCommand(
+            SaveHeightSurfaceAreaAsync, () => _heightSurfaceAreaMap is not null && !IsBusy);
         SaveSourceViewsCommand = new AsyncRelayCommand(
             () => SaveOrthogonalViewsAsync(resultViews: false),
             () => CanSaveOrthogonalViews(resultViews: false));
@@ -450,6 +456,12 @@ public sealed class MainWindowViewModel : ObservableObject
     public string ActiveHeightMapSummary => _activeHeightMap is null
         ? "No active height map"
         : $"Active height map: {_activeHeightMap.Width} x {_activeHeightMap.Height} · SHA-256 {_activeHeightMapSha256![..12]}";
+    public bool HasHeightSurfaceAreaMap => _heightSurfaceAreaMap is not null;
+    public string HeightSurfaceAreaSummary => _heightSurfaceAreaMap is null
+        ? "No height-surface area map"
+        : $"Surface area: {_heightSurfaceAreaMap.Width} x {_heightSurfaceAreaMap.Height} · " +
+          $"max {_heightSurfaceAreaMap.MaximumScaleFactor.ToString("0.######", CultureInfo.InvariantCulture)} · " +
+          $"{_heightSurfaceAreaMap.IntegrationResolution} x {_heightSurfaceAreaMap.IntegrationResolution} Simpson";
 
     public bool CropEnabled
     {
@@ -825,6 +837,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public AsyncRelayCommand LoadSegmentsCommand { get; }
     public AsyncRelayCommand LoadHeightMapCommand { get; }
     public AsyncRelayCommand SaveHeightMapCommand { get; }
+    public AsyncRelayCommand CalculateHeightSurfaceAreaCommand { get; }
+    public AsyncRelayCommand SaveHeightSurfaceAreaCommand { get; }
     public AsyncRelayCommand SaveSourceViewsCommand { get; }
     public AsyncRelayCommand SaveResultViewsCommand { get; }
     public AsyncRelayCommand EstimateCommand { get; }
@@ -999,6 +1013,107 @@ public sealed class MainWindowViewModel : ObservableObject
         catch (Exception error)
         {
             Status = $"Height-map save failed; the workspace was preserved: {error.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CalculateHeightSurfaceAreaAsync()
+    {
+        if (_activeHeightMap is null) return;
+        IsBusy = true;
+        _cancellation = new CancellationTokenSource();
+        CancelCommand.NotifyCanExecuteChanged();
+        Progress = 0;
+        Status = "Calculating height-surface area with legacy 10 x 10 Simpson integration…";
+        try
+        {
+            var activeHeightMap = _activeHeightMap;
+            var token = _cancellation.Token;
+            var progress = new Progress<double>(value => Progress = Math.Clamp(value * 100, 0, 100));
+            var areaMap = await Task.Run(
+                () => HeightSurfaceAreaCalculator.Calculate(
+                    activeHeightMap,
+                    HeightSurfaceAreaCalculator.LegacyIntegrationResolution,
+                    progress,
+                    token),
+                token);
+            var values = areaMap.ScaleFactors.ToArray();
+            _heightSurfaceAreaMap = new HeightSurfaceAreaMap(
+                areaMap.Width,
+                areaMap.Height,
+                values,
+                areaMap.PreviewGray8.ToArray(),
+                areaMap.MaximumScaleFactor,
+                areaMap.IntegrationResolution);
+            _editingSession = null;
+            _labelVoxelCounts = new Dictionary<int, int>();
+            _lastResult = new ProcessingResult(
+                ProcessingBackend.Cpu,
+                OutputKind.ImageFloat32,
+                areaMap.Width,
+                areaMap.Height,
+                1,
+                0,
+                values,
+                null);
+            _lastParameters = new OperationParameters(
+                ProcessingOperation.HeightSurfaceArea, ProcessingBackend.Cpu);
+            _lastResultProcessingSteps = _workingProcessingSteps.ToArray();
+            _lastDepthColorPixels = null;
+            _editHistory.Clear();
+            _editHistory.Add(
+                $"Calculated height-surface area from SHA-256 {_activeHeightMapSha256} " +
+                $"with {areaMap.IntegrationResolution}x{areaMap.IntegrationResolution} Simpson integration.");
+            ResetResultGeometry();
+            UpdateSelectionState();
+            RefreshResultImage();
+            SelectedStage = WorkflowStage.Process;
+            Progress = 100;
+            Status = $"Calculated height-surface area map; maximum scale factor {areaMap.MaximumScaleFactor:0.######}.";
+            OnPropertyChanged(nameof(HasHeightSurfaceAreaMap));
+            OnPropertyChanged(nameof(HeightSurfaceAreaSummary));
+            OnPropertyChanged(nameof(HasResult));
+            OnPropertyChanged(nameof(CanUseResultAsInput));
+            OnPropertyChanged(nameof(ResultGeometrySummary));
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Height-surface area calculation was cancelled; the previous result was preserved.";
+        }
+        catch (Exception error)
+        {
+            Status = $"Height-surface area calculation failed; the previous result was preserved: {error.Message}";
+        }
+        finally
+        {
+            _cancellation.Dispose();
+            _cancellation = null;
+            CancelCommand.NotifyCanExecuteChanged();
+            IsBusy = false;
+        }
+    }
+
+    private async Task SaveHeightSurfaceAreaAsync()
+    {
+        if (_heightSurfaceAreaMap is null) return;
+        IsBusy = true;
+        try
+        {
+            var paths = await _files.SaveHeightSurfaceAreaAsync(
+                _heightSurfaceAreaMap, CancellationToken.None);
+            if (paths is null) return;
+            Status = $"Saved height-surface area TIFF maps: {string.Join(", ", paths.Select(Path.GetFileName))}.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Height-surface area save was cancelled; the workspace was preserved.";
+        }
+        catch (Exception error)
+        {
+            Status = $"Height-surface area save failed; the workspace was preserved: {error.Message}";
         }
         finally
         {
@@ -1402,6 +1517,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _labelVoxelCounts = new Dictionary<int, int>();
         _activeHeightMap = null;
         _activeHeightMapSha256 = null;
+        _heightSurfaceAreaMap = null;
         _editHistory.Clear();
         _cropUpper = Math.Clamp(_cropUpper, 0, MaximumZIndex);
         _cropLower = Math.Clamp(_cropLower, 0, MaximumZIndex);
@@ -1431,6 +1547,8 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CropBorderXy));
         OnPropertyChanged(nameof(HasActiveHeightMap));
         OnPropertyChanged(nameof(ActiveHeightMapSummary));
+        OnPropertyChanged(nameof(HasHeightSurfaceAreaMap));
+        OnPropertyChanged(nameof(HeightSurfaceAreaSummary));
         OnPropertyChanged(nameof(VolumeSummary));
         OnPropertyChanged(nameof(HasVolume));
         OnPropertyChanged(nameof(HasResult));
@@ -1461,7 +1579,14 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private void RefreshResultImage()
     {
-        if (_lastResult is { } colorResult && _lastDepthColorPixels is not null)
+        if (_lastParameters?.Operation == ProcessingOperation.HeightSurfaceArea &&
+            _heightSurfaceAreaMap is { } areaMap)
+        {
+            ResultImage = CreateGray8Image(areaMap.PreviewGray8, areaMap.Width, areaMap.Height);
+            ResultYzImage = null;
+            ResultZxImage = null;
+        }
+        else if (_lastResult is { } colorResult && _lastDepthColorPixels is not null)
         {
             ResultImage = CreateRgb24Image(_lastDepthColorPixels, colorResult.Width, colorResult.Height);
             ResultYzImage = null;
@@ -1741,6 +1866,8 @@ public sealed class MainWindowViewModel : ObservableObject
         LoadSegmentsCommand.NotifyCanExecuteChanged();
         LoadHeightMapCommand.NotifyCanExecuteChanged();
         SaveHeightMapCommand.NotifyCanExecuteChanged();
+        CalculateHeightSurfaceAreaCommand.NotifyCanExecuteChanged();
+        SaveHeightSurfaceAreaCommand.NotifyCanExecuteChanged();
         SaveSourceViewsCommand.NotifyCanExecuteChanged();
         SaveResultViewsCommand.NotifyCanExecuteChanged();
         EstimateCommand.NotifyCanExecuteChanged();
@@ -1818,6 +1945,16 @@ public sealed class MainWindowViewModel : ObservableObject
         return bitmap;
     }
 
+    private static BitmapSource CreateGray8Image(byte[] pixels, int width, int height)
+    {
+        if (pixels.Length != checked(width * height))
+            throw new ArgumentException("Gray8 pixels do not match the image dimensions.", nameof(pixels));
+        var bitmap = BitmapSource.Create(
+            width, height, 96, 96, PixelFormats.Gray8, null, pixels, width);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
     private static BitmapSource CreateRgb24Image(byte[] pixels, int width, int height)
     {
         if (pixels.Length != checked(width * height * 3))
@@ -1889,8 +2026,11 @@ public sealed class MainWindowViewModel : ObservableObject
         _activeHeightMap = new LegacyHeightMap(
             heightMap.Width, heightMap.Height, heightMap.Values.ToArray());
         _activeHeightMapSha256 = ProcessingProvenance.ComputeFloatSha256(_activeHeightMap.Values);
+        _heightSurfaceAreaMap = null;
         OnPropertyChanged(nameof(HasActiveHeightMap));
         OnPropertyChanged(nameof(ActiveHeightMapSummary));
+        OnPropertyChanged(nameof(HasHeightSurfaceAreaMap));
+        OnPropertyChanged(nameof(HeightSurfaceAreaSummary));
         NotifyCommandStates();
     }
 

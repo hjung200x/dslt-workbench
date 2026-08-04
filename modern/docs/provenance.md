@@ -56,3 +56,9 @@ operation records that active surface hash in ordered history. The transient
 Float32 surface array is removed from `operation.cropHeightMap` before JSON
 serialization, preventing large unversioned arrays while retaining reproducible
 identity and the structured crop mode/bounds.
+
+`HeightSurfaceArea` is also managed-only. Its result sidecar identifies the
+operation while the first ordered history entry records the complete SHA-256 of
+the active Float32 height surface and the fixed `10x10` Simpson integration
+resolution. The quantitative output hash covers the unnormalized Float32 area
+scale factors; the Gray8 TIFF is a presentation preview only.

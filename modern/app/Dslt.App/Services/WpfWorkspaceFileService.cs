@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
+using Dslt.Managed.Core.Analysis;
 using Microsoft.Win32;
 
 namespace Dslt.App.Services;
@@ -76,6 +77,76 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
             () => LegacyHeightMapCodec.Write(dialog.FileName, heightMap, cancellationToken),
             cancellationToken);
         return dialog.FileName;
+    }
+
+    public async Task<IReadOnlyList<string>?> SaveHeightSurfaceAreaAsync(
+        HeightSurfaceAreaMap areaMap,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(areaMap);
+        areaMap.Validate();
+        var dialog = new SaveFileDialog
+        {
+            Title = "Save height-surface area maps",
+            Filter = "TIFF image|*.tif|TIFF image (long extension)|*.tiff",
+            DefaultExt = ".tif",
+            FileName = "area_map.tif",
+            AddExtension = true,
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog() != true) return null;
+        return await Task.Run(
+            () => WriteHeightSurfaceAreaMaps(dialog.FileName, areaMap, cancellationToken),
+            cancellationToken);
+    }
+
+    internal static IReadOnlyList<string> WriteHeightSurfaceAreaMaps(
+        string previewPath,
+        HeightSurfaceAreaMap areaMap,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(previewPath);
+        ArgumentNullException.ThrowIfNull(areaMap);
+        areaMap.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
+        var paths = BuildHeightSurfaceAreaPaths(previewPath);
+        var preview = BitmapSource.Create(
+            areaMap.Width,
+            areaMap.Height,
+            96,
+            96,
+            PixelFormats.Gray8,
+            null,
+            areaMap.PreviewGray8,
+            areaMap.Width);
+        preview.Freeze();
+        var previewDirectory = Path.GetDirectoryName(paths[0]);
+        if (!string.IsNullOrEmpty(previewDirectory)) Directory.CreateDirectory(previewDirectory);
+        var encoder = new TiffBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(preview));
+        using (var stream = new FileStream(paths[0], FileMode.Create, FileAccess.Write, FileShare.None))
+            encoder.Save(stream);
+        cancellationToken.ThrowIfCancellationRequested();
+        Float32TiffCodec.WriteSingle(
+            paths[1], areaMap.Width, areaMap.Height, areaMap.ScaleFactors, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return paths;
+    }
+
+    internal static string[] BuildHeightSurfaceAreaPaths(string previewPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(previewPath);
+        var fullPath = Path.GetFullPath(previewPath);
+        var extension = Path.GetExtension(fullPath);
+        if (string.IsNullOrEmpty(extension))
+        {
+            extension = ".tif";
+            fullPath += extension;
+        }
+        var directory = Path.GetDirectoryName(fullPath)
+            ?? throw new ArgumentException("Height-surface area path does not have a parent directory.", nameof(previewPath));
+        var stem = Path.GetFileNameWithoutExtension(fullPath);
+        return [fullPath, Path.Combine(directory, stem + "32" + extension)];
     }
 
     public async Task<IReadOnlyList<string>?> SaveOrthogonalViewsAsync(

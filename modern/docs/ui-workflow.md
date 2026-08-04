@@ -17,6 +17,9 @@ equivalence; that remains gated by representative datasets.
 - Load/save the source-derived little-endian `.hmp` height-map format with H/J,
   retain one active X/Y-compatible surface and its SHA-256, and preserve both
   the active surface and prior result when loading fails.
+- Calculate the legacy height-surface area map from the active surface with A,
+  show the normalized preview, and save paired `area_map.tif` Gray8 and
+  `area_map32.tif` IEEE Float32 files without changing the active surface.
 - Generate a deterministic synthetic volume for installation and backend
   checks.
 - Show the main window before native/CUDA discovery completes, initialize the
@@ -163,6 +166,10 @@ equivalence; that remains gated by representative datasets.
     reject malformed/mismatched files without state loss, pass an active or
     automatically generated height map into segmentation crop/Z-gradient, and
     retain its hash without serializing the full surface in operation JSON.
+24. the A command preserves the source-derived asymmetric normal accumulation
+    and fixed 10 x 10 Simpson rule, presents normalized Gray8, writes exact
+    IEEE Float32 scale factors, records the active-surface hash, and preserves
+    the previous result after calculation or save failure.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
@@ -182,6 +189,9 @@ The responsive minimum was also exercised as a self-contained build at 900 x
 500 device-independent units. It retained `PerMonitorV2=True`, exposed 144 UI Automation
 descendants with zero unnamed keyboard-focusable elements, and UI Automation
 successfully scrolled Open, Run, Cancel, and Export into view independently.
+Both UI Automation counts are historical evidence from before the
+height-surface area controls were added; the current counts and interactive
+behavior must be recaptured.
 
 ## Remaining UI work
 

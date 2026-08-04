@@ -32,6 +32,7 @@ user manual and its page-by-page evidence are recorded in
 | Flood fill/components | threshold, 6/18/26 connectivity, minimum size | Threshold 0.1, connectivity 6, minimum size 0 | Connectivity is exactly 6, 18, or 26; preview minimum size is at least 1 |
 | Height map | XY/Z radius, threshold, mean/Gaussian filter, smooth level | Manual example: XY radius 64, Z radius 4, threshold 0.1, Gaussian, smooth level 1; source-derived preview defaults differ | GPU-visible source path is implemented on CPU: clamp-boundary Z filtering, strict threshold crossing with linear Z interpolation, and repeated separable XY smoothing; ABI/WPF fixtures pass, archived-runtime comparison pending |
 | Height-map persistence | H/J read/write binary headers 120/240, width, height, then row-major Float32 | Active surface must match image X/Y | Workbench validates exact length, dimensions and finite values, records SHA-256, preserves state on failure, and reuses the surface for height-relative crop and Z-gradient; imported-surface DepthMap/HeightProjection remains pending |
+| Height-surface area | active height map, fixed integration resolution | A command; resolution 10 in both axes | Workbench reproduces the source vertex-normal accumulation, four-vertex cell-normal average, bilinear normal-ratio integrand and 10 x 10 two-dimensional Simpson rule in voxel-index units. It displays a normalized Gray8 map and writes paired Gray8/IEEE Float32 TIFF files while recording the input surface hash. See `height-surface-area-spec.md`. |
 | Depth map/projection | height map, normal/Z mode, offset, start depth, range, projection threshold, depth-code settings | Z mode selected; offset/range/start/threshold 0; depth code off; depth range 100 | Exact voxel-index 3D Euclidean depth, scalar Z/normal sampling, inclusive range, legacy threshold behavior, and Z-only HSV depth coloring are implemented with cancellation, provenance, ABI, and WPF fixtures; archived-runtime comparison remains pending |
 | Depth-dependent Z-gradient correction | `applyBC`: coefficient, exponent, optional height surface, brightness min/max | coefficient 10, exponent 1, height-relative correction off | CPU/CUDA use `max(0, z - surface)`, divide by the Z-slice count, apply the source-derived power gain, then range-adjust to 0..1; optional surface generation, cancellation, ABI, WPF, and provenance fixtures are implemented; archived-runtime comparison remains pending |
 | H-minima | h, check interval | h 0.1, interval 50 (hidden) | CPU 3x3x3 erosion reconstruction, lower-mask fitting, exact fixed point, residual inversion, progress/cancellation, ABI and WPF controls are synthetic-validated; archived-runtime comparison pending |
@@ -77,7 +78,8 @@ input.
 `LegacyHeightMapCodec` preserves the little-endian 120/240-header `.hmp`
 layout. Imported maps require matching X/Y but do not replace volume
 calibration. `ImportHeightMap` is a managed workflow identity rather than a C
-ABI operation.
+ABI operation. `HeightSurfaceArea` is likewise managed-only and records the
+active map hash plus its fixed integration resolution.
 See [`tiff-io-spec.md`](tiff-io-spec.md).
 
 ## Common error and state rules

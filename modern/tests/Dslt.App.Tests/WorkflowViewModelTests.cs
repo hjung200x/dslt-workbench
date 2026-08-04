@@ -2,6 +2,7 @@ using Dslt.App.Infrastructure;
 using Dslt.App.Services;
 using Dslt.App.ViewModels;
 using Dslt.Managed.Core.IO;
+using Dslt.Managed.Core.Analysis;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Provenance;
 using Dslt.Managed.Core.Services;
@@ -22,6 +23,7 @@ internal static class WorkflowViewModelTests
     {
         RunScrollSyncOnSta();
         await RunOrthogonalViewExportTestsAsync();
+        await RunHeightSurfaceAreaExportTestsAsync();
         var engine = new FakeProcessingEngine();
         var files = new FakeWorkspaceFileService();
         using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
@@ -35,6 +37,7 @@ internal static class WorkflowViewModelTests
             ProcessingOperation.ExtractZx,
             ProcessingOperation.ImportLabels,
             ProcessingOperation.ImportHeightMap,
+            ProcessingOperation.HeightSurfaceArea,
         };
         var expectedOperations = Enum.GetValues<ProcessingOperation>()
             .Where(operation => !internalOnly.Contains(operation))
@@ -681,6 +684,35 @@ internal static class WorkflowViewModelTests
         }
     }
 
+    private static async Task RunHeightSurfaceAreaExportTestsAsync()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"dslt-height-area-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var areaMap = new HeightSurfaceAreaMap(
+                3,
+                3,
+                [0F, 0F, 0F, 0F, 1.25F, 0F, 0F, 0F, 0F],
+                [0, 0, 0, 0, 255, 0, 0, 0, 0],
+                1.25,
+                HeightSurfaceAreaCalculator.LegacyIntegrationResolution);
+            var paths = await Task.Run(() => WpfWorkspaceFileService.WriteHeightSurfaceAreaMaps(
+                Path.Combine(directory, "area_map.tif"), areaMap, CancellationToken.None));
+            var (floatFormat, floatPixels) = ReadFloat32Tiff(paths[1]);
+            var namesMatch = paths.Select(Path.GetFileName).SequenceEqual(["area_map.tif", "area_map32.tif"]);
+            var previewMatches = ReadGray8Tiff(paths[0]).SequenceEqual(areaMap.PreviewGray8);
+            var floatMatches = floatPixels.SequenceEqual(areaMap.ScaleFactors);
+            Assert(namesMatch && previewMatches && floatFormat == PixelFormats.Gray32Float && floatMatches,
+                $"Height-surface area TIFF export mismatch: names={namesMatch}, preview={previewMatches}, " +
+                $"format={floatFormat}, floats={floatMatches} ({string.Join(",", floatPixels)}).");
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static async Task RunLegacyHeightMapWorkflowTestsAsync()
     {
         var calibration = new Calibration(0.5, 0.5, 1.5, true, "um");
@@ -772,6 +804,79 @@ internal static class WorkflowViewModelTests
                    [ProcessingOperation.HeightMap, ProcessingOperation.DsltSegmentation]) &&
                generatedTarget.HasActiveHeightMap,
             "Height-relative crop did not generate and retain a surface when no .hmp was loaded.");
+
+        var areaFiles = new FakeWorkspaceFileService
+        {
+            NextVolume = new VolumeData(9, 9, 2, 1, 0, calibration, new float[162]),
+        };
+        var areaEngine = new FakeProcessingEngine();
+        using var areaViewModel = new ViewModelScope(new MainWindowViewModel(areaEngine, areaFiles));
+        var areaTarget = areaViewModel.Value;
+        await areaTarget.OpenCommand.ExecuteAsync();
+        var rampValues = new float[81];
+        for (var y = 0; y < 9; y++)
+            for (var x = 0; x < 9; x++)
+                rampValues[y * 9 + x] = x;
+        areaFiles.NextHeightMap = new LegacyHeightMap(9, 9, rampValues);
+        await areaTarget.LoadHeightMapCommand.ExecuteAsync();
+        var rampSha256 = ProcessingProvenance.ComputeFloatSha256(rampValues);
+        await areaTarget.CalculateHeightSurfaceAreaCommand.ExecuteAsync();
+        Assert(areaTarget.HasHeightSurfaceAreaMap &&
+               areaTarget.LastParameters?.Operation == ProcessingOperation.HeightSurfaceArea &&
+               areaTarget.LastResult is { OutputKind: OutputKind.ImageFloat32, Depth: 1 } areaResult &&
+               MathF.Abs(areaResult.FloatData![3 * 9 + 3] - MathF.Sqrt(1.25F)) <= 1e-6F &&
+               areaTarget.ResultImage is BitmapSource { Format: var resultFormat } &&
+               resultFormat == PixelFormats.Gray8 &&
+               areaTarget.HeightSurfaceAreaSummary.Contains("10 x 10 Simpson", StringComparison.Ordinal),
+            "The legacy A command did not install the source-derived area result and normalized preview.");
+
+        await areaTarget.SaveHeightSurfaceAreaCommand.ExecuteAsync();
+        Assert(areaFiles.LastSavedHeightSurfaceArea is { IntegrationResolution: 10 } savedArea &&
+               savedArea.ScaleFactors.SequenceEqual(areaTarget.LastResult!.FloatData!),
+            "The calculated area map was not routed to paired 8/32-bit TIFF export.");
+
+        var areaExportBase = Path.Combine(Path.GetTempPath(), $"dslt-height-area-result-{Guid.NewGuid():N}");
+        areaFiles.ExportBasePath = areaExportBase;
+        try
+        {
+            await areaTarget.SaveCommand.ExecuteAsync();
+            using var provenance = JsonDocument.Parse(await File.ReadAllBytesAsync(areaExportBase + ".json"));
+            Assert(provenance.RootElement.GetProperty("operation").GetProperty("operation").GetInt32() ==
+                       (int)ProcessingOperation.HeightSurfaceArea &&
+                   provenance.RootElement.GetProperty("editHistory").EnumerateArray().Any(item =>
+                       item.GetString()!.Contains(rampSha256, StringComparison.Ordinal) &&
+                       item.GetString()!.Contains("10x10 Simpson", StringComparison.Ordinal)),
+                "Height-surface area provenance did not retain the source surface hash and integration resolution.");
+        }
+        finally
+        {
+            DeletePackage(areaExportBase);
+        }
+
+        var preservedAreaResult = areaTarget.LastResult;
+        areaFiles.HeightSurfaceAreaSaveFailure = new IOException("simulated area-map save failure");
+        await areaTarget.SaveHeightSurfaceAreaCommand.ExecuteAsync();
+        Assert(ReferenceEquals(preservedAreaResult, areaTarget.LastResult) &&
+               areaTarget.HasHeightSurfaceAreaMap &&
+               areaTarget.Status.Contains("workspace was preserved", StringComparison.OrdinalIgnoreCase),
+            "An area-map save failure changed the last valid calculation or hid recovery status.");
+
+        var invalidFiles = new FakeWorkspaceFileService
+        {
+            NextVolume = new VolumeData(2, 2, 2, 1, 0, calibration, new float[8]),
+            NextHeightMap = new LegacyHeightMap(2, 2, new float[4]),
+        };
+        using var invalidViewModel = new ViewModelScope(
+            new MainWindowViewModel(new FakeProcessingEngine(), invalidFiles));
+        var invalidTarget = invalidViewModel.Value;
+        await invalidTarget.OpenCommand.ExecuteAsync();
+        await invalidTarget.LoadHeightMapCommand.ExecuteAsync();
+        var preservedImportedMap = invalidTarget.LastResult;
+        await invalidTarget.CalculateHeightSurfaceAreaCommand.ExecuteAsync();
+        Assert(ReferenceEquals(preservedImportedMap, invalidTarget.LastResult) &&
+               !invalidTarget.HasHeightSurfaceAreaMap &&
+               invalidTarget.Status.Contains("previous result was preserved", StringComparison.OrdinalIgnoreCase),
+            "An invalid area calculation replaced the imported height map or hid recovery status.");
     }
 
     private static async Task RunProcessingChainTestsAsync()
@@ -1055,6 +1160,17 @@ internal static class WorkflowViewModelTests
         return pixels;
     }
 
+    private static (PixelFormat Format, float[] Pixels) ReadFloat32Tiff(string path)
+    {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var decoder = new TiffBitmapDecoder(
+            stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var frame = decoder.Frames.Single();
+        var pixels = new float[checked(frame.PixelWidth * frame.PixelHeight)];
+        frame.CopyPixels(pixels, checked(frame.PixelWidth * sizeof(float)), 0);
+        return (frame.Format, pixels);
+    }
+
     private static void Assert(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
@@ -1227,10 +1343,12 @@ internal static class WorkflowViewModelTests
         public LabelTiffVolume? NextLabels { get; set; }
         public LegacyHeightMap? NextHeightMap { get; set; }
         public LegacyHeightMap? LastSavedHeightMap { get; private set; }
+        public HeightSurfaceAreaMap? LastSavedHeightSurfaceArea { get; private set; }
         public string? ExportBasePath { get; set; }
         public string? LastOrthogonalViewName { get; private set; }
         public BitmapSource[]? LastOrthogonalViews { get; private set; }
         public Exception? OrthogonalViewFailure { get; set; }
+        public Exception? HeightSurfaceAreaSaveFailure { get; set; }
         public Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken) =>
             Task.FromResult(NextVolume);
         public Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken) =>
@@ -1244,6 +1362,20 @@ internal static class WorkflowViewModelTests
             LastSavedHeightMap = new LegacyHeightMap(
                 heightMap.Width, heightMap.Height, heightMap.Values.ToArray());
             return Task.FromResult<string?>("surface.hmp");
+        }
+        public Task<IReadOnlyList<string>?> SaveHeightSurfaceAreaAsync(
+            HeightSurfaceAreaMap areaMap,
+            CancellationToken cancellationToken)
+        {
+            if (HeightSurfaceAreaSaveFailure is not null) throw HeightSurfaceAreaSaveFailure;
+            LastSavedHeightSurfaceArea = new HeightSurfaceAreaMap(
+                areaMap.Width,
+                areaMap.Height,
+                areaMap.ScaleFactors.ToArray(),
+                areaMap.PreviewGray8.ToArray(),
+                areaMap.MaximumScaleFactor,
+                areaMap.IntegrationResolution);
+            return Task.FromResult<IReadOnlyList<string>?>(["area_map.tif", "area_map32.tif"]);
         }
         public Task<IReadOnlyList<string>?> SaveOrthogonalViewsAsync(
             string viewName,

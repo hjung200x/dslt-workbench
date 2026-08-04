@@ -7,6 +7,7 @@ using Dslt.Managed.Core.Services;
 using Dslt.Managed.Core.Synthetic;
 using Dslt.Managed.Core.Provenance;
 using Dslt.Managed.Core.Segmentation;
+using Dslt.Managed.Core.Analysis;
 
 static void Equal<T>(T expected, T actual, string message) where T : IEquatable<T>
 {
@@ -46,6 +47,7 @@ composite.Validate();
 Equal(3, composite.Channels, "Composite channel count");
 SegmentationValidationTests.Run();
 LegacyHeightMapCodecTests.Run();
+HeightSurfaceAreaCalculatorTests.Run();
 await RealDataValidationTests.RunAsync();
 
 using var engine = ProcessingEngineFactory.Create();
