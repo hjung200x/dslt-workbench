@@ -272,6 +272,19 @@
               <TextBlock Text="Select one or more labels in the Edit stage before running." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             </StackPanel>
 
+            <StackPanel Visibility="{Binding IsZGradient, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <Separator Margin="0,16,0,12" Background="#354152" />
+              <TextBlock Text="Z-GRADIENT CORRECTION" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <TextBlock Text="Depth coefficient" Margin="0,10,0,5" />
+              <Slider AutomationProperties.Name="Z-gradient depth coefficient" Minimum="0" Maximum="10" Value="{Binding ZGradientCoefficient}" SmallChange="0.1" />
+              <TextBlock Text="{Binding ZGradientCoefficient, StringFormat=F2}" Foreground="{StaticResource AccentBrush}" />
+              <TextBlock Text="Depth exponent" Margin="0,10,0,5" />
+              <Slider AutomationProperties.Name="Z-gradient depth exponent" Minimum="1" Maximum="10" Value="{Binding ZGradientExponent}" SmallChange="0.1" />
+              <TextBlock Text="{Binding ZGradientExponent, StringFormat=F2}" Foreground="{StaticResource AccentBrush}" />
+              <CheckBox AutomationProperties.Name="Use filtered height map for Z-gradient correction" Content="Measure depth from filtered height map" IsChecked="{Binding ZGradientUseHeightMap}" Margin="0,12,0,5" />
+              <TextBlock Text="Uses the display minimum/maximum above for the legacy range adjustment. When enabled, the height-map controls generate the surface first." Margin="0,7,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+            </StackPanel>
+
             <StackPanel Visibility="{Binding IsThresholdSweep, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="THRESHOLD SWEEP" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />

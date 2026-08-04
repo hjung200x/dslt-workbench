@@ -101,7 +101,9 @@ public sealed class NativeProcessingEngine : IProcessingEngine
                 checked((ulong)labelState.SelectedLabels.LongLength)));
         }
         var crop = MapCrop(parameters);
-        var heightMap = parameters.CropEnabled && parameters.CropUseHeightMap
+        var usesZGradientHeightMap = parameters.Operation == ProcessingOperation.ZGradient &&
+            parameters.ZGradientUseHeightMap;
+        var heightMap = (parameters.CropEnabled && parameters.CropUseHeightMap) || usesZGradientHeightMap
             ? parameters.CropHeightMap
             : null;
         ThrowIfFailed(NativeMethods.dslt_set_crop(
@@ -190,7 +192,10 @@ public sealed class NativeProcessingEngine : IProcessingEngine
     private static NativeCropOptions MapCrop(OperationParameters value) => new()
     {
         Enabled = value.CropEnabled ? (byte)1 : (byte)0,
-        UseHeightMap = value.CropUseHeightMap ? (byte)1 : (byte)0,
+        UseHeightMap = value.CropUseHeightMap ||
+            (value.Operation == ProcessingOperation.ZGradient && value.ZGradientUseHeightMap)
+                ? (byte)1
+                : (byte)0,
         Upper = value.CropUpper,
         Lower = value.CropLower,
         BorderXy = value.CropBorderXy,
@@ -207,6 +212,7 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         var isHeightSurface = value.Operation is ProcessingOperation.HeightMap or
             ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection;
         var isHeightProjection = value.Operation == ProcessingOperation.HeightProjection;
+        var isZGradient = value.Operation == ProcessingOperation.ZGradient;
         return new NativeOperationRequest
         {
             Operation = (int)value.Operation,
@@ -223,10 +229,12 @@ public sealed class NativeProcessingEngine : IProcessingEngine
                 isHeightSurface ? value.HeightMapSmoothLevel : value.SliceIndex,
             LanczosOrder = isDslt ? value.DirectionLevel :
                 isHeightSurface ? value.HeightMapZRadius : value.LanczosOrder,
-            Threshold = isSegmentation ? value.MinimumInvalidStructureArea :
+            Threshold = isZGradient ? value.ZGradientExponent :
+                isSegmentation ? value.MinimumInvalidStructureArea :
                 isThresholdSweep ? value.ThresholdSweepMinimumInvalidStructureArea :
                 isHMinima ? value.HMinimaHeight : value.Threshold,
-            ConstantC = isSegmentation ? value.MinimumC :
+            ConstantC = isZGradient ? value.ZGradientCoefficient :
+                isSegmentation ? value.MinimumC :
                 isThresholdSweep ? value.MinimumThreshold :
                 isHeightProjection ? value.ProjectionOffset : value.ConstantC,
             WindowMinimum = isSegmentation ? value.MaximumC :

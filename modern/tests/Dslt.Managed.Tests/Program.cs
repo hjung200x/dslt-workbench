@@ -183,6 +183,28 @@ if (engine.IsAvailable)
     if (Math.Abs(heightProjectionData[0] - 0.8F) > 1e-6F)
         throw new InvalidOperationException("Height projection did not preserve Z-range maximum sampling.");
 
+    var zGradientResult = await engine.RunAsync(
+        new VolumeData(
+            1, 1, 4, 1, 0, Calibration.Unit,
+            [0.1F, 0.1F, 0.1F, 0.1F]),
+        new OperationParameters(
+            ProcessingOperation.ZGradient,
+            ProcessingBackend.Cpu,
+            WindowMinimum: 0,
+            WindowMaximum: 1,
+            CropHeightMap: [1.0F],
+            ZGradientCoefficient: 2.0F,
+            ZGradientExponent: 1.0F,
+            ZGradientUseHeightMap: true),
+        null,
+        CancellationToken.None);
+    var zGradientData = zGradientResult.FloatData ??
+        throw new InvalidOperationException("Z-gradient correction returned no float output.");
+    if (Math.Abs(zGradientData[0] - 0.1F) > 1e-6F ||
+        Math.Abs(zGradientData[2] - 0.15F) > 1e-6F ||
+        Math.Abs(zGradientData[3] - 0.2F) > 1e-6F)
+        throw new InvalidOperationException("Z-gradient ABI mapping did not preserve the source-derived formula.");
+
     var depthMapResult = await engine.RunAsync(
         new VolumeData(
             3, 1, 3, 1, 0, Calibration.Unit,

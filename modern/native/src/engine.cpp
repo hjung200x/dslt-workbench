@@ -78,13 +78,17 @@ void Engine::set_crop(const dslt_crop_options& options, std::span<const float> h
     if (options.enabled > 1 || options.use_height_map > 1) {
         throw std::invalid_argument("crop flags must be 0 or 1");
     }
-    if (options.enabled == 0) {
+    if (options.enabled == 0 && options.use_height_map == 0) {
         crop_ = {};
         return;
     }
     if (source_.empty()) throw std::invalid_argument("a volume must be loaded before crop configuration");
-    if (options.upper > options.lower) throw std::invalid_argument("crop upper bound must not exceed lower bound");
-    if (options.border_xy < 0) throw std::invalid_argument("crop XY border must be non-negative");
+    if (options.enabled != 0 && options.upper > options.lower) {
+        throw std::invalid_argument("crop upper bound must not exceed lower bound");
+    }
+    if (options.enabled != 0 && options.border_xy < 0) {
+        throw std::invalid_argument("crop XY border must be non-negative");
+    }
     const auto expected = static_cast<std::size_t>(source_.descriptor().width) * source_.descriptor().height;
     if (options.use_height_map != 0) {
         if (height_map.size() != expected) throw std::invalid_argument("crop height map dimensions do not match the volume");
@@ -219,6 +223,18 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
             break;
         case DSLT_OP_WINDOW_LEVEL:
             output_ = ops::window_level(source_, request.window_min, request.window_max, progress);
+            break;
+        case DSLT_OP_Z_GRADIENT:
+            output_ = ops::z_gradient(
+                source_,
+                request.constant_c,
+                request.threshold,
+                request.window_min,
+                request.window_max,
+                crop_.options.use_height_map != 0
+                    ? std::span<const float>(crop_.height_map)
+                    : std::span<const float>{},
+                progress);
             break;
         case DSLT_OP_THRESHOLD_2D:
         case DSLT_OP_THRESHOLD_3D:

@@ -77,7 +77,8 @@ typedef enum dslt_operation {
     DSLT_OP_ADAPTIVE_THRESHOLD_3D = 22,
     DSLT_OP_H_MINIMA = 23,
     DSLT_OP_WATERSHED = 24,
-    DSLT_OP_HEIGHT_PROJECTION = 25
+    DSLT_OP_HEIGHT_PROJECTION = 25,
+    DSLT_OP_Z_GRADIENT = 26
 } dslt_operation;
 
 typedef struct dslt_calibration {

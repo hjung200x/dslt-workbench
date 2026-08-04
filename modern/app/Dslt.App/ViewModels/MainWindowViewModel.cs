@@ -58,6 +58,9 @@ public sealed class MainWindowViewModel : ObservableObject
     private float _projectionThreshold;
     private bool _depthColorEnabled;
     private int _depthColorRange = 100;
+    private float _zGradientCoefficient = 10.0F;
+    private float _zGradientExponent = 1.0F;
+    private bool _zGradientUseHeightMap;
     private float _targetSpacingZ = 1;
     private int _lanczosOrder = 2;
     private float _previewOffset = 20;
@@ -115,6 +118,7 @@ public sealed class MainWindowViewModel : ObservableObject
             new("Filtered height map", ProcessingOperation.HeightMap, WorkflowStage.Process),
             new("Depth map", ProcessingOperation.DepthMap, WorkflowStage.Process),
             new("Height projection", ProcessingOperation.HeightProjection, WorkflowStage.Process),
+            new("Z-gradient correction", ProcessingOperation.ZGradient, WorkflowStage.Process),
             new("Connected components", ProcessingOperation.ConnectedComponents, WorkflowStage.Segment),
             new("Threshold sweep segmentation", ProcessingOperation.ThresholdSweep, WorkflowStage.Segment),
             new("DSLT threshold preview", ProcessingOperation.DsltThreshold, WorkflowStage.Segment),
@@ -174,6 +178,7 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsHeightMap));
             OnPropertyChanged(nameof(IsHeightSurfaceOperation));
             OnPropertyChanged(nameof(IsHeightProjection));
+            OnPropertyChanged(nameof(IsZGradient));
             OnPropertyChanged(nameof(IsResampleZ));
             OnPropertyChanged(nameof(IsLanczosResample));
             OnPropertyChanged(nameof(CanUseDepthColoring));
@@ -457,6 +462,26 @@ public sealed class MainWindowViewModel : ObservableObject
         set => SetProperty(ref _depthColorRange, Math.Clamp(value, 1, 500));
     }
 
+    public float ZGradientCoefficient
+    {
+        get => _zGradientCoefficient;
+        set => SetProperty(ref _zGradientCoefficient,
+            float.IsFinite(value) ? Math.Clamp(value, 0, 10) : 10);
+    }
+
+    public float ZGradientExponent
+    {
+        get => _zGradientExponent;
+        set => SetProperty(ref _zGradientExponent,
+            float.IsFinite(value) ? Math.Clamp(value, 1, 10) : 1);
+    }
+
+    public bool ZGradientUseHeightMap
+    {
+        get => _zGradientUseHeightMap;
+        set => SetProperty(ref _zGradientUseHeightMap, value);
+    }
+
     public bool IsResampleZ => SelectedOperation.Operation is
         ProcessingOperation.ResampleZArea or ProcessingOperation.ResampleZLanczos;
     public bool IsLanczosResample =>
@@ -668,14 +693,15 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsWatershed => SelectedOperation.Operation == ProcessingOperation.Watershed;
     public bool IsHeightMap => SelectedOperation.Operation == ProcessingOperation.HeightMap;
     public bool IsHeightSurfaceOperation => SelectedOperation.Operation is ProcessingOperation.HeightMap or
-        ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection;
+        ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection or ProcessingOperation.ZGradient;
     public bool IsHeightProjection => SelectedOperation.Operation == ProcessingOperation.HeightProjection;
+    public bool IsZGradient => SelectedOperation.Operation == ProcessingOperation.ZGradient;
     public string MinimumComponentSizeLabel => IsWatershed
         ? "Minimum selected seed size"
         : "Exclusive minimum component size";
     public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
         ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap or
-        ProcessingOperation.HeightProjection;
+        ProcessingOperation.HeightProjection or ProcessingOperation.ZGradient;
     public bool UsesRadius => SelectedOperation.Operation is ProcessingOperation.SmoothMean or ProcessingOperation.SmoothGaussian or
         ProcessingOperation.DilateCube or ProcessingOperation.ErodeCube or ProcessingOperation.DilateSphere or
         ProcessingOperation.ErodeSphere or ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation or
@@ -780,6 +806,24 @@ public sealed class MainWindowViewModel : ObservableObject
                 labelState.Validate(_volume);
             }
             var parameters = BuildParameters(labelState);
+            if (parameters.Operation == ProcessingOperation.ZGradient &&
+                parameters.ZGradientUseHeightMap)
+            {
+                var surfaceResult = await _engine.RunAsync(
+                    _volume,
+                    parameters with
+                    {
+                        Operation = ProcessingOperation.HeightMap,
+                        ZGradientUseHeightMap = false,
+                    },
+                    new Progress<double>(value => Progress = Math.Clamp(value * 35, 0, 35)),
+                    _cancellation.Token);
+                parameters = parameters with
+                {
+                    CropHeightMap = surfaceResult.FloatData ??
+                        throw new InvalidOperationException("Height-map output is required for Z-gradient correction."),
+                };
+            }
             if (IsDsltOperation)
             {
                 var estimate = await _engine.EstimateAsync(_volume, parameters, _cancellation.Token);
@@ -790,6 +834,8 @@ public sealed class MainWindowViewModel : ObservableObject
             var useDepthColor = parameters.DepthColorEnabled;
             var primaryProgress = useDepthColor
                 ? new Progress<double>(value => Progress = Math.Clamp(value * 50, 0, 50))
+                : parameters.Operation == ProcessingOperation.ZGradient && parameters.ZGradientUseHeightMap
+                    ? new Progress<double>(value => Progress = Math.Clamp(35 + value * 65, 35, 100))
                 : progress;
             var result = await _engine.RunAsync(
                 _volume, parameters, primaryProgress, _cancellation.Token, labelState);
@@ -839,7 +885,9 @@ public sealed class MainWindowViewModel : ObservableObject
                     : new LabelEditingSession(result.Width, result.Height, result.Depth, result.Labels);
             }
             _lastResult = result;
-            _lastParameters = parameters;
+            _lastParameters = parameters.Operation == ProcessingOperation.ZGradient
+                ? parameters with { CropHeightMap = null }
+                : parameters;
             _lastDepthColorPixels = depthColorPixels;
             ResetResultGeometry();
             UpdateSelectionState();
@@ -947,6 +995,9 @@ public sealed class MainWindowViewModel : ObservableObject
         ProjectionThreshold: ProjectionThreshold,
         DepthColorEnabled: DepthColorEnabled && CanUseDepthColoring,
         DepthColorRange: DepthColorRange,
+        ZGradientCoefficient: ZGradientCoefficient,
+        ZGradientExponent: ZGradientExponent,
+        ZGradientUseHeightMap: ZGradientUseHeightMap,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea,
         SeedLabelsSha256: labelState is null

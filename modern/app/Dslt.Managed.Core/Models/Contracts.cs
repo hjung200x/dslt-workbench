@@ -35,6 +35,7 @@ public enum ProcessingOperation
     HMinima = 23,
     Watershed = 24,
     HeightProjection = 25,
+    ZGradient = 26,
 }
 
 public enum OutputKind
@@ -207,7 +208,10 @@ public sealed record OperationParameters(
     int ProjectionRange = 0,
     float ProjectionThreshold = 0,
     bool DepthColorEnabled = false,
-    int DepthColorRange = 100);
+    int DepthColorRange = 100,
+    float ZGradientCoefficient = 10,
+    float ZGradientExponent = 1,
+    bool ZGradientUseHeightMap = false);
 
 public sealed record ProcessingLabelState(
     int Width,
