@@ -317,8 +317,21 @@ var syntheticResult = new ProcessingResult(
     sphere.Samples[..sphere.VoxelCount],
     null);
 var operation = new OperationParameters(ProcessingOperation.Copy, ProcessingBackend.Cpu);
+var provenanceSphere = sphere with
+{
+    Source = new VolumeSourceInfo(
+        VolumeVoxelType.Float32,
+        "LSM",
+        null,
+        MemoryMarshal.AsBytes(sphere.Samples.AsSpan()).ToArray(),
+        [
+            new VolumeChannelInfo("DAPI", 0, 0, 255, 255),
+            new VolumeChannelInfo("GFP", 0, 255, 0, 255),
+        ],
+        [0.0, 1.25]),
+};
 await ResultPackageWriter.WriteAsync(
-    temporaryBase, sphere, operation, syntheticResult, ["selected label 3", "merged labels 3 and 4"]);
+    temporaryBase, provenanceSphere, operation, syntheticResult, ["selected label 3", "merged labels 3 and 4"]);
 var rawPath = temporaryBase + ".f32.raw";
 var jsonPath = temporaryBase + ".json";
 if (!File.Exists(rawPath) || !File.Exists(jsonPath))
@@ -329,7 +342,12 @@ if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
 if (!json.Contains("\"schemaVersion\": \"1.8\"", StringComparison.Ordinal) ||
     !json.Contains("\"sourceCommit\":", StringComparison.Ordinal) ||
     !json.Contains("\"inputVoxelType\": \"Float32\"", StringComparison.Ordinal) ||
-    !json.Contains("\"inputContainer\": \"memory-float32\"", StringComparison.Ordinal) ||
+    !json.Contains("\"inputContainer\": \"LSM\"", StringComparison.Ordinal) ||
+    !json.Contains("\"inputChannelMetadata\":", StringComparison.Ordinal) ||
+    !json.Contains("\"name\": \"DAPI\"", StringComparison.Ordinal) ||
+    !json.Contains("\"name\": \"GFP\"", StringComparison.Ordinal) ||
+    !json.Contains("\"inputTimeStampsSeconds\":", StringComparison.Ordinal) ||
+    !json.Contains("1.25", StringComparison.Ordinal) ||
     !json.Contains("\"outputSha256\":", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance input format identity is missing.");
 var sourceCommitMetadata = typeof(ProcessingProvenance).Assembly

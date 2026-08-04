@@ -14,7 +14,7 @@ Zeiss LSM fixture or a legacy-executable capture.
 | Signed 16-bit legacy label TIFF | Synthetic-data validated |
 | Signed 32-bit extended label TIFF | Synthetic-data validated |
 | LSM pixels through the Windows TIFF codec | Synthetic-data validated; real fixture required |
-| Zeiss LSM core dimensions and voxel sizes | Synthetic-data validated from tag 34412; real fixture required |
+| Zeiss LSM core dimensions, voxel sizes, channel names/colors, and timestamps | Synthetic-data validated from tag 34412; real fixture required |
 
 No entry in this table implies legacy comparison or functional equivalence.
 
@@ -117,11 +117,20 @@ already-filtered full-resolution frames from WIC, and rejects every other frame
 count.
 
 Voxel sizes are stored by LSM in meters and converted to `um` calibration.
-Malformed magic, size, dimensions, voxel sizes, IFD cycles, or page-count
-disagreement fail before the active volume is replaced. Channel names,
-timestamps, spectral metadata, multiple time points, and files beyond classic
-TIFF's 32-bit offsets remain outside this preview contract. Complete claims
-remain blocked until representative real LSM files are available.
+When present, `OffsetChannelColors` and `OffsetTimeStamps` are resolved as
+checked absolute classic-TIFF offsets. The channel block preserves every
+length-prefixed UTF-8/Latin-1 fallback name and RGBA display color; the
+timestamp block preserves finite, nonnegative, nondecreasing Float64 seconds.
+Declared block sizes, relative offsets, channel counts, string lengths, and
+timestamp counts are validated before allocation or reading. Missing optional
+blocks produce empty metadata arrays.
+
+Malformed magic, size, dimensions, voxel sizes, optional block bounds, channel
+metadata, timestamps, IFD cycles, or page-count disagreement fail before the
+active volume is replaced. Spectral metadata, multiple time points, and files
+beyond classic TIFF's 32-bit offsets remain outside this preview contract.
+Complete claims remain blocked until representative real LSM files are
+available.
 
 Public layout evidence is the BSD-licensed
 [`tifffile` CZ_LSMINFO definition](https://github.com/cgohlke/tifffile/blob/master/tifffile/tifffile.py#L16345-L16360).

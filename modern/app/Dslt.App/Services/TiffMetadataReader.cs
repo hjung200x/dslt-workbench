@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 using System.Text;
+using Dslt.Managed.Core.Models;
 
 namespace Dslt.App.Services;
 
@@ -26,7 +27,9 @@ internal sealed record LsmMetadata(
     int DimensionTime,
     double VoxelSizeX,
     double VoxelSizeY,
-    double VoxelSizeZ);
+    double VoxelSizeZ,
+    IReadOnlyList<VolumeChannelInfo> ChannelMetadata,
+    IReadOnlyList<double> TimeStampsSeconds);
 
 internal static class TiffMetadataReader
 {
@@ -125,16 +128,144 @@ internal static class TiffMetadataReader
         var structureSize = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4, 4));
         if (structureSize < 64 || structureSize > bytes.Length)
             throw new InvalidDataException("CZ_LSMINFO structure size is invalid.");
-        var result = new LsmMetadata(
+
+        var dimensionChannels = ReadPositiveInt32(bytes, 20, "DimensionChannels");
+        var channelColorsOffset = ReadOptionalLsmOffset(bytes, structureSize, 108, "OffsetChannelColors");
+        var timeStampsOffset = ReadOptionalLsmOffset(bytes, structureSize, 132, "OffsetTimeStamps");
+        return new LsmMetadata(
             ReadPositiveInt32(bytes, 8, "DimensionX"),
             ReadPositiveInt32(bytes, 12, "DimensionY"),
             ReadPositiveInt32(bytes, 16, "DimensionZ"),
-            ReadPositiveInt32(bytes, 20, "DimensionChannels"),
+            dimensionChannels,
             ReadPositiveInt32(bytes, 24, "DimensionTime"),
             ReadPositiveDouble(bytes, 40, "VoxelSizeX"),
             ReadPositiveDouble(bytes, 48, "VoxelSizeY"),
-            ReadPositiveDouble(bytes, 56, "VoxelSizeZ"));
+            ReadPositiveDouble(bytes, 56, "VoxelSizeZ"),
+            channelColorsOffset == 0
+                ? []
+                : ReadLsmChannelMetadata(stream, channelColorsOffset, dimensionChannels),
+            timeStampsOffset == 0
+                ? []
+                : ReadLsmTimeStamps(stream, timeStampsOffset));
+    }
+
+    private static uint ReadOptionalLsmOffset(byte[] bytes, int structureSize, int fieldOffset, string name)
+    {
+        if (structureSize < checked(fieldOffset + sizeof(uint))) return 0;
+        var value = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(fieldOffset, sizeof(uint)));
+        if (value is > 0 and < 8)
+            throw new InvalidDataException($"CZ_LSMINFO {name} is invalid.");
+        return value;
+    }
+
+    private static IReadOnlyList<VolumeChannelInfo> ReadLsmChannelMetadata(
+        Stream stream,
+        uint offset,
+        int expectedChannels)
+    {
+        const int headerSize = 24;
+        const uint maximumBlockSize = 16 * 1024 * 1024;
+        var header = ReadAbsoluteBytes(stream, offset, headerSize);
+        var size = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0, 4));
+        var colorCount = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(4, 4));
+        var nameCount = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(8, 4));
+        var colorsOffset = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(12, 4));
+        var namesOffset = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(16, 4));
+        if (size < headerSize || size > maximumBlockSize || size > int.MaxValue)
+            throw new InvalidDataException("LSM ChannelColors block size is invalid.");
+        if (colorCount != nameCount || colorCount != expectedChannels)
+            throw new InvalidDataException("LSM ChannelColors count does not match DimensionChannels.");
+
+        var block = ReadAbsoluteBytes(stream, offset, checked((int)size));
+        var colorsLength = checked((int)colorCount * 4);
+        if (colorsOffset < headerSize || colorsOffset > size || colorsLength > size - colorsOffset)
+            throw new InvalidDataException("LSM ChannelColors color array points outside its block.");
+        if (namesOffset < headerSize || namesOffset > size)
+            throw new InvalidDataException("LSM ChannelColors name array points outside its block.");
+
+        var result = new VolumeChannelInfo[checked((int)nameCount)];
+        var namePosition = checked((int)namesOffset);
+        var colorPosition = checked((int)colorsOffset);
+        for (var channel = 0; channel < result.Length; channel++)
+        {
+            if (namePosition > block.Length - sizeof(uint))
+                throw new InvalidDataException("LSM channel name length is truncated.");
+            var nameSize = BinaryPrimitives.ReadUInt32LittleEndian(
+                block.AsSpan(namePosition, sizeof(uint)));
+            namePosition += sizeof(uint);
+            if (nameSize == 0 || nameSize > int.MaxValue || nameSize > block.Length - namePosition)
+                throw new InvalidDataException("LSM channel name exceeds the ChannelColors block.");
+            var nameBytes = block.AsSpan(namePosition, checked((int)nameSize));
+            if (nameBytes[^1] != 0)
+                throw new InvalidDataException("LSM channel name is not null terminated.");
+            var name = DecodeLsmText(nameBytes[..^1]);
+            if (string.IsNullOrWhiteSpace(name)) name = $"Channel {channel + 1}";
+            namePosition += checked((int)nameSize);
+
+            result[channel] = new VolumeChannelInfo(
+                name,
+                block[colorPosition],
+                block[colorPosition + 1],
+                block[colorPosition + 2],
+                block[colorPosition + 3]);
+            colorPosition += 4;
+        }
         return result;
+    }
+
+    private static IReadOnlyList<double> ReadLsmTimeStamps(Stream stream, uint offset)
+    {
+        const int headerSize = 8;
+        const int maximumCount = 1_000_000;
+        var header = ReadAbsoluteBytes(stream, offset, headerSize);
+        var size = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(0, 4));
+        var count = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(4, 4));
+        if (count < 0 || count > maximumCount || size != checked(headerSize + count * sizeof(double)))
+            throw new InvalidDataException("LSM TimeStamps block size or count is invalid.");
+        var block = ReadAbsoluteBytes(stream, offset, size);
+        var result = new double[count];
+        var previous = double.NegativeInfinity;
+        for (var index = 0; index < count; index++)
+        {
+            var bits = BinaryPrimitives.ReadInt64LittleEndian(
+                block.AsSpan(headerSize + index * sizeof(double), sizeof(double)));
+            var value = BitConverter.Int64BitsToDouble(bits);
+            if (!double.IsFinite(value) || value < 0 || value < previous)
+                throw new InvalidDataException("LSM timestamps must be finite, non-negative, and nondecreasing.");
+            result[index] = value;
+            previous = value;
+        }
+        return result;
+    }
+
+    private static byte[] ReadAbsoluteBytes(Stream stream, uint offset, int byteCount)
+    {
+        if (byteCount < 0) throw new InvalidDataException("LSM metadata byte count is invalid.");
+        EnsureRange(stream, offset, byteCount);
+        var previous = stream.Position;
+        stream.Position = offset;
+        try
+        {
+            var bytes = new byte[byteCount];
+            ReadExactly(stream, bytes);
+            return bytes;
+        }
+        finally
+        {
+            stream.Position = previous;
+        }
+    }
+
+    private static string DecodeLsmText(ReadOnlySpan<byte> bytes)
+    {
+        try
+        {
+            return new UTF8Encoding(false, true).GetString(bytes).Trim();
+        }
+        catch (DecoderFallbackException)
+        {
+            return Encoding.Latin1.GetString(bytes).Trim();
+        }
     }
 
     private static int ReadPositiveInt32(byte[] bytes, int offset, string name)

@@ -50,8 +50,7 @@
             <Button Content="Open TIFF / LSM" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" />
             <Button Content="Generate synthetic" Command="{Binding GenerateSyntheticCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <TextBlock Text="CHANNEL" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,14,0,5" />
-            <Slider AutomationProperties.Name="Channel index" Minimum="0" Maximum="{Binding MaximumChannelIndex}" Value="{Binding ChannelIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
-            <TextBlock Text="{Binding ChannelIndex, StringFormat=Index {0}}" Foreground="{StaticResource AccentBrush}" />
+            <ComboBox AutomationProperties.Name="Channel selector" ItemsSource="{Binding ChannelLabels}" SelectedIndex="{Binding ChannelIndex}" />
             <TextBlock Text="X COORDINATE" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,12,0,5" />
             <Slider AutomationProperties.Name="X coordinate" Minimum="0" Maximum="{Binding MaximumXIndex}" Value="{Binding XIndex}" TickFrequency="1" IsSnapToTickEnabled="True" />
             <TextBlock Text="{Binding XIndex, StringFormat=X {0}}" Foreground="{StaticResource AccentBrush}" />

@@ -276,6 +276,8 @@ internal static class WorkflowViewModelTests
             0, 0.1F, 0.2F, 0.3F, 0.4F, 0.5F, 0.6F, 0.7F,
             0.8F, 0.9F, 1, 0.9F, 0.8F, 0.7F, 0.6F, 0.5F,
         };
+        var channelPlanarRaw = new byte[channelPlanar.Length * sizeof(float)];
+        Buffer.BlockCopy(channelPlanar, 0, channelPlanarRaw, 0, channelPlanarRaw.Length);
         files.NextVolume = new VolumeData(
             Width: 2,
             Height: 2,
@@ -283,17 +285,29 @@ internal static class WorkflowViewModelTests
             Channels: 2,
             SelectedChannel: 0,
             Calibration: new Calibration(0.5, 0.5, 1.25, true, "um"),
-            Samples: channelPlanar);
+            Samples: channelPlanar,
+            Source: new VolumeSourceInfo(
+                VolumeVoxelType.Float32,
+                "LSM",
+                null,
+                channelPlanarRaw,
+                [
+                    new VolumeChannelInfo("DAPI", 0, 0, 255, 255),
+                    new VolumeChannelInfo("GFP", 0, 255, 0, 255),
+                ],
+                [0, 1.25]));
         await target.OpenCommand.ExecuteAsync();
         var firstChannelImage = target.SourceImage;
         target.ChannelIndex = 1;
         target.ZIndex = 1;
         Assert(target.MaximumChannelIndex == 1 && target.MaximumZIndex == 1,
             "Channel and Z navigation bounds were not updated after opening a volume.");
+        Assert(target.ChannelLabels.SequenceEqual(new[] { "1: DAPI", "2: GFP" }),
+            "LSM channel names were not exposed by the channel selector.");
         Assert(!ReferenceEquals(firstChannelImage, target.SourceImage),
             "Changing channels did not refresh the source image.");
-        Assert(target.VolumeSummary.Contains("channel 2/2", StringComparison.Ordinal),
-            "The selected channel was not reflected in the volume summary.");
+        Assert(target.VolumeSummary.Contains("channel 2/2 (GFP)", StringComparison.Ordinal),
+            "The selected LSM channel name was not reflected in the volume summary.");
         Assert(ReadGray8((BitmapSource)target.SourceYzImage!).SequenceEqual(new byte[] { 230, 178, 230, 128 }),
             "The YZ plane did not preserve Y-vertical and Z-horizontal coordinate order.");
         Assert(ReadGray8((BitmapSource)target.SourceZxImage!).SequenceEqual(new byte[] { 255, 230, 153, 128 }),

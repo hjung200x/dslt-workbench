@@ -147,7 +147,13 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
             0,
             calibration,
             samples,
-            new VolumeSourceInfo(voxelType, container, metadata.ImageDescription, rawSamples));
+            new VolumeSourceInfo(
+                voxelType,
+                container,
+                metadata.ImageDescription,
+                rawSamples,
+                lsm?.ChannelMetadata.ToArray(),
+                lsm?.TimeStampsSeconds.ToArray()));
     }
 
     private static BitmapSource PrepareFrame(BitmapSource frame, VolumeVoxelType voxelType)

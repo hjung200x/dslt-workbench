@@ -14,8 +14,9 @@ equivalence; that remains gated by representative datasets.
 - Show the main window before native/CUDA discovery completes, initialize the
   processing engine off the UI thread, and replace the temporary status model
   only while the window is still active.
-- Select a channel and shared X/Y/Z coordinates with bounds derived from the
-  active volume.
+- Select a channel by preserved source name when available (or a deterministic
+  numeric fallback) and use shared X/Y/Z coordinates with bounds derived from
+  the active volume.
 - Keep navigation/volume and processing/editing controls independently
   scrollable so the 900 x 500 logical minimum remains usable on a 1920 x 1080
   display through 200% scaling.
@@ -62,8 +63,9 @@ equivalence; that remains gated by representative datasets.
 4. the UI cancellation command cancels an in-flight token while retaining the
    previous valid result;
 5. processing failure retains the previous valid result;
-6. opening a multi-channel volume updates channel and Z navigation and changing
-   the channel refreshes the source image;
+6. opening a multi-channel volume updates named channel and Z navigation,
+   preserves source RGBA/timestamp metadata, and changing the channel refreshes
+   the source image;
 7. YZ and ZX source/result plane dimensions follow the volume axes;
 8. cursor selection, label dilation, and undo update and restore the published
    result;
