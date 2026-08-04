@@ -14,20 +14,24 @@ must confirm `dataClassification: representative-real` and the stated
    spacings.
 3. For every acquisition, retain the original input, accepted reference label
    TIFF, Workbench candidate label TIFF, and Workbench JSON provenance sidecar.
-4. Fill every SHA-256 field. `inputFileSha256` hashes the input container;
+4. Set schema 2 `candidateSourceCommit` to the exact 40-hex `sourceCommit`
+   from the release candidate's `BUILD-INFO.json`. Every candidate provenance
+   sidecar must contain the same commit.
+5. Fill every SHA-256 field. `inputFileSha256` hashes the input container;
    `inputDecodedSha256` must equal `inputSha256` in the candidate provenance and
    therefore locks the decoded channel-planar samples used for processing.
-5. Set the reference and candidate background labels independently. All other
+6. Set the reference and candidate background labels independently. All other
    label values are foreground object identifiers.
-6. Set `container` to `tiff` or `lsm`; it must agree with provenance
+7. Set `container` to `tiff` or `lsm`; it must agree with provenance
    `inputContainer`.
 
-Candidate provenance schema 1.5, 1.6, or 1.7 is required. The validator cross-checks its
-input voxel type, container, channels, Z spacing, DSLT segmentation operation,
-actual CPU/CUDA backend, label output kind, and output dimensions instead of
-trusting the manifest coverage fields alone. It also recomputes the canonical
-little-endian int32 label payload SHA-256 and requires it to match provenance
-`outputSha256`, cryptographically linking the sidecar to the candidate labels.
+Schema-2 v1 evidence requires candidate provenance schema 1.8. The validator
+cross-checks its source commit, input voxel type, container, channels, Z
+spacing, DSLT segmentation operation, actual CPU/CUDA backend, label output
+kind, and output dimensions instead of trusting the manifest coverage fields
+alone. It also recomputes the canonical little-endian int32 label payload
+SHA-256 and requires it to match provenance `outputSha256`, cryptographically
+linking the sidecar to the candidate labels.
 
 Do not commit private microscopy data. `modern/validation/data/`, local
 manifests, and generated reports are ignored by Git.

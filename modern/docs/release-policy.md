@@ -52,3 +52,16 @@ A verified preview is not sufficient for v1.0. Approval additionally requires:
 The repeatable host portion is collected with `test-windows-host.ps1` according
 to `windows-host-validation.md`. v1.0 evidence includes the Windows 10 150% JSON,
 the Windows 11 200% JSON, and their paired manual observations.
+
+### Machine-readable final decision
+
+Build the exact CUDA release candidate with
+`package-preview.ps1 -Version 1.0.0 -Cuda -ReleaseCandidate`. The candidate is
+not approved merely because packaging succeeds.
+
+`verify-v1-release-evidence.ps1` combines the candidate ZIP, source-locked
+real-data report, complete 26-operation CUDA parity evidence, both supported Windows host
+records, and both structured manual-observation records. It also rejects any
+`scaffolded` or `pending-reference` row in the packaged compatibility matrix.
+Only its SHA-256-locked report with `passed: true` is v1.0 approval evidence.
+See `v1-release-evidence.md`.

@@ -66,3 +66,10 @@ Record these observations beside the evidence file:
 
 The final release audit must include both host JSON files, the paired manual
 observations, and the five-case real-data validation report.
+
+Use `windows-manual-observation.example.json` for each paired manual record.
+The `hostEvidenceSha256` field must equal the automated JSON hash, and the host
+role must be exactly `windows-10-22h2-150` or `windows-11-200-cuda`. Record the
+observer and UTC time, set each of the five checks only after observing it, and
+write an adjacent checksum. The final gate rejects free-form notes used in
+place of these structured confirmations.

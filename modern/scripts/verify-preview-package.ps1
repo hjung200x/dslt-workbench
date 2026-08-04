@@ -76,6 +76,8 @@ try {
         'docs\tiff-io-spec.md',
         'docs\ui-workflow.md',
         'docs\validation-policy.md',
+        'docs\v1-release-evidence.md',
+        'docs\windows-manual-observation.example.json',
         'docs\watershed-spec.md',
         'BUILD-INFO.json'
     )

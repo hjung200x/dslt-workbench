@@ -1,19 +1,35 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*$')]
+    [ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')]
     [string]$Version = '0.1.0-preview',
     [switch]$Cuda,
-    [switch]$SkipNativeBuild
+    [switch]$SkipNativeBuild,
+    [switch]$ReleaseCandidate
 )
 
 $ErrorActionPreference = 'Stop'
+if ($ReleaseCandidate) {
+    if ($Version -ne '1.0.0' -or -not $Cuda) {
+        throw 'The v1 release candidate must use -Version 1.0.0 and -Cuda.'
+    }
+}
+elseif ($Version -notmatch '-') {
+    throw 'A stable version requires the explicit -ReleaseCandidate switch.'
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $modernRoot = Join-Path $repoRoot 'modern'
+if ($ReleaseCandidate) {
+    $compatibilityMatrix = Get-Content -LiteralPath (Join-Path $modernRoot 'docs\compatibility-matrix.md') -Raw -Encoding utf8
+    if ($compatibilityMatrix -match '\|\s*(scaffolded|pending-reference)\s*\|') {
+        throw 'Release-candidate packaging is blocked while legacy capabilities remain unfinished.'
+    }
+}
 $preset = if ($Cuda) { 'windows-cuda' } else { 'windows-cpu' }
 $buildPreset = if ($Cuda) { 'windows-cuda-release' } else { 'windows-cpu-release' }
 $backendName = if ($Cuda) { 'cuda' } else { 'cpu' }
 $artifactsRoot = Join-Path $modernRoot 'artifacts'
-$packageRoot = Join-Path $artifactsRoot 'preview'
+$packageDirectoryName = if ($ReleaseCandidate) { 'release-candidate' } else { 'preview' }
+$packageRoot = Join-Path $artifactsRoot $packageDirectoryName
 $publishRoot = Join-Path $artifactsRoot 'publish'
 $legacyBaselineCommit = 'aae2b3e5310fcaad4151a878ad65ed2a3fa29146'
 $legacyBaselineTag = 'legacy-baseline-aae2b3e'
@@ -71,6 +87,7 @@ dotnet publish (Join-Path $modernRoot 'app\Dslt.App\Dslt.App.csproj') `
     --self-contained true `
     --output $publishRoot `
     -p:Version=$Version `
+    -p:SourceRevisionId=$commit `
     -p:ContinuousIntegrationBuild=true `
     -p:DebugType=None `
     -p:DebugSymbols=false
@@ -129,5 +146,6 @@ Set-Content -LiteralPath $checksumPath -Value "$hash  $archiveName" -Encoding as
 & (Join-Path $PSScriptRoot 'verify-preview-package.ps1') -Archive $archive -Checksum $checksumPath
 if ($LASTEXITCODE -ne 0) { throw 'Package verification failed.' }
 
-Write-Host "Preview package: $archive"
+$packageKind = if ($ReleaseCandidate) { 'Release candidate' } else { 'Preview' }
+Write-Host "$packageKind package: $archive"
 Write-Host "SHA-256: $hash"

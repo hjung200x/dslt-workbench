@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
-using System.Security.Cryptography;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Dslt.Managed.Core.Models;
 
 namespace Dslt.Managed.Core.Provenance;
@@ -8,6 +9,7 @@ namespace Dslt.Managed.Core.Provenance;
 public sealed record ProcessingProvenance(
     string SchemaVersion,
     string ValidationLevel,
+    string SourceCommit,
     DateTimeOffset CreatedAtUtc,
     string InputSha256,
     int InputWidth,
@@ -48,8 +50,9 @@ public sealed record ProcessingProvenance(
             : input.Source.ChannelPlanarRawSamples;
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         return new ProcessingProvenance(
-            "1.7",
+            "1.8",
             "synthetic-data-validated",
+            ResolveSourceCommit(),
             DateTimeOffset.UtcNow,
             hash,
             input.Width,
@@ -77,6 +80,18 @@ public sealed record ProcessingProvenance(
 
     public static string ComputeLabelSha256(ReadOnlySpan<int> labels) =>
         ComputeLittleEndianSha256(labels, static value => value);
+
+    private static string ResolveSourceCommit()
+    {
+        var value = typeof(ProcessingProvenance).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "SourceCommit")?
+            .Value?
+            .ToLowerInvariant();
+        return value is { Length: 40 } && value.All(Uri.IsHexDigit)
+            ? value
+            : "unavailable";
+    }
 
     public static string ComputeFloatSha256(ReadOnlySpan<float> values) =>
         ComputeLittleEndianSha256(values, static value => BitConverter.SingleToInt32Bits(value));

@@ -9,6 +9,8 @@ using Dslt.Managed.Core.Validation;
 
 internal static class RealDataValidationTests
 {
+    private const string CandidateSourceCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -43,7 +45,8 @@ internal static class RealDataValidationTests
                     provenancePath,
                     JsonSerializer.Serialize(new
                     {
-                        schemaVersion = "1.5",
+                        schemaVersion = "1.8",
+                        sourceCommit = CandidateSourceCommit,
                         validationLevel = "synthetic-data-validated",
                         inputSha256 = decodedHash,
                         inputChannels = index is 1 or 3 ? 2 : 1,
@@ -92,10 +95,35 @@ internal static class RealDataValidationTests
             await WriteManifestAsync(manifestPath, cases);
             var passed = await RealDataValidationRunner.EvaluateAsync(manifestPath);
             Assert(passed.ReleaseGatePassed, "Five-case validation oracle should pass.");
+            Equal(CandidateSourceCommit, passed.CandidateSourceCommit, "Candidate source commit");
             Equal(5, passed.Coverage.UniqueAcquisitionCount, "Unique acquisition coverage");
             Equal(3, passed.Coverage.CoveredVoxelTypes.Count, "Voxel type coverage");
             Equal("tiff", passed.Coverage.CoveredContainers.Single(), "Container evidence");
             Equal(2, passed.Coverage.DistinctZSpacingCount, "Z spacing coverage");
+            var sourceLockedProvenancePath = Path.Combine(root, "candidate-0.json");
+            var sourceLockedProvenance = JsonNode.Parse(
+                await File.ReadAllTextAsync(sourceLockedProvenancePath))!.AsObject();
+            sourceLockedProvenance["sourceCommit"] = new string('0', 40);
+            await File.WriteAllTextAsync(
+                sourceLockedProvenancePath, sourceLockedProvenance.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                CandidateProvenanceSha256 = await Sha256FileAsync(sourceLockedProvenancePath),
+            };
+            await WriteManifestAsync(manifestPath, cases);
+            var sourceFailure = await RealDataValidationRunner.EvaluateAsync(manifestPath);
+            Assert(!sourceFailure.ReleaseGatePassed, "A different candidate source commit must fail the release gate.");
+            Assert(sourceFailure.Cases[0].Failures.Any(
+                value => value.Contains("sourceCommit", StringComparison.Ordinal)),
+                "Source-lock failure should identify sourceCommit.");
+
+            sourceLockedProvenance["sourceCommit"] = CandidateSourceCommit;
+            await File.WriteAllTextAsync(
+                sourceLockedProvenancePath, sourceLockedProvenance.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                CandidateProvenanceSha256 = await Sha256FileAsync(sourceLockedProvenancePath),
+            };
 
             var altered = LabelTiffCodec.Read(candidatePaths[0]);
             altered.Labels[1] = 0;
@@ -138,7 +166,8 @@ internal static class RealDataValidationTests
     private static Task WriteManifestAsync(string path, IReadOnlyList<RealDataValidationCase> cases) =>
         File.WriteAllTextAsync(path, JsonSerializer.Serialize(new RealDataValidationManifest
         {
-            SchemaVersion = 1,
+            SchemaVersion = 2,
+            CandidateSourceCommit = CandidateSourceCommit,
             DatasetName = "validation-oracle",
             Cases = cases,
         }, JsonOptions));

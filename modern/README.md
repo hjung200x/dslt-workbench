@@ -66,6 +66,17 @@ Use `tools/Dslt.Validation` with
 legacy/expert label pairs. The tool verifies input, label, and provenance hashes
 before calculating Dice, object-count, volume, and HD95 gates. See
 `docs/real-data-validation.md`.
+The schema-2 manifest and provenance 1.8 sidecars must identify the exact
+release-candidate source commit; results from another build are rejected.
+
+
+## V1.0 release evidence
+
+After all compatibility-matrix rows are complete, build the exact CUDA release
+candidate with `package-preview.ps1 -Version 1.0.0 -Cuda -ReleaseCandidate`.
+`verify-v1-release-evidence.ps1` then binds that package to the real-data,
+CUDA, Windows 10/11, and manual-observation evidence and emits the final
+SHA-256-locked decision. See `docs/v1-release-evidence.md`.
 
 ## Validation status
 

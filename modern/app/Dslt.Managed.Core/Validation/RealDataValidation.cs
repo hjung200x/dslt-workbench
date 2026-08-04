@@ -10,6 +10,7 @@ public sealed record RealDataValidationManifest
 {
     public int SchemaVersion { get; init; }
     public string DatasetName { get; init; } = string.Empty;
+    public string CandidateSourceCommit { get; init; } = string.Empty;
     public IReadOnlyList<RealDataValidationCase> Cases { get; init; } = [];
 }
 
@@ -64,6 +65,7 @@ public sealed record RealDataValidationReport(
     int SchemaVersion,
     string DatasetName,
     string ManifestSha256,
+    string CandidateSourceCommit,
     DateTimeOffset EvaluatedAtUtc,
     SegmentationValidationThresholds Thresholds,
     RealDataCoverageResult Coverage,
@@ -89,8 +91,10 @@ public static class RealDataValidationRunner
         var manifestBytes = await File.ReadAllBytesAsync(fullManifestPath, cancellationToken).ConfigureAwait(false);
         var manifest = JsonSerializer.Deserialize<RealDataValidationManifest>(manifestBytes, ManifestJsonOptions)
             ?? throw new InvalidDataException("Validation manifest is empty.");
-        if (manifest.SchemaVersion != 1)
+        if (manifest.SchemaVersion is not (1 or 2))
             throw new InvalidDataException($"Unsupported validation manifest schema {manifest.SchemaVersion}.");
+        if (manifest.SchemaVersion == 2 && !IsGitCommit(manifest.CandidateSourceCommit))
+            throw new InvalidDataException("Schema-2 validation manifest candidateSourceCommit must be a full Git commit.");
         if (string.IsNullOrWhiteSpace(manifest.DatasetName))
             throw new InvalidDataException("Validation manifest datasetName is required.");
         if (manifest.Cases is null)
@@ -108,14 +112,16 @@ public static class RealDataValidationRunner
         {
             cancellationToken.ThrowIfCancellationRequested();
             results.Add(await EvaluateCaseAsync(
-                item, baseDirectory, thresholds, duplicateIds.Contains(item.Id), cancellationToken).ConfigureAwait(false));
+                item, baseDirectory, manifest.CandidateSourceCommit, thresholds, duplicateIds.Contains(item.Id), cancellationToken)
+                .ConfigureAwait(false));
         }
 
         var coverage = EvaluateCoverage(manifest.Cases);
         return new RealDataValidationReport(
-            1,
+            manifest.SchemaVersion,
             manifest.DatasetName,
             Sha256(manifestBytes),
+            manifest.CandidateSourceCommit,
             DateTimeOffset.UtcNow,
             thresholds,
             coverage,
@@ -126,6 +132,7 @@ public static class RealDataValidationRunner
     private static async Task<RealDataCaseValidationResult> EvaluateCaseAsync(
         RealDataValidationCase item,
         string baseDirectory,
+        string candidateSourceCommit,
         SegmentationValidationThresholds thresholds,
         bool duplicateId,
         CancellationToken cancellationToken)
@@ -190,7 +197,8 @@ public static class RealDataValidationRunner
         }
 
         if (provenancePath is not null && File.Exists(provenancePath))
-            await ValidateProvenanceAsync(provenancePath, item, candidate, failures, cancellationToken).ConfigureAwait(false);
+            await ValidateProvenanceAsync(
+                provenancePath, item, candidateSourceCommit, candidate, failures, cancellationToken).ConfigureAwait(false);
 
         SegmentationValidationResult? metrics = null;
         if (failures.Count == 0 && reference is not null && candidate is not null)
@@ -270,6 +278,7 @@ public static class RealDataValidationRunner
     private static async Task ValidateProvenanceAsync(
         string path,
         RealDataValidationCase item,
+        string candidateSourceCommit,
         LabelTiffVolume? candidate,
         List<string> failures,
         CancellationToken cancellationToken)
@@ -280,8 +289,16 @@ public static class RealDataValidationRunner
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
             var root = document.RootElement;
             if (!TryGetString(root, "schemaVersion", out var schemaVersion) ||
-                (schemaVersion != "1.5" && schemaVersion != "1.6" && schemaVersion != "1.7"))
-                failures.Add("Candidate provenance schemaVersion must be 1.5, 1.6, or 1.7.");
+                (schemaVersion != "1.5" && schemaVersion != "1.6" && schemaVersion != "1.7" && schemaVersion != "1.8"))
+                failures.Add("Candidate provenance schemaVersion must be 1.5, 1.6, 1.7, or 1.8.");
+            if (!string.IsNullOrWhiteSpace(candidateSourceCommit))
+            {
+                if (schemaVersion != "1.8")
+                    failures.Add("A source-locked manifest requires candidate provenance schemaVersion 1.8.");
+                if (!TryGetString(root, "sourceCommit", out var sourceCommit) ||
+                    !sourceCommit.Equals(candidateSourceCommit, StringComparison.OrdinalIgnoreCase))
+                    failures.Add("Candidate provenance sourceCommit does not match candidateSourceCommit.");
+            }
             if (!TryGetString(root, "validationLevel", out var validationLevel) ||
                 validationLevel != "synthetic-data-validated")
                 failures.Add("Candidate provenance validationLevel is missing or invalid.");
@@ -426,6 +443,9 @@ public static class RealDataValidationRunner
 
     private static bool HashEquals(string actual, string expected) =>
         IsSha256(actual) && IsSha256(expected) && actual.Equals(expected, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsGitCommit(string value) =>
+        value is not null && value.Length == 40 && value.All(Uri.IsHexDigit);
 
     private static bool IsSha256(string value) =>
         value is not null && value.Length == 64 && value.All(Uri.IsHexDigit);

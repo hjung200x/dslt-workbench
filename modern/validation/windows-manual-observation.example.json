@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "hostRole": "replace-with-windows-10-22h2-150-or-windows-11-200-cuda",
+  "observedAtUtc": "replace-with-ISO-8601-UTC-time",
+  "observer": "replace-with-observer-name",
+  "hostEvidenceSha256": "replace-with-64-hex-sha256",
+  "checks": {
+    "representativeFileOpened": false,
+    "cancellationPreservedState": false,
+    "recoverableErrorPreservedState": false,
+    "orthogonalViewsUsableAtMinimumSize": false,
+    "exportAndReopenVerified": false
+  },
+  "notes": ""
+}

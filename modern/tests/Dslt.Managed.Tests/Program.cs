@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Reflection;
 using Dslt.Managed.Core.Interop;
 using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
@@ -268,8 +269,8 @@ if (engine.IsAvailable)
     static int SweepIndex(int x, int y) => y * 9 + x;
     sweepSamples[SweepIndex(0, 2)] = 0.0F;
     for (var y = 1; y <= 3; y++)
-    for (var x = 4; x <= 6; x++)
-        if (x != 5 || y != 2) sweepSamples[SweepIndex(x, y)] = 0.0F;
+        for (var x = 4; x <= 6; x++)
+            if (x != 5 || y != 2) sweepSamples[SweepIndex(x, y)] = 0.0F;
     var sweepVolume = new VolumeData(9, 5, 1, 1, 0, Calibration.Unit, sweepSamples);
     var sweepResult = await engine.RunAsync(
         sweepVolume,
@@ -325,11 +326,23 @@ if (!File.Exists(rawPath) || !File.Exists(jsonPath))
 var json = await File.ReadAllTextAsync(jsonPath);
 if (!json.Contains("synthetic-data-validated", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance validation level is missing.");
-if (!json.Contains("\"schemaVersion\": \"1.7\"", StringComparison.Ordinal) ||
+if (!json.Contains("\"schemaVersion\": \"1.8\"", StringComparison.Ordinal) ||
+    !json.Contains("\"sourceCommit\":", StringComparison.Ordinal) ||
     !json.Contains("\"inputVoxelType\": \"Float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"inputContainer\": \"memory-float32\"", StringComparison.Ordinal) ||
     !json.Contains("\"outputSha256\":", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance input format identity is missing.");
+var sourceCommitMetadata = typeof(ProcessingProvenance).Assembly
+    .GetCustomAttributes<AssemblyMetadataAttribute>()
+    .SingleOrDefault(attribute => attribute.Key == "SourceCommit")?
+    .Value;
+if (!string.IsNullOrWhiteSpace(sourceCommitMetadata) &&
+    !json.Contains($"\"sourceCommit\": \"{sourceCommitMetadata.ToLowerInvariant()}\"", StringComparison.Ordinal))
+    throw new InvalidOperationException("Provenance source commit does not match assembly metadata.");
+var expectedSourceCommit = Environment.GetEnvironmentVariable("DSLT_EXPECT_SOURCE_COMMIT");
+if (!string.IsNullOrWhiteSpace(expectedSourceCommit) &&
+    !json.Contains($"\"sourceCommit\": \"{expectedSourceCommit.ToLowerInvariant()}\"", StringComparison.Ordinal))
+    throw new InvalidOperationException("Provenance source commit was not injected from SourceRevisionId.");
 if (!json.Contains("merged labels 3 and 4", StringComparison.Ordinal))
     throw new InvalidOperationException("Provenance edit history is missing.");
 File.Delete(rawPath);
@@ -419,9 +432,9 @@ Equal(1, morphology.Labels.Span.Count(2), "6-connected label erosion");
 
 var cropSource = Enumerable.Repeat(LabelEditingSession.Background, 5 * 5 * 3).ToArray();
 for (var z = 1; z <= 2; z++)
-for (var y = 2; y <= 3; y++)
-for (var x = 1; x <= 2; x++)
-    cropSource[z * 25 + y * 5 + x] = 7;
+    for (var y = 2; y <= 3; y++)
+        for (var x = 1; x <= 2; x++)
+            cropSource[z * 25 + y * 5 + x] = 7;
 var cropEditing = new LabelEditingSession(5, 5, 3, cropSource);
 cropEditing.Select([7]);
 var appliedCrop = cropEditing.CropSelected();
