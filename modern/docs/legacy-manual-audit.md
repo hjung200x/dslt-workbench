@@ -50,10 +50,22 @@ These are manual examples and observed UI values, not universal recommended
 settings. Conflicts with source control ranges or code-behind sign conversion
 remain `capture-required` until the archived executable can be observed.
 
+## Source-only command audit
+
+The root XAML binds unmodified S/D to Source/Result XY/YZ/ZX TIFF snapshots;
+Workbench implements those active commands and their three-file naming. H/J
+actively read/write the binary 120/240-header `.hmp` surface format, and A
+actively calculates height-surface area maps; those remain tracked gaps. C/V/M/N
+are observable no-ops at the pinned baseline because all calls in their command
+bodies are commented out, so Workbench excludes them rather than inventing new
+behavior.
+
 ## Explicit remaining gaps
 
 The audit prevents implemented algorithms from being mistaken for complete
 legacy interaction equivalence. Before a v1.0 claim, the Workbench still needs:
 
 1. a real or archived-runtime oracle for ambiguous parameter mappings;
-2. representative original or expert-labelled microscopy data.
+2. legacy `.hmp` height-map import/export and external-surface processing;
+3. a deterministic replacement for the legacy height-surface area-map command;
+4. representative original or expert-labelled microscopy data.

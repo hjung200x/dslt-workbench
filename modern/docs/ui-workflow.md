@@ -27,6 +27,10 @@ equivalence; that remains gated by representative datasets.
   display through 200% scaling.
 - Render synchronized XY, YZ, and ZX source/result planes, apply one shared zoom
   factor, and propagate normalized scroll offsets across all six views.
+- Save the currently rendered Source or Result XY/YZ/ZX planes as a TIFF
+  triplet. S and D retain the legacy shortcuts; choosing `name.tif` writes
+  `name.tif`, `nameYZ.tif`, and `nameZX.tif`. Encoding runs off the UI thread,
+  and failure does not alter the workspace.
 - Adjust the display window independently of stored voxel values.
 - Choose the processing backend and an exposed CPU-compatible operation.
 - Configure threshold, radius, connectivity, component-size, non-DSLT
@@ -70,7 +74,8 @@ equivalence; that remains gated by representative datasets.
   `voxel count > minimum displayed size` rule without modifying labels,
   selection, measurements, or exported results.
 - Preserve the manual's Ctrl+O/Ctrl+S, Alt+J/Alt+S, Ctrl+Z and Alt+A/Alt+D
-  bindings. Shift-left/right-click zooms all synchronized views; middle-click
+  bindings, plus the original unmodified S/D orthogonal snapshot commands.
+  Shift-left/right-click zooms all synchronized views; middle-click
   maps a rendered result-plane pixel to its XY/YZ/ZX source coordinate and
   selects that label without accepting clicks in image letterboxing.
 - Treat crop dimensions, source-coordinate origin, labels, and selection as one
@@ -143,6 +148,9 @@ equivalence; that remains gated by representative datasets.
     to background, retains the working-volume calibration, records the decoded
     source-label hash, preserves the prior result on geometry mismatch, and
     applies the legacy strict minimum-size comparison at equality.
+22. Source/Result orthogonal snapshot commands route the three frozen rendered
+    planes, write legacy-compatible TIFF names and exact pixels, and preserve
+    the last valid workspace state when export fails.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.

@@ -43,6 +43,79 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         }, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<string>?> SaveOrthogonalViewsAsync(
+        string viewName,
+        BitmapSource xy,
+        BitmapSource yz,
+        BitmapSource zx,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewName);
+        ArgumentNullException.ThrowIfNull(xy);
+        ArgumentNullException.ThrowIfNull(yz);
+        ArgumentNullException.ThrowIfNull(zx);
+        var dialog = new SaveFileDialog
+        {
+            Title = $"Save {viewName} orthogonal views",
+            Filter = "TIFF image|*.tif|TIFF image (long extension)|*.tiff",
+            DefaultExt = ".tif",
+            AddExtension = true,
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog() != true) return null;
+        return await Task.Run(
+            () => WriteOrthogonalViews(dialog.FileName, xy, yz, zx, cancellationToken),
+            cancellationToken);
+    }
+
+    internal static IReadOnlyList<string> WriteOrthogonalViews(
+        string xyPath,
+        BitmapSource xy,
+        BitmapSource yz,
+        BitmapSource zx,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(xyPath);
+        ArgumentNullException.ThrowIfNull(xy);
+        ArgumentNullException.ThrowIfNull(yz);
+        ArgumentNullException.ThrowIfNull(zx);
+        var paths = BuildOrthogonalViewPaths(xyPath);
+        var views = new[] { xy, yz, zx };
+        for (var index = 0; index < views.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var directory = Path.GetDirectoryName(paths[index]);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            var encoder = new TiffBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(views[index]));
+            using var stream = new FileStream(paths[index], FileMode.Create, FileAccess.Write, FileShare.None);
+            encoder.Save(stream);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return paths;
+    }
+
+    internal static string[] BuildOrthogonalViewPaths(string xyPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(xyPath);
+        var fullPath = Path.GetFullPath(xyPath);
+        var extension = Path.GetExtension(fullPath);
+        if (string.IsNullOrEmpty(extension))
+        {
+            extension = ".tif";
+            fullPath += extension;
+        }
+        var directory = Path.GetDirectoryName(fullPath)
+            ?? throw new ArgumentException("Orthogonal-view path does not have a parent directory.", nameof(xyPath));
+        var stem = Path.GetFileNameWithoutExtension(fullPath);
+        return
+        [
+            fullPath,
+            Path.Combine(directory, stem + "YZ" + extension),
+            Path.Combine(directory, stem + "ZX" + extension),
+        ];
+    }
+
     public string? ChooseExportBasePath()
     {
         var dialog = new SaveFileDialog
