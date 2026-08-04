@@ -117,6 +117,7 @@ internal static class Program
                     throw new InvalidOperationException("The read-only progress property must use a OneWay binding.");
 
                 AssertNamedInputControls(window);
+                AssertMinimumHighDpiLayout(window);
             }
             catch (Exception error)
             {
@@ -133,6 +134,80 @@ internal static class Program
         _ = application.Run();
         if (inspectionFailure is not null)
             throw inspectionFailure;
+    }
+
+    private static void AssertMinimumHighDpiLayout(global::Dslt.App.MainWindow window)
+    {
+        window.Width = window.MinWidth;
+        window.Height = window.MinHeight;
+        window.UpdateLayout();
+
+        foreach (var scale in new[] { 1.25, 1.5, 2.0 })
+        {
+            if (window.MinWidth * scale > 1_920 || window.MinHeight * scale > 1_080)
+            {
+                throw new InvalidOperationException(
+                    $"The minimum window size does not fit a 1920 x 1080 display at {scale:P0} scaling.");
+            }
+        }
+
+        var navigation = FindLogicalChild<ScrollViewer>(window, element =>
+            AutomationProperties.GetName(element) == "Navigation and volume controls") ??
+            throw new InvalidOperationException("The navigation controls are not scrollable.");
+        var processing = FindLogicalChild<ScrollViewer>(window, element =>
+            AutomationProperties.GetName(element) == "Processing and editing controls") ??
+            throw new InvalidOperationException("The processing controls are not scrollable.");
+        if (navigation.ScrollableHeight <= 0 || processing.ScrollableHeight <= 0)
+            throw new InvalidOperationException("The minimum-height layout did not expose vertical scrolling.");
+
+        var open = FindLogicalChild<Button>(window, element =>
+            Equals(element.Content, "Open TIFF / LSM")) ??
+            throw new InvalidOperationException("The open command is missing from the minimum-size layout.");
+        var run = FindLogicalChild<Button>(window, element => Equals(element.Content, "Run")) ??
+            throw new InvalidOperationException("The run command is missing from the minimum-size layout.");
+        var cancel = FindLogicalChild<Button>(window, element => Equals(element.Content, "Cancel")) ??
+            throw new InvalidOperationException("The cancel command is missing from the minimum-size layout.");
+        var export = FindLogicalChild<Button>(window, element =>
+            Equals(element.Content, "Export result + provenance")) ??
+            throw new InvalidOperationException("The export command is missing from the minimum-size layout.");
+
+        open.BringIntoView();
+        run.BringIntoView();
+        cancel.BringIntoView();
+        export.BringIntoView();
+        window.Dispatcher.Invoke(static () => { }, DispatcherPriority.Render);
+        if (!IsWithinWindow(open, window) ||
+            !IsWithinWindow(run, window) ||
+            !IsWithinWindow(cancel, window) ||
+            !IsWithinWindow(export, window))
+        {
+            throw new InvalidOperationException(
+                "A primary workflow command could not be scrolled into the minimum-size window.");
+        }
+    }
+
+    private static bool IsWithinWindow(FrameworkElement element, Window window)
+    {
+        var bounds = element.TransformToAncestor(window).TransformBounds(
+            new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+        return bounds.Width > 0 && bounds.Height > 0 &&
+            new Rect(0, 0, window.ActualWidth, window.ActualHeight).IntersectsWith(bounds);
+    }
+
+    private static T? FindLogicalChild<T>(
+        DependencyObject parent,
+        Func<T, bool> predicate) where T : DependencyObject
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(parent))
+        {
+            if (child is T match && predicate(match)) return match;
+            if (child is DependencyObject dependencyObject)
+            {
+                var nested = FindLogicalChild(dependencyObject, predicate);
+                if (nested is not null) return nested;
+            }
+        }
+        return null;
     }
 
     private static void AssertNamedInputControls(DependencyObject root)
