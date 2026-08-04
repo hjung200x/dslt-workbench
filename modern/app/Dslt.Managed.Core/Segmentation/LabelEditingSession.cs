@@ -49,6 +49,18 @@ public sealed class LabelEditingSession
 
     public void ClearSelection() => _selection.Clear();
 
+    public void SelectAll()
+    {
+        _selection.Clear();
+        _selection.UnionWith(_labels.Where(label => label >= 0));
+    }
+
+    public void Deselect(IEnumerable<int> labels)
+    {
+        ArgumentNullException.ThrowIfNull(labels);
+        _selection.ExceptWith(labels);
+    }
+
     public int MergeSelected(int? destinationLabel = null)
     {
         RequireSelection();
@@ -128,7 +140,7 @@ public sealed class LabelEditingSession
         }
     }
 
-    public void ErodeSelected(int iterations = 1, int connectivity = 6)
+    public void ErodeSelected(int iterations = 1, int connectivity = 6, bool clampImageEdges = false)
     {
         RequireMorphologyArguments(iterations, connectivity);
         RequireSelection();
@@ -140,6 +152,7 @@ public sealed class LabelEditingSession
             {
                 var label = source[index];
                 if (!_selection.Contains(label)) continue;
+                if (clampImageEdges && IsBoundary(index)) continue;
                 if (IsBoundary(index) || Neighbors(index, connectivity).Any(neighbor => source[neighbor] != label))
                     _labels[index] = Background;
             }

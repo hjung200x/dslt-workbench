@@ -61,6 +61,7 @@ internal static class Program
             LsmMetadataTests.Run();
             ReferenceLabelImporterTests.Run();
             await RealDataManifestAssemblerTests.RunAsync();
+            LegacyImageInteractionBehaviorTests.Run();
             await DepthColorProjectionTests.RunAsync();
             await WorkflowViewModelTests.RunAsync();
             Console.WriteLine("DSLT WPF TIFF, metadata, hyperstack, and workflow tests passed.");

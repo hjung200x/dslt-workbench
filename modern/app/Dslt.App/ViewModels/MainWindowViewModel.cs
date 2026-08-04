@@ -85,6 +85,9 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _resultOriginZ;
     private int _editIterations = 1;
     private bool _addToSelection;
+    private float _selectionThreshold = 0.1F;
+    private bool _deselectAboveThreshold;
+    private bool _editClampImageEdges = true;
     private string _selectionSummary = "No label selection";
     private bool _isBusy;
 
@@ -127,6 +130,12 @@ public sealed class MainWindowViewModel : ObservableObject
         RunCommand = new AsyncRelayCommand(RunSelectedOperationAsync, CanRun);
         CancelCommand = new RelayCommand(() => _cancellation?.Cancel(), () => _cancellation is not null);
         SelectAtCursorCommand = new RelayCommand(SelectAtCursor, () => CanEdit && !IsBusy);
+        SelectPlanePointCommand = new RelayCommand<OrthogonalPointerPosition>(
+            SelectPlanePoint, _ => CanEdit && !IsBusy);
+        ZoomInCommand = new RelayCommand(() => Zoom = Math.Min(8, Zoom + 0.25), () => !IsBusy && Zoom < 8);
+        ZoomOutCommand = new RelayCommand(() => Zoom = Math.Max(0.25, Zoom - 0.25), () => !IsBusy && Zoom > 0.25);
+        SelectAllCommand = new RelayCommand(SelectAllLabels, () => CanEdit && !IsBusy);
+        SelectByMeanIntensityCommand = new RelayCommand(SelectByMeanIntensity, () => CanEdit && !IsBusy);
         ClearSelectionCommand = new RelayCommand(ClearSelection, () => HasSelection && !IsBusy);
         MergeSelectionCommand = new RelayCommand(MergeSelection, () => SelectedLabelCount >= 2 && !IsBusy);
         SplitSelectionCommand = new RelayCommand(SplitSelection, () => HasSelection && !IsBusy);
@@ -583,6 +592,24 @@ public sealed class MainWindowViewModel : ObservableObject
         set => SetProperty(ref _addToSelection, value);
     }
 
+    public float SelectionThreshold
+    {
+        get => _selectionThreshold;
+        set => SetProperty(ref _selectionThreshold, float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0.1F);
+    }
+
+    public bool DeselectAboveThreshold
+    {
+        get => _deselectAboveThreshold;
+        set => SetProperty(ref _deselectAboveThreshold, value);
+    }
+
+    public bool EditClampImageEdges
+    {
+        get => _editClampImageEdges;
+        set => SetProperty(ref _editClampImageEdges, value);
+    }
+
     public string SelectionSummary
     {
         get => _selectionSummary;
@@ -671,6 +698,11 @@ public sealed class MainWindowViewModel : ObservableObject
     public AsyncRelayCommand RunCommand { get; }
     public RelayCommand CancelCommand { get; }
     public RelayCommand SelectAtCursorCommand { get; }
+    public RelayCommand<OrthogonalPointerPosition> SelectPlanePointCommand { get; }
+    public RelayCommand ZoomInCommand { get; }
+    public RelayCommand ZoomOutCommand { get; }
+    public RelayCommand SelectAllCommand { get; }
+    public RelayCommand SelectByMeanIntensityCommand { get; }
     public RelayCommand ClearSelectionCommand { get; }
     public RelayCommand MergeSelectionCommand { get; }
     public RelayCommand SplitSelectionCommand { get; }
@@ -1054,12 +1086,77 @@ public sealed class MainWindowViewModel : ObservableObject
         Status = $"Selected label {label} at ({XIndex}, {YIndex}, {ZIndex}).";
     }
 
+    private void SelectPlanePoint(OrthogonalPointerPosition pointer)
+    {
+        switch (pointer.Plane)
+        {
+            case OrthogonalViewPlane.Xy:
+                XIndex = checked(ResultOriginX + pointer.Horizontal);
+                YIndex = checked(ResultOriginY + pointer.Vertical);
+                break;
+            case OrthogonalViewPlane.Yz:
+                ZIndex = checked(ResultOriginZ + pointer.Horizontal);
+                YIndex = checked(ResultOriginY + pointer.Vertical);
+                break;
+            case OrthogonalViewPlane.Zx:
+                XIndex = checked(ResultOriginX + pointer.Horizontal);
+                ZIndex = checked(ResultOriginZ + pointer.Vertical);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(pointer));
+        }
+        SelectAtCursor();
+    }
+
     private void ClearSelection()
     {
         _editingSession?.ClearSelection();
         UpdateSelectionState();
         RefreshResultImage();
         Status = "Label selection cleared.";
+    }
+
+    private void SelectAllLabels()
+    {
+        _editingSession?.SelectAll();
+        UpdateSelectionState();
+        RefreshResultImage();
+        Status = $"Selected all {SelectedLabelCount} label(s).";
+    }
+
+    private void SelectByMeanIntensity()
+    {
+        if (_editingSession is null || _volume is null) return;
+        var source = SelectedChannelSamples(_volume);
+        var sums = new Dictionary<int, (double Sum, int Count)>();
+        var labels = _editingSession.Labels.Span;
+        var slice = _editingSession.Width * _editingSession.Height;
+        for (var z = 0; z < _editingSession.Depth; z++)
+        for (var y = 0; y < _editingSession.Height; y++)
+        for (var x = 0; x < _editingSession.Width; x++)
+        {
+            var label = labels[z * slice + y * _editingSession.Width + x];
+            if (label < 0) continue;
+            var sourceX = checked(ResultOriginX + x);
+            var sourceY = checked(ResultOriginY + y);
+            var sourceZ = checked(ResultOriginZ + z);
+            if (sourceX >= _volume.Width || sourceY >= _volume.Height || sourceZ >= _volume.Depth) continue;
+            var value = source[sourceZ * _volume.Width * _volume.Height + sourceY * _volume.Width + sourceX];
+            sums.TryGetValue(label, out var aggregate);
+            sums[label] = (aggregate.Sum + value, aggregate.Count + 1);
+        }
+
+        var matches = sums
+            .Where(item => item.Value.Count > 0 && item.Value.Sum / item.Value.Count > SelectionThreshold)
+            .Select(item => item.Key)
+            .Order()
+            .ToArray();
+        if (DeselectAboveThreshold) _editingSession.Deselect(matches);
+        else _editingSession.Select(matches, replace: false);
+        UpdateSelectionState();
+        RefreshResultImage();
+        Status = $"{(DeselectAboveThreshold ? "Deselected" : "Selected")} {matches.Length} label(s) " +
+                 $"with active-channel mean intensity above {SelectionThreshold:0.###}.";
     }
 
     private void MergeSelection() => ApplyLabelEdit(() =>
@@ -1082,8 +1179,9 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private void ErodeSelection() => ApplyLabelEdit(() =>
     {
-        _editingSession!.ErodeSelected(EditIterations, Connectivity);
-        return $"Eroded selected labels by {EditIterations} iteration(s).";
+        _editingSession!.ErodeSelected(EditIterations, Connectivity, EditClampImageEdges);
+        return $"Eroded selected labels by {EditIterations} iteration(s) " +
+               $"(image-edge clamp {(EditClampImageEdges ? "on" : "off")}).";
     });
 
     private void CropSelection()
@@ -1197,6 +1295,11 @@ public sealed class MainWindowViewModel : ObservableObject
         SaveCommand.NotifyCanExecuteChanged();
         RunCommand.NotifyCanExecuteChanged();
         SelectAtCursorCommand.NotifyCanExecuteChanged();
+        SelectPlanePointCommand.NotifyCanExecuteChanged();
+        ZoomInCommand.NotifyCanExecuteChanged();
+        ZoomOutCommand.NotifyCanExecuteChanged();
+        SelectAllCommand.NotifyCanExecuteChanged();
+        SelectByMeanIntensityCommand.NotifyCanExecuteChanged();
         ClearSelectionCommand.NotifyCanExecuteChanged();
         MergeSelectionCommand.NotifyCanExecuteChanged();
         SplitSelectionCommand.NotifyCanExecuteChanged();
