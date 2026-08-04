@@ -1633,6 +1633,25 @@ std::vector<float> height_projection(
     return result;
 }
 
+std::uint32_t resample_output_depth(
+    const dslt_volume_descriptor& descriptor,
+    float target_spacing) {
+    if (!(target_spacing > 0.0F) || !std::isfinite(target_spacing)) {
+        throw std::invalid_argument("target Z spacing must be finite and positive");
+    }
+    const auto physical_depth =
+        static_cast<double>(descriptor.depth) * descriptor.calibration.spacing_z;
+    const auto requested_depth = physical_depth / static_cast<double>(target_spacing);
+    if (!std::isfinite(requested_depth) || requested_depth < 0.0) {
+        throw std::invalid_argument("calibrated Z depth must be finite and non-negative");
+    }
+    const auto rounded_depth = std::floor(requested_depth + 0.5);
+    if (rounded_depth > static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
+        throw ResourceLimitError("Z resampling output depth exceeds uint32 capacity");
+    }
+    return std::max<std::uint32_t>(1, static_cast<std::uint32_t>(rounded_depth));
+}
+
 std::vector<float> resample_z(
     const Volume& volume,
     float target_spacing,
@@ -1640,13 +1659,16 @@ std::vector<float> resample_z(
     bool lanczos,
     std::uint32_t& output_depth,
     const Engine::Progress& progress) {
-    if (!(target_spacing > 0.0F)) throw std::invalid_argument("target Z spacing must be positive");
     if (lanczos && lanczos_order != 2 && lanczos_order != 3) throw std::invalid_argument("Lanczos order must be 2 or 3");
     const auto source = selected_channel(volume);
     const auto& d = volume.descriptor();
-    const double physical_depth = d.depth * d.calibration.spacing_z;
-    output_depth = std::max<std::uint32_t>(1, static_cast<std::uint32_t>(std::lround(physical_depth / target_spacing)));
-    std::vector<float> result(static_cast<std::size_t>(d.width) * d.height * output_depth, 0.0F);
+    output_depth = resample_output_depth(d, target_spacing);
+    auto output_count = checked_multiply_u64(d.width, d.height, "Z resampling output");
+    output_count = checked_multiply_u64(output_count, output_depth, "Z resampling output");
+    if (output_count > std::numeric_limits<std::size_t>::max()) {
+        throw ResourceLimitError("Z resampling output exceeds addressable memory");
+    }
+    std::vector<float> result(static_cast<std::size_t>(output_count), 0.0F);
     const double scale = static_cast<double>(d.depth) / output_depth;
 
     for (std::size_t oz = 0; oz < output_depth; ++oz) {

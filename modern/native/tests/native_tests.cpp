@@ -246,6 +246,14 @@ void cuda_pointwise_parity_test() {
         }
     }
 
+    dslt_operation_request excessive_resample{};
+    excessive_resample.operation = DSLT_OP_RESAMPLE_Z_AREA;
+    excessive_resample.target_spacing_z = std::numeric_limits<float>::min();
+    excessive_resample.backend = DSLT_BACKEND_CUDA;
+    dslt_operation_result excessive_result{};
+    require(dslt_run_operation(
+        handle, &excessive_resample, nullptr, nullptr, &excessive_result), DSLT_RESOURCE_LIMIT);
+
     for (const auto view : {
              std::pair{DSLT_OP_EXTRACT_XY, 2},
              std::pair{DSLT_OP_EXTRACT_YZ, 1},
@@ -1528,6 +1536,12 @@ int main() {
 
     request.window_max = 0.0F;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    request = {};
+    request.operation = DSLT_OP_RESAMPLE_Z_AREA;
+    request.backend = DSLT_BACKEND_CPU;
+    request.target_spacing_z = std::numeric_limits<float>::min();
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_RESOURCE_LIMIT);
 
     dslt_destroy(handle);
     lifecycle_stress_test();

@@ -23,6 +23,116 @@ internal static class WorkflowViewModelTests
         using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
         var target = viewModel.Value;
 
+        var internalOnly = new HashSet<ProcessingOperation>
+        {
+            ProcessingOperation.Copy,
+            ProcessingOperation.ExtractXy,
+            ProcessingOperation.ExtractYz,
+            ProcessingOperation.ExtractZx,
+        };
+        var expectedOperations = Enum.GetValues<ProcessingOperation>()
+            .Where(operation => !internalOnly.Contains(operation))
+            .Order()
+            .ToArray();
+        Assert(target.Operations.Select(option => option.Operation).Order()
+                .SequenceEqual(expectedOperations),
+            "The WPF operation selector does not expose every user-facing native operation.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.Threshold2D);
+        var originalZIndex = target.ZIndex;
+        target.ZIndex = 2;
+        target.Threshold = 0.4F;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.Threshold2D,
+                SliceIndex: 2,
+                Threshold: 0.4F,
+            } && target.LastResult?.OutputKind == OutputKind.VolumeFloat32,
+            "The 2D threshold UI did not preserve the active Z slice and threshold.");
+        target.ZIndex = originalZIndex;
+
+        foreach (var operation in new[]
+                 {
+                     ProcessingOperation.DilateCube,
+                     ProcessingOperation.ErodeCube,
+                 })
+        {
+            target.SelectedOperation = target.Operations.Single(option =>
+                option.Operation == operation);
+            target.Radius = 3;
+            await target.RunCommand.ExecuteAsync();
+            Assert(target.LastParameters is { Radius: 3 } parameters &&
+                   parameters.Operation == operation &&
+                   target.LastResult?.OutputKind == OutputKind.VolumeFloat32,
+                $"The {operation} UI did not preserve the cubic morphology radius.");
+        }
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.ResampleZArea);
+        Assert(target.IsResampleZ && !target.IsLanczosResample &&
+               Math.Abs(target.TargetSpacingZ - 1.0F) < 1e-6F,
+            "Area-average Z resampling did not expose the calibrated X-spacing default.");
+        target.TargetSpacingZ = 4.0F;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.ResampleZArea,
+                TargetSpacingZ: 4.0F,
+                LanczosOrder: 2,
+            } && target.LastResult is { OutputKind: OutputKind.VolumeFloat32, Depth: 24 },
+            "Area-average Z resampling did not preserve spacing or output geometry.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.ResampleZLanczos);
+        target.TargetSpacingZ = 2.0F;
+        target.LanczosOrder = 3;
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.IsResampleZ && target.IsLanczosResample &&
+               target.LastParameters is
+               {
+                   Operation: ProcessingOperation.ResampleZLanczos,
+                   TargetSpacingZ: 2.0F,
+                   LanczosOrder: 3,
+               } && target.LastResult is { OutputKind: OutputKind.VolumeFloat32, Depth: 48 } &&
+               target.ResultYzImage is BitmapSource resampledYz && resampledYz.PixelWidth == 48,
+            "Lanczos Z resampling did not preserve order, spacing, or result geometry.");
+
+        var resampleExport = Path.Combine(
+            Path.GetTempPath(), $"dslt-resample-{Guid.NewGuid():N}");
+        files.ExportBasePath = resampleExport;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            var provenance = await File.ReadAllTextAsync(resampleExport + ".json");
+            Assert(provenance.Contains("\"targetSpacingZ\": 2", StringComparison.Ordinal) &&
+                   provenance.Contains("\"lanczosOrder\": 3", StringComparison.Ordinal) &&
+                   File.Exists(resampleExport + ".f32.raw"),
+                "Z-resampling provenance or Float32 payload was not exported.");
+        }
+        finally
+        {
+            foreach (var suffix in new[] { ".f32.raw", ".json" })
+            {
+                var path = resampleExport + suffix;
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
+
+        var successfulResampleResult = target.LastResult;
+        var successfulResampleImage = target.ResultImage;
+        engine.WaitOnOperation = ProcessingOperation.ResampleZLanczos;
+        engine.ResetRunStarted();
+        var cancelledResample = target.RunCommand.ExecuteAsync();
+        await engine.RunStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        target.CancelCommand.Execute(null);
+        await cancelledResample;
+        Assert(ReferenceEquals(successfulResampleResult, target.LastResult) &&
+               ReferenceEquals(successfulResampleImage, target.ResultImage),
+            "Cancellation replaced the last valid Z-resampling result.");
+        engine.WaitOnOperation = null;
+
         target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.DsltSegmentation);
         await target.EstimateCommand.ExecuteAsync();
@@ -374,6 +484,11 @@ internal static class WorkflowViewModelTests
                 ],
                 [0, 1.25]));
         await target.OpenCommand.ExecuteAsync();
+        Assert(Math.Abs(target.TargetSpacingZ - 0.5F) < 1e-6F,
+            "Opening calibrated data did not reset target Z spacing to input X spacing.");
+        target.TargetSpacingZ = 0;
+        Assert(Math.Abs(target.TargetSpacingZ - 0.5F) < 1e-6F,
+            "The WPF layer accepted a non-positive target Z spacing.");
         var firstChannelImage = target.SourceImage;
         target.ChannelIndex = 1;
         target.ZIndex = 1;
@@ -591,40 +706,65 @@ internal static class WorkflowViewModelTests
             if (RunBehavior == FakeRunBehavior.Fail || FailOnOperation == parameters.Operation)
                 throw new InvalidOperationException("Synthetic engine failure.");
 
-            if (parameters.Operation is ProcessingOperation.HeightMap or
-                ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection)
+            if (!IsLabelOperation(parameters.Operation))
             {
-                float[] values;
-                OutputKind outputKind;
-                int resultDepth;
-                if (parameters.Operation == ProcessingOperation.HeightMap)
+                var resultWidth = volume.Width;
+                var resultHeight = volume.Height;
+                var resultDepth = volume.Depth;
+                var outputKind = OutputKind.VolumeFloat32;
+                if (parameters.Operation is ProcessingOperation.HeightMap or
+                    ProcessingOperation.HeightProjection)
                 {
-                    values = new float[checked(volume.Width * volume.Height)];
                     outputKind = OutputKind.ImageFloat32;
                     resultDepth = 1;
                 }
-                else if (parameters.Operation == ProcessingOperation.DepthMap)
+                else if (parameters.Operation is ProcessingOperation.ResampleZArea or
+                         ProcessingOperation.ResampleZLanczos)
+                {
+                    resultDepth = Math.Max(1, checked((int)Math.Floor(
+                        volume.Depth * volume.Calibration.SpacingZ /
+                        parameters.TargetSpacingZ + 0.5)));
+                }
+                else if (parameters.Operation == ProcessingOperation.ExtractXy)
+                {
+                    outputKind = OutputKind.ImageFloat32;
+                    resultDepth = 1;
+                }
+                else if (parameters.Operation == ProcessingOperation.ExtractYz)
+                {
+                    outputKind = OutputKind.ImageFloat32;
+                    resultWidth = volume.Depth;
+                    resultDepth = 1;
+                }
+                else if (parameters.Operation == ProcessingOperation.ExtractZx)
+                {
+                    outputKind = OutputKind.ImageFloat32;
+                    resultHeight = volume.Depth;
+                    resultDepth = 1;
+                }
+
+                var values = new float[checked(resultWidth * resultHeight * resultDepth)];
+                if (parameters.Operation == ProcessingOperation.DepthMap)
                 {
                     var plane = checked(volume.Width * volume.Height);
                     values = Enumerable.Range(0, volume.VoxelCount)
                         .Select(index => (float)(index / plane))
                         .ToArray();
-                    outputKind = OutputKind.VolumeFloat32;
-                    resultDepth = volume.Depth;
                 }
-                else
+                else if (parameters.Operation == ProcessingOperation.HeightProjection)
                 {
-                    values = Enumerable.Repeat(
-                        0.8F, checked(volume.Width * volume.Height)).ToArray();
-                    outputKind = OutputKind.ImageFloat32;
-                    resultDepth = 1;
+                    Array.Fill(values, 0.8F);
+                }
+                else if (parameters.Operation != ProcessingOperation.HeightMap)
+                {
+                    Array.Fill(values, 0.5F);
                 }
                 progress?.Report(1);
                 return new ProcessingResult(
                     ProcessingBackend.Cpu,
                     outputKind,
-                    volume.Width,
-                    volume.Height,
+                    resultWidth,
+                    resultHeight,
                     resultDepth,
                     0,
                     values,
@@ -647,6 +787,12 @@ internal static class WorkflowViewModelTests
                 Labels: labels,
                 CompletedPasses: 3);
         }
+
+        private static bool IsLabelOperation(ProcessingOperation operation) => operation is
+            ProcessingOperation.ConnectedComponents or
+            ProcessingOperation.ThresholdSweep or
+            ProcessingOperation.DsltSegmentation or
+            ProcessingOperation.Watershed;
 
         public void Dispose() { }
     }

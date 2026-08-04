@@ -168,8 +168,10 @@ threshold results are therefore voxel-exact on the test fixture.
 The resampling fixture checks both Lanczos orders and area averaging against
 the CPU reference at the project-wide float tolerance. Orthogonal-view values
 must be voxel-exact and their output dimensions and image output kind must
-match. Invalid spacing, Lanczos order, and slice index plus mid-resample
-cancellation are covered.
+match. CPU and CUDA share checked target-spacing-to-depth rounding and reject a
+result deeper than uint32 or addressable output limits before allocation.
+Invalid spacing, Lanczos order, and slice index plus mid-resample cancellation
+are covered.
 
 ## Recorded pointwise runtime evidence
 

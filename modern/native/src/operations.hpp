@@ -194,7 +194,16 @@ std::vector<float> height_projection(
     const HeightMapParameters& height_parameters,
     const HeightProjectionParameters& projection_parameters,
     const Engine::Progress& progress);
-std::vector<float> resample_z(const Volume& volume, float target_spacing, int lanczos_order, bool lanczos, std::uint32_t& output_depth, const Engine::Progress& progress);
+std::uint32_t resample_output_depth(
+    const dslt_volume_descriptor& descriptor,
+    float target_spacing);
+std::vector<float> resample_z(
+    const Volume& volume,
+    float target_spacing,
+    int lanczos_order,
+    bool lanczos,
+    std::uint32_t& output_depth,
+    const Engine::Progress& progress);
 std::vector<float> extract_plane(const Volume& volume, dslt_operation operation, int slice, std::uint32_t& width, std::uint32_t& height);
 std::vector<float> dslt_threshold(
     const Volume& volume,

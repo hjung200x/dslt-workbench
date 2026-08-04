@@ -656,6 +656,40 @@ void height_projection_and_depth_fixture() {
     assert(cancelled);
 }
 
+void resample_dimension_fixture() {
+    auto value = descriptor(3, 2, 4);
+    value.calibration.spacing_z = 2.0;
+    assert(dslt::ops::resample_output_depth(value, 1.0F) == 8);
+    assert(dslt::ops::resample_output_depth(value, 4.0F) == 2);
+    assert(dslt::ops::resample_output_depth(value, 20.0F) == 1);
+
+    bool invalid_spacing_rejected = false;
+    try {
+        static_cast<void>(dslt::ops::resample_output_depth(value, 0.0F));
+    } catch (const std::invalid_argument&) {
+        invalid_spacing_rejected = true;
+    }
+    assert(invalid_spacing_rejected);
+
+    invalid_spacing_rejected = false;
+    try {
+        static_cast<void>(dslt::ops::resample_output_depth(
+            value, std::numeric_limits<float>::quiet_NaN()));
+    } catch (const std::invalid_argument&) {
+        invalid_spacing_rejected = true;
+    }
+    assert(invalid_spacing_rejected);
+
+    bool excessive_depth_rejected = false;
+    try {
+        static_cast<void>(dslt::ops::resample_output_depth(
+            value, std::numeric_limits<float>::min()));
+    } catch (const dslt::ResourceLimitError&) {
+        excessive_depth_rejected = true;
+    }
+    assert(excessive_depth_rejected);
+}
+
 } // namespace
 
 int main() {
@@ -673,5 +707,6 @@ int main() {
     watershed_fixture();
     filtered_height_map_fixture();
     height_projection_and_depth_fixture();
+    resample_dimension_fixture();
     return 0;
 }

@@ -58,6 +58,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private float _projectionThreshold;
     private bool _depthColorEnabled;
     private int _depthColorRange = 100;
+    private float _targetSpacingZ = 1;
+    private int _lanczosOrder = 2;
     private float _previewOffset = 20;
     private float _zCorrectionFactor = 0.2F;
     private float _minimumC;
@@ -94,14 +96,19 @@ public sealed class MainWindowViewModel : ObservableObject
         Operations =
         [
             new("Window / level", ProcessingOperation.WindowLevel, WorkflowStage.Inspect),
+            new("Threshold 2D", ProcessingOperation.Threshold2D, WorkflowStage.Process),
             new("Threshold 3D", ProcessingOperation.Threshold3D, WorkflowStage.Process),
             new("Adaptive threshold 2D", ProcessingOperation.AdaptiveThreshold2D, WorkflowStage.Process),
             new("Adaptive threshold 3D", ProcessingOperation.AdaptiveThreshold3D, WorkflowStage.Process),
             new("H-minima transform", ProcessingOperation.HMinima, WorkflowStage.Process),
             new("Mean smoothing", ProcessingOperation.SmoothMean, WorkflowStage.Process),
             new("Gaussian smoothing", ProcessingOperation.SmoothGaussian, WorkflowStage.Process),
+            new("Dilate cube", ProcessingOperation.DilateCube, WorkflowStage.Process),
+            new("Erode cube", ProcessingOperation.ErodeCube, WorkflowStage.Process),
             new("Dilate sphere", ProcessingOperation.DilateSphere, WorkflowStage.Process),
             new("Erode sphere", ProcessingOperation.ErodeSphere, WorkflowStage.Process),
+            new("Z resample - area average", ProcessingOperation.ResampleZArea, WorkflowStage.Process),
+            new("Z resample - Lanczos", ProcessingOperation.ResampleZLanczos, WorkflowStage.Process),
             new("Filtered height map", ProcessingOperation.HeightMap, WorkflowStage.Process),
             new("Depth map", ProcessingOperation.DepthMap, WorkflowStage.Process),
             new("Height projection", ProcessingOperation.HeightProjection, WorkflowStage.Process),
@@ -111,7 +118,8 @@ public sealed class MainWindowViewModel : ObservableObject
             new("DSLT iterative segmentation", ProcessingOperation.DsltSegmentation, WorkflowStage.Segment),
             new("Watershed from selected labels", ProcessingOperation.Watershed, WorkflowStage.Segment),
         ];
-        _selectedOperation = Operations[1];
+        _selectedOperation = Operations.Single(option =>
+            option.Operation == ProcessingOperation.Threshold3D);
         GenerateSyntheticCommand = new RelayCommand(GenerateSynthetic, () => !IsBusy);
         OpenCommand = new AsyncRelayCommand(OpenAsync, () => !IsBusy);
         EstimateCommand = new AsyncRelayCommand(EstimateSelectedOperationAsync, CanEstimate);
@@ -136,6 +144,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public IReadOnlyList<int> Connectivities { get; } = [6, 18, 26];
     public IReadOnlyList<DsltKernelType> DsltKernels { get; } = Enum.GetValues<DsltKernelType>();
     public IReadOnlyList<HeightProjectionMode> ProjectionModes { get; } = Enum.GetValues<HeightProjectionMode>();
+    public IReadOnlyList<int> LanczosOrders { get; } = [2, 3];
 
     public OperationOption SelectedOperation
     {
@@ -156,6 +165,8 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsHeightMap));
             OnPropertyChanged(nameof(IsHeightSurfaceOperation));
             OnPropertyChanged(nameof(IsHeightProjection));
+            OnPropertyChanged(nameof(IsResampleZ));
+            OnPropertyChanged(nameof(IsLanczosResample));
             OnPropertyChanged(nameof(CanUseDepthColoring));
             if (!CanUseDepthColoring) DepthColorEnabled = false;
             OnPropertyChanged(nameof(MinimumComponentSizeLabel));
@@ -435,6 +446,24 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _depthColorRange;
         set => SetProperty(ref _depthColorRange, Math.Clamp(value, 1, 500));
+    }
+
+    public bool IsResampleZ => SelectedOperation.Operation is
+        ProcessingOperation.ResampleZArea or ProcessingOperation.ResampleZLanczos;
+    public bool IsLanczosResample =>
+        SelectedOperation.Operation == ProcessingOperation.ResampleZLanczos;
+
+    public float TargetSpacingZ
+    {
+        get => _targetSpacingZ;
+        set => SetProperty(ref _targetSpacingZ,
+            float.IsFinite(value) && value > 0 ? value : DefaultTargetSpacingZ());
+    }
+
+    public int LanczosOrder
+    {
+        get => _lanczosOrder;
+        set => SetProperty(ref _lanczosOrder, value is 2 or 3 ? value : 2);
     }
 
     public float PreviewOffset
@@ -853,14 +882,14 @@ public sealed class MainWindowViewModel : ObservableObject
             ? Math.Max(1, MinimumComponentSize)
             : MinimumComponentSize,
         SliceIndex: ZIndex,
-        LanczosOrder: 2,
+        LanczosOrder: LanczosOrder,
         Threshold: Threshold,
         ConstantC: SelectedOperation.Operation == ProcessingOperation.DsltThreshold
             ? -PreviewOffset * 0.002F
             : IsAdaptiveThreshold ? -AdaptiveThresholdOffset * 0.002F : 0,
         WindowMinimum: WindowMinimum,
         WindowMaximum: WindowMaximum,
-        TargetSpacingZ: 1,
+        TargetSpacingZ: TargetSpacingZ,
         DirectionLevel: DirectionLevel,
         DsltKernel: DsltKernel,
         ZCorrectionFactor: ZCorrectionFactor,
@@ -897,6 +926,7 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         replacement.Validate();
         _volume = replacement;
+        _targetSpacingZ = DefaultTargetSpacingZ();
         _channelIndex = replacement.SelectedChannel;
         _xIndex = replacement.Width / 2;
         _yIndex = replacement.Height / 2;
@@ -909,6 +939,7 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ProjectionOffset));
         OnPropertyChanged(nameof(ProjectionStartDepth));
         OnPropertyChanged(nameof(ProjectionRange));
+        OnPropertyChanged(nameof(TargetSpacingZ));
         _lastResult = null;
         _lastParameters = null;
         _lastDepthColorPixels = null;
@@ -1187,6 +1218,12 @@ public sealed class MainWindowViewModel : ObservableObject
             channel >= 0 && channel < metadata.Count)
             return metadata[channel].Name;
         return $"Channel {channel + 1}";
+    }
+
+    private float DefaultTargetSpacingZ()
+    {
+        var spacing = _volume?.Calibration.SpacingX ?? 1;
+        return (float)Math.Min(spacing, float.MaxValue);
     }
 
     private static ReadOnlySpan<float> SelectedChannelSamples(VolumeData volume)

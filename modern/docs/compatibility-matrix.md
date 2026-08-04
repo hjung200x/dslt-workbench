@@ -10,14 +10,14 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | 8/16-bit integer and 32-bit float input | Raw decoded samples + normalized float working volume | implemented | Bit-exact decoded sample fixtures |
 | 32-bit integer image input | Checked raw TIFF strip path | scaffolded | Signed/unsigned, little/big-endian, multi-page, multi-strip, LZW/Deflate/Adobe Deflate/PackBits, horizontal predictor, LZW EarlyChange dictionary growth, cancellation, bit-exact canonical bytes, normalization, and malformed compressed/uncompressed strip fixtures implemented; real microscopy comparison pending |
 | Channel selection | Explicit `channel` in descriptor/request | implemented | Synthetic multichannel fixture |
-| Z area-average scaling | `ResampleZArea` | implemented | Ramp and impulse fixtures |
-| Z Lanczos 2/3 scaling | `ResampleZLanczos` | implemented | Ramp and impulse fixtures |
+| Z area-average scaling | `ResampleZArea` | implemented | Ramp/impulse, checked output geometry/resource-limit, WPF parameter/provenance, and result-plane fixtures |
+| Z Lanczos 2/3 scaling | `ResampleZLanczos` | implemented | Both orders, checked output geometry/resource-limit, WPF parameter/provenance, and result-plane fixtures |
 | Orthogonal XY/YZ/ZX views | `ExtractPlane` + synchronized WPF planes | implemented | Native coordinate fixtures + WPF axis-dimension fixture |
 | Brightness/contrast | `WindowLevel` | implemented | Range fixtures |
 | Mean/Gaussian smoothing | `SmoothMean`, `SmoothGaussian` | implemented | Impulse fixture |
-| Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures |
+| Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures plus WPF 2D active-slice and 3D operation coverage |
 | Adaptive 2D/3D threshold | `AdaptiveThreshold2D`, `AdaptiveThreshold3D` | scaffolded | CPU mean/Gaussian, clamp boundary, strict tie, 2D/3D distinction, ABI and WPF fixtures implemented; legacy GPU discrepancy and archived-runtime comparison pending |
-| Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures |
+| Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures plus WPF cube/sphere operation and radius coverage |
 | Filtered height map / 3D depth map | `HeightMap`, `DepthMap` | scaffolded | Height-map Gaussian/mean Z filter, strict crossing interpolation, repeated XY smoothing, clamp boundary, plus exact voxel-index Euclidean distance to the height surface; synthetic and cancellation fixtures implemented, legacy runtime comparison pending |
 | Height projection and RGB depth coloring | `HeightProjection` + WPF RGB24 presentation | scaffolded | Source-derived Z/normal modes, surface offset, start depth, inclusive range, scalar/binary threshold behavior, trilinear sampling, plus Z-only HSV 0..270 depth coloring with default range 100, provenance, WPF/oracle fixtures, and native-CPU composition gate implemented; archived-runtime comparison pending |
 | 6/18/26 connectivity | `ConnectedComponents` | implemented | Touching-object fixtures |

@@ -15,7 +15,7 @@ The detailed DSLT mathematical and ordering contract is maintained in
 | ImageJ HyperStack | `TiffDecoder`; page order `XYCZT` | One time point loaded at a time | `C x Z`, unit, and spacing are synthetic-validated; time series are rejected explicitly |
 | LSM metadata | TIFF-compatible pixel decode plus Zeiss private tag 34412 | Not fully established | CZ_LSMINFO magic/size, X/Y/Z/C/T, meter-to-micrometer voxel calibration, C-fastest page order, reduced-resolution IFD exclusion, channel names/RGBA colors, and timestamps are synthetic-validated; real LSM comparison remains pending |
 | Channel selection | `ch_slider`; `setChannel` | 0 through channel count - 1 | `SelectedChannel` must be within `[0, Channels)` |
-| Z interpolation | `SC_AREA_AVE`, `SC_LANCZOS2`, `SC_LANCZOS3` | Area average selected in the legacy UI | Area average or Lanczos order 2/3; target spacing must be positive |
+| Z interpolation | `SC_AREA_AVE`, `SC_LANCZOS2`, `SC_LANCZOS3` | Area average selected in the legacy UI; target spacing follows input X spacing | WPF exposes area average and Lanczos order 2/3; target spacing must be finite and positive, defaults to calibrated X spacing, and excessive output depth fails before allocation |
 | Orthogonal planes | `getImageDataArrayXY/YZ/ZX` | Coordinates start at 0 | Out-of-range plane indices return an invalid-argument error |
 | Brightness/contrast | `BC_min_slider`, `BC_max_slider` | Min 0, max 1 | Window maximum must be greater than minimum |
 

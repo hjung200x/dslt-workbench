@@ -185,6 +185,18 @@
               <TextBlock Text="{Binding Radius}" Foreground="{StaticResource AccentBrush}" />
             </StackPanel>
 
+            <StackPanel Visibility="{Binding IsResampleZ, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <Separator Margin="0,16,0,12" Background="#354152" />
+              <TextBlock Text="Z RESAMPLING" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <TextBlock Text="Target Z spacing" Margin="0,10,0,5" />
+              <TextBox AutomationProperties.Name="Target Z spacing" Text="{Binding TargetSpacingZ, UpdateSourceTrigger=PropertyChanged}" />
+              <TextBlock Text="Defaults to the input X spacing so calibrated data becomes isotropic in X/Z." Margin="0,7,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+              <StackPanel Visibility="{Binding IsLanczosResample, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="Lanczos order" Margin="0,10,0,5" />
+                <ComboBox AutomationProperties.Name="Lanczos order" ItemsSource="{Binding LanczosOrders}" SelectedItem="{Binding LanczosOrder}" />
+              </StackPanel>
+            </StackPanel>
+
             <StackPanel Visibility="{Binding IsAdaptiveThreshold, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="ADAPTIVE THRESHOLD" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
