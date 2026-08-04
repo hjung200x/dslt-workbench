@@ -4,9 +4,9 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <AssemblyName>Dslt.App.Tests</AssemblyName>
+    <ApplicationManifest>..\..\app\Dslt.App\app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\app\Dslt.App\Dslt.App.csproj" />
   </ItemGroup>
 </Project>
-
