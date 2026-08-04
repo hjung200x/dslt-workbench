@@ -11,6 +11,7 @@
     <KeyBinding Key="D" Command="{Binding SaveResultViewsCommand}" />
     <KeyBinding Key="H" Command="{Binding LoadHeightMapCommand}" />
     <KeyBinding Key="J" Command="{Binding SaveHeightMapCommand}" />
+    <KeyBinding Key="A" Command="{Binding CalculateHeightSurfaceAreaCommand}" />
     <KeyBinding Key="J" Modifiers="Alt" Command="{Binding MergeSelectionCommand}" />
     <KeyBinding Key="S" Modifiers="Alt" Command="{Binding SplitSelectionCommand}" />
     <KeyBinding Key="A" Modifiers="Alt" Command="{Binding SelectAllCommand}" />
@@ -62,6 +63,9 @@
             <Button AutomationProperties.Name="Load legacy height map" Content="Load height map (.hmp)" Command="{Binding LoadHeightMapCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <Button AutomationProperties.Name="Save legacy height map" Content="Save active height map (.hmp)" Command="{Binding SaveHeightMapCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <TextBlock Text="{Binding ActiveHeightMapSummary}" TextWrapping="Wrap" Margin="0,4,0,4" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+            <Button AutomationProperties.Name="Calculate height surface area" Content="Calculate surface area (A)" Command="{Binding CalculateHeightSurfaceAreaCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
+            <Button AutomationProperties.Name="Save height surface area maps" Content="Save area maps (8/32-bit TIFF)" Command="{Binding SaveHeightSurfaceAreaCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
+            <TextBlock Text="{Binding HeightSurfaceAreaSummary}" TextWrapping="Wrap" Margin="0,4,0,4" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             <Button AutomationProperties.Name="Save source orthogonal TIFF views" Content="Save source XY / YZ / ZX" Command="{Binding SaveSourceViewsCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <Button AutomationProperties.Name="Save result orthogonal TIFF views" Content="Save result XY / YZ / ZX" Command="{Binding SaveResultViewsCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <Button Content="Generate synthetic" Command="{Binding GenerateSyntheticCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />

@@ -113,6 +113,11 @@ The source-derived height-map Z filter, crossing interpolation, XY smoothing,
 defaults, and legacy CPU/GPU path distinction are defined in
 `docs/height-map-spec.md`.
 
+The legacy A-command height-surface area workflow uses the active `.hmp` or
+generated surface with the fixed 10 x 10 Simpson rule. It provides a normalized
+Gray8 preview, a quantitative IEEE Float32 TIFF, cancellation, and surface-hash
+provenance; see `docs/height-surface-area-spec.md`.
+
 The exact 3D Euclidean depth map, scalar Z/normal projection, range and offset
 semantics, threshold behavior, and Z-only RGB depth-color presentation are
 defined in `docs/height-projection-spec.md`.
