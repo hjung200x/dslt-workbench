@@ -86,6 +86,9 @@ equivalence; that remains gated by representative datasets.
 15. the 900 x 500 logical minimum fits within 1920 x 1080 at 125%, 150%, and
     200% scaling, both control columns expose vertical scrolling, and Open, Run,
     Cancel, and Export can each be scrolled into the live window.
+16. a file-backed 512 x 512 x 32 Gray16 multipage TIFF decodes within the
+    30-second gate while preserving dimensions, voxel type, 16 MiB of canonical
+    source bytes, page/voxel order, and normalized maximum intensity.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.

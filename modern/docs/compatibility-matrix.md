@@ -4,7 +4,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 
 | Legacy capability | Workbench contract | Status | Validation |
 |---|---|---:|---|
-| Basic multi-page TIFF input | `VolumeDescriptor` + WPF TIFF adapter | implemented | Gray8/Gray16/Gray32Float fixtures |
+| Basic multi-page TIFF input | `VolumeDescriptor` + WPF TIFF adapter | implemented | Gray8/Gray16/Gray32Float fixtures plus file-backed 512 x 512 x 32 Gray16 raw-byte/order/performance fixture |
 | ImageJ HyperStack metadata | `XYCZT` to channel-planar adapter | implemented | Synthetic 2-channel x 2-slice calibration fixture |
 | LSM input | TIFF-compatible WIC pixels + checked CZ_LSMINFO core metadata | scaffolded | Tag 34412 magic/size, X/Y/Z/C/T, meter voxel calibration, C-fastest channel-planar order, reduced-resolution IFD filtering, codec frame-count variants, and malformed magic fixture implemented; channel names/timestamps and real LSM comparison pending |
 | 8/16-bit integer and 32-bit float input | Raw decoded samples + normalized float working volume | implemented | Bit-exact decoded sample fixtures |
