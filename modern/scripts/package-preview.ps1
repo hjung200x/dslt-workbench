@@ -110,6 +110,8 @@ $distributionFiles = [ordered]@{
     $dotnetLicense = 'DOTNET-LICENSE.txt'
     $dotnetNotices = 'DOTNET-THIRD-PARTY-NOTICES.txt'
     (Join-Path $modernRoot 'README.md') = 'README.md'
+    (Join-Path $modernRoot 'legacy\DSLT_Demo_User_Manual_v1.11.pdf') = 'docs\DSLT_Demo_User_Manual_v1.11.pdf'
+    (Join-Path $modernRoot 'legacy\README.md') = 'docs\legacy-assets.md'
 }
 foreach ($entry in $distributionFiles.GetEnumerator()) {
     if (-not (Test-Path -LiteralPath $entry.Key)) { throw "Distribution file is missing: $($entry.Key)" }

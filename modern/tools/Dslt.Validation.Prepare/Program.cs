@@ -5,9 +5,9 @@ using System.Text.Json.Serialization;
 using Dslt.Managed.Core.Models;
 using Dslt.Validation.Prepare;
 
-return Run(args);
+return await RunAsync(args);
 
-static int Run(string[] args)
+static async Task<int> RunAsync(string[] args)
 {
     try
     {
@@ -17,42 +17,74 @@ static int Run(string[] args)
             return args.Length == 0 ? 2 : 0;
         }
 
-        var options = Parse(args);
-        var calibration = new Calibration(
-            ParsePositiveDouble(options, "--spacing-x"),
-            ParsePositiveDouble(options, "--spacing-y"),
-            ParsePositiveDouble(options, "--spacing-z"),
-            true,
-            Require(options, "--unit"));
-        var result = ReferenceLabelImporter.Import(
-            Require(options, "--input"),
-            Require(options, "--output"),
-            new ReferenceLabelImportOptions(
-                calibration,
-                options.ContainsKey("--binary"),
-                ParseInt32(options, "--source-background", 0),
-                ParseInt32(options, "--output-background", 0),
-                ParseInt32(options, "--foreground-label", 1)),
-            options.ContainsKey("--force"));
-
-        var jsonOptions = new JsonSerializerOptions
+        var explicitCommand = !args[0].StartsWith("--", StringComparison.Ordinal);
+        var command = explicitCommand ? args[0].ToLowerInvariant() : "normalize-reference";
+        var commandArgs = explicitCommand ? args[1..] : args;
+        return command switch
         {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true,
+            "normalize-reference" => RunNormalizeReference(commandArgs),
+            "add-case" => await RunAddCaseAsync(commandArgs).ConfigureAwait(false),
+            _ => throw new ArgumentException($"Unknown command: {args[0]}"),
         };
-        jsonOptions.Converters.Add(new JsonStringEnumConverter());
-        Console.WriteLine(JsonSerializer.Serialize(result, jsonOptions));
-        return 0;
     }
     catch (Exception exception) when (exception is ArgumentException or IOException or InvalidDataException or
-                                      NotSupportedException or OverflowException)
+                                      NotSupportedException or OverflowException or JsonException)
     {
-        Console.Error.WriteLine($"Reference preparation failed: {exception.Message}");
+        Console.Error.WriteLine($"Validation preparation failed: {exception.Message}");
         return 2;
     }
 }
 
-static Dictionary<string, string?> Parse(string[] args)
+static int RunNormalizeReference(string[] args)
+{
+    var options = Parse(args, IsNormalizeOption, IsCommonFlag);
+    var calibration = new Calibration(
+        ParsePositiveDouble(options, "--spacing-x"),
+        ParsePositiveDouble(options, "--spacing-y"),
+        ParsePositiveDouble(options, "--spacing-z"),
+        true,
+        Require(options, "--unit"));
+    var result = ReferenceLabelImporter.Import(
+        Require(options, "--input"),
+        Require(options, "--output"),
+        new ReferenceLabelImportOptions(
+            calibration,
+            options.ContainsKey("--binary"),
+            ParseInt32(options, "--source-background", 0),
+            ParseInt32(options, "--output-background", 0),
+            ParseInt32(options, "--foreground-label", 1)),
+        options.ContainsKey("--force"));
+    WriteJson(result);
+    return 0;
+}
+
+static async Task<int> RunAddCaseAsync(string[] args)
+{
+    var options = Parse(args, IsAddCaseOption, IsCommonFlag);
+    var result = await RealDataManifestAssembler.AddCaseAsync(new RealDataManifestCaseRequest(
+        Require(options, "--manifest"),
+        Require(options, "--dataset-name"),
+        Require(options, "--candidate-source-commit"),
+        Require(options, "--id"),
+        Require(options, "--acquisition-id"),
+        Require(options, "--reference-kind"),
+        Require(options, "--input-volume"),
+        Require(options, "--reference-labels"),
+        Require(options, "--candidate-labels"),
+        Require(options, "--candidate-provenance"),
+        ParseInt32(options, "--reference-background", 0),
+        ParseInt32(options, "--candidate-background", 0),
+        ParseInt32(options, "--connectivity", 26),
+        options.ContainsKey("--representative-real"),
+        options.ContainsKey("--append"))).ConfigureAwait(false);
+    WriteJson(result);
+    return 0;
+}
+
+static Dictionary<string, string?> Parse(
+    string[] args,
+    Func<string, bool> isKnownOption,
+    Func<string, bool> isFlagOption)
 {
     var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
     for (var index = 0; index < args.Length; index++)
@@ -60,9 +92,9 @@ static Dictionary<string, string?> Parse(string[] args)
         var key = args[index];
         if (!key.StartsWith("--", StringComparison.Ordinal))
             throw new ArgumentException($"Unexpected argument: {key}");
-        if (!IsKnownOption(key)) throw new ArgumentException($"Unknown option: {key}");
+        if (!isKnownOption(key)) throw new ArgumentException($"Unknown option: {key}");
         if (!result.TryAdd(key, null)) throw new ArgumentException($"Option was specified more than once: {key}");
-        if (IsFlagOption(key)) continue;
+        if (isFlagOption(key)) continue;
         if (++index >= args.Length || args[index].StartsWith("--", StringComparison.Ordinal))
             throw new ArgumentException($"Option requires a value: {key}");
         result[key] = args[index];
@@ -92,26 +124,61 @@ static int ParseInt32(IReadOnlyDictionary<string, string?> options, string key, 
     return value;
 }
 
+static void WriteJson<T>(T value)
+{
+    var options = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
+    options.Converters.Add(new JsonStringEnumConverter());
+    Console.WriteLine(JsonSerializer.Serialize(value, options));
+}
+
 static void PrintUsage()
 {
     Console.WriteLine("""
         Usage:
-          Dslt.Validation.Prepare --input <reference.tif> --output <normalized.tif>
+          Dslt.Validation.Prepare normalize-reference
+            --input <reference.tif> --output <normalized.tif>
             --spacing-x <value> --spacing-y <value> --spacing-z <value> --unit <name>
             [--binary] [--source-background <label>] [--output-background <label>]
             [--foreground-label <label>] [--force]
 
-        The source may be a compressed 1- to 16-bit grayscale/indexed TIFF stack.
+          Dslt.Validation.Prepare add-case
+            --manifest <manifest.json> --dataset-name <name>
+            --candidate-source-commit <40-hex-commit>
+            --id <case-id> --acquisition-id <acquisition-id>
+            --reference-kind <legacy|expert>
+            --input-volume <input.tif|input.lsm>
+            --reference-labels <reference.tif>
+            --candidate-labels <candidate.tif>
+            --candidate-provenance <candidate.json>
+            --representative-real
+            [--reference-background <label>] [--candidate-background <label>]
+            [--connectivity <6|18|26>] [--append]
+
+        normalize-reference accepts compressed 1- to 16-bit grayscale/indexed TIFF.
         With --binary, other WIC-supported mask images such as PNG are also accepted.
-        The output is an uncompressed signed 16- or 32-bit TIFF accepted by Dslt.Validation.
-        --binary maps the source background to the output background and every other value
-        to the foreground label. Existing output is never replaced unless --force is used.
+        Existing normalized output is never replaced unless --force is used.
+
+        add-case derives voxel type, container, channels, Z spacing, and decoded input
+        hash from provenance 1.8. It verifies the candidate decoded-label hash and both
+        label volumes before atomically creating or extending a schema-2 manifest.
+        Existing manifests require --append. Classification requires the explicit
+        --representative-real acknowledgement.
         """);
 }
 
-static bool IsKnownOption(string key) => key.ToLowerInvariant() is
+static bool IsNormalizeOption(string key) => key.ToLowerInvariant() is
     "--input" or "--output" or "--spacing-x" or "--spacing-y" or "--spacing-z" or "--unit" or
     "--binary" or "--source-background" or "--output-background" or "--foreground-label" or "--force";
 
-static bool IsFlagOption(string key) => key.Equals("--binary", StringComparison.OrdinalIgnoreCase) ||
-                                        key.Equals("--force", StringComparison.OrdinalIgnoreCase);
+static bool IsAddCaseOption(string key) => key.ToLowerInvariant() is
+    "--manifest" or "--dataset-name" or "--candidate-source-commit" or "--id" or "--acquisition-id" or
+    "--reference-kind" or "--input-volume" or "--reference-labels" or "--candidate-labels" or
+    "--candidate-provenance" or "--representative-real" or "--reference-background" or
+    "--candidate-background" or "--connectivity" or "--append";
+
+static bool IsCommonFlag(string key) => key.ToLowerInvariant() is
+    "--binary" or "--force" or "--representative-real" or "--append";

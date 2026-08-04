@@ -11,6 +11,7 @@ DSLT Demo while preserving its processing behavior. The original Visual Studio
 - `app/`: .NET 10 WPF application using MVVM and P/Invoke
 - `tests/`: synthetic data and cross-layer smoke tests
 - `docs/`: compatibility matrix, validation policy, and provenance
+- `legacy/`: hash-locked original GPLv3 manual and asset provenance
 
 The CPU backend is the reference implementation. CUDA is an optional backend.
 `Auto` selects CUDA for operations that have passed CPU parity validation and
@@ -55,8 +56,9 @@ exact distributed source commit.
 
 The command creates a Windows x64 ZIP and adjacent SHA-256 file under
 `modern/artifacts/preview`. It rejects missing native/runtime binaries,
-non-x64 PE files, an incomplete GPLv3 copy, missing upstream provenance, unsafe
-or duplicate ZIP paths, missing legacy/.NET notices, or a checksum mismatch.
+non-x64 PE files, an incomplete GPLv3 copy, missing upstream provenance, a
+changed legacy manual, unsafe or duplicate ZIP paths, missing legacy/.NET
+notices, or a checksum mismatch.
 See `docs/release-policy.md`.
 
 ## Real-data release validation
@@ -68,6 +70,8 @@ before calculating Dice, object-count, volume, and HD95 gates. See
 `docs/real-data-validation.md`. Candidate sources, licenses, and the boundary
 between public pipeline preflight and representative release evidence are
 tracked in `docs/real-data-cohort-sources.md`.
+`tools/Dslt.Validation.Prepare` normalizes external reference masks and builds
+source-locked schema-2 manifest cases directly from candidate provenance.
 The schema-2 manifest and provenance 1.8 sidecars must identify the exact
 release-candidate source commit; results from another build are rejected.
 
@@ -86,6 +90,8 @@ Only synthetic-data equivalence can be claimed until representative confocal
 stacks and accepted reference results are available. See
 `docs/validation-policy.md`. Legacy-to-Workbench parameters and error rules are
 tracked in `docs/functional-spec.md` and `docs/compatibility-matrix.md`. The
+preserved version 1.11 manual and the explicit interaction gaps found during its
+10-page audit are recorded in `docs/legacy-manual-audit.md`. The
 directional threshold equations, sampling rules, parameter mapping, and
 required fixtures are fixed in `docs/dslt-algorithm-spec.md`. Decoded image
 types, ImageJ ordering, calibration, LSM limitations, and signed label export

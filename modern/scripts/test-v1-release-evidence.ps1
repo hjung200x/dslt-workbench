@@ -3,6 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $root = Join-Path ([IO.Path]::GetTempPath()) ("dslt-v1-gate-test-" + [Guid]::NewGuid().ToString('N'))
+$modernRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $sourceCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 $legacyCommit = 'aae2b3e5310fcaad4151a878ad65ed2a3fa29146'
 $operations = @(
@@ -150,7 +151,7 @@ try {
         'adaptive-threshold-spec.md', 'compatibility-matrix.md', 'dslt-algorithm-spec.md',
         'functional-spec.md', 'h-minima-spec.md', 'height-map-spec.md',
         'height-projection-spec.md', 'real-data-manifest.example.json',
-        'provenance.md',
+        'legacy-assets.md', 'legacy-manual-audit.md', 'provenance.md',
         'real-data-validation.md', 'release-policy.md', 'tiff-io-spec.md',
         'v1-release-evidence.md', 'windows-manual-observation.example.json',
         'ui-workflow.md', 'validation-policy.md', 'watershed-spec.md')
@@ -163,6 +164,8 @@ try {
     Set-Content -LiteralPath (Join-Path $docsRoot 'provenance.md') -Value @(
         'https://github.com/takashi310/DSLT',
         $legacyCommit) -Encoding utf8
+    Copy-Item -LiteralPath (Join-Path $modernRoot 'legacy\DSLT_Demo_User_Manual_v1.11.pdf') `
+        -Destination (Join-Path $docsRoot 'DSLT_Demo_User_Manual_v1.11.pdf')
     Write-Json (Join-Path $packageRoot 'BUILD-INFO.json') ([ordered]@{
         schemaVersion = 1
         packageVersion = '1.0.0'
@@ -294,6 +297,25 @@ try {
     $positive = Read-JsonFile $parameters.OutputPath 'Positive gate report'
     if ($positive.passed -ne $true) { throw 'Valid release-gate fixture did not pass.' }
 
+    $legacyManualPath = Join-Path $docsRoot 'DSLT_Demo_User_Manual_v1.11.pdf'
+    [IO.File]::WriteAllBytes($legacyManualPath, [byte[]]@(1, 2, 3))
+    $manualTamperRoot = Join-Path $root 'manual-tamper'
+    New-Item -ItemType Directory -Path $manualTamperRoot | Out-Null
+    $manualTamperArchive = Join-Path $manualTamperRoot 'dslt-workbench-1.0.0-win-x64-cuda.zip'
+    Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $manualTamperArchive
+    [void](Write-Checksum $manualTamperArchive)
+    $manualTamperRejected = $false
+    try {
+        & (Join-Path $PSScriptRoot 'verify-preview-package.ps1') `
+            -Archive $manualTamperArchive -Checksum "$manualTamperArchive.sha256"
+    }
+    catch {
+        $manualTamperRejected = $_.Exception.Message -match 'manual is missing or has changed'
+    }
+    if (-not $manualTamperRejected) { throw 'A changed legacy manual was not rejected.' }
+    Copy-Item -LiteralPath (Join-Path $modernRoot 'legacy\DSLT_Demo_User_Manual_v1.11.pdf') `
+        -Destination $legacyManualPath -Force
+
     Set-Content -LiteralPath (Join-Path $docsRoot 'compatibility-matrix.md') -Value @(
         '| Legacy capability | Workbench contract | Status | Validation |',
         '| --- | --- | --- | --- |',
@@ -338,7 +360,7 @@ try {
         throw 'Negative gate report did not preserve the rejection reason.'
     }
 
-    Write-Host 'V1.0 release evidence gate positive, unfinished-capability, and manual-tamper fixtures passed.'
+    Write-Host 'V1.0 release evidence gate positive, unfinished-capability, legacy-manual-tamper, and manual-observation fixtures passed.'
 }
 finally {
     if (Test-Path -LiteralPath $root) {

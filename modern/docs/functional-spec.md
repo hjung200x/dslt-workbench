@@ -5,7 +5,9 @@ contract. Legacy evidence comes from `WpfApplication/MainWindow.xaml`,
 `WpfApplication/MainWindow.xaml.cs`, `3DFilter_CLR_Interface/3DFilter_CLR_Interface.h`,
 `3DFilter/filter3d.h`, and `MultiTiffIO/multi_tiff.cpp` at the pinned baseline.
 The detailed DSLT mathematical and ordering contract is maintained in
-[`dslt-algorithm-spec.md`](dslt-algorithm-spec.md).
+[`dslt-algorithm-spec.md`](dslt-algorithm-spec.md). The preserved version 1.11
+user manual and its page-by-page evidence are recorded in
+[`legacy-manual-audit.md`](legacy-manual-audit.md).
 
 ## Input and navigation
 
@@ -28,10 +30,10 @@ The detailed DSLT mathematical and ordering contract is maintained in
 | Mean/Gaussian smoothing | filter type, block/radius | Mean is selected in relevant panel | Radius 0-64 in native core |
 | Cube/sphere morphology | radius, filter shape | Radius 1 in segment edit panels | Radius 0-64 in native core |
 | Flood fill/components | threshold, 6/18/26 connectivity, minimum size | Threshold 0.1, connectivity 6, minimum size 0 | Connectivity is exactly 6, 18, or 26; preview minimum size is at least 1 |
-| Height map | XY/Z radius, threshold, mean/Gaussian filter, smooth level | XY radius 0, Z radius 4, threshold 0.25, Gaussian, smooth level 1 | GPU-visible source path is implemented on CPU: clamp-boundary Z filtering, strict threshold crossing with linear Z interpolation, and repeated separable XY smoothing; ABI/WPF fixtures pass, archived-runtime comparison pending |
+| Height map | XY/Z radius, threshold, mean/Gaussian filter, smooth level | Manual example: XY radius 64, Z radius 4, threshold 0.1, Gaussian, smooth level 1; source-derived preview defaults differ | GPU-visible source path is implemented on CPU: clamp-boundary Z filtering, strict threshold crossing with linear Z interpolation, and repeated separable XY smoothing; ABI/WPF fixtures pass, archived-runtime comparison pending |
 | Depth map/projection | height map, normal/Z mode, offset, start depth, range, projection threshold, depth-code settings | Z mode selected; offset/range/start/threshold 0; depth code off; depth range 100 | Exact voxel-index 3D Euclidean depth, scalar Z/normal sampling, inclusive range, legacy threshold behavior, and Z-only HSV depth coloring are implemented with cancellation, provenance, ABI, and WPF fixtures; archived-runtime comparison remains pending |
 | H-minima | h, check interval | h 0.1, interval 50 (hidden) | CPU 3x3x3 erosion reconstruction, lower-mask fitting, exact fixed point, residual inversion, progress/cancellation, ABI and WPF controls are synthetic-validated; archived-runtime comparison pending |
-| DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | radius 14, level 2, Z factor 0.2, mean | CPU threshold, iterative sweep, fixed/height-map crop, public work estimate, resource rejection, and ramp oracles implemented; archived-runtime comparison pending |
+| DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | Manual segmentation example: radius 14, level 2, Z factor 0.2, Gaussian, min C 4, max C 10, interval -1, ValidTH 800, closing 2 | CPU threshold, iterative sweep, fixed/height-map crop, public work estimate, resource rejection, and ramp oracles implemented; archived-runtime comparison pending |
 | Threshold sweep | min, max, interval, minimum volumes, closing | min 0, effective max 1 after WPF coercion, interval 0.02, hidden minimum volume 0, valid area 100, closing 2 | CPU and CUDA descending sweep, closing, crop, validation, append-only labeling, final-pass acceptance, progress/cancellation, and WPF controls are synthetic-validated; RTX 4060 parity complete, archived-runtime comparison pending |
 | Watershed | selected segment seeds, minimum segment volume; hidden stride is passed but unused | stride 0.001 (hidden), minimum size 0 | CPU fixed 256-level flooding, source-order 6-neighbor priority, per-level radius-one label opening, crop, selection, cancellation, ABI/WPF undo, and seed-hash provenance are synthetic-validated; archived-runtime comparison pending |
 
