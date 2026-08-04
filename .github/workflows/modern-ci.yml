@@ -45,6 +45,9 @@ jobs:
       - name: Verify public leaf input preflight lock
         shell: pwsh
         run: ./modern/scripts/verify-public-clsm-leaf-preflight.ps1 -LockOnly
+      - name: Verify PlantSeg reference suitability lock
+        shell: pwsh
+        run: ./modern/scripts/verify-public-plantseg-reference-suitability.ps1 -LockOnly
       - name: Test fail-closed v1 release evidence gate
         shell: pwsh
         run: ./modern/scripts/test-v1-release-evidence.ps1

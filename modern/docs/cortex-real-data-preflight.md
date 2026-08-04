@@ -8,6 +8,12 @@ preflight. They are not yet sufficient to approve v1.0 because there are no
 accepted full-volume 3D reference labels and the five acquisitions do not cover
 the required native voxel-type, channel-count, and Z-spacing diversity.
 
+The existing GuardVision Cortex CVAT pilot does not close that gap. It contains
+30 selected Z-slice triptychs with planar `cortex_cell` polygons/instance TIFFs
+for a 2.5D feasibility workflow, not a voxel-aligned annotation of every slice
+in any of these five CZI volumes. Those annotations may guide a future 3D review
+protocol but must not be promoted to whole-volume release references.
+
 The committed lock at
 [`../validation/cortex-stg1-cohort.lock.json`](../validation/cortex-stg1-cohort.lock.json)
 contains filenames, source-container hashes, canonical decoded-pixel hashes,

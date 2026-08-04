@@ -25,6 +25,7 @@ static async Task<int> RunAsync(string[] args)
             "normalize-reference" => RunNormalizeReference(commandArgs),
             "import-plantseg-hdf5" => RunImportPlantSegHdf5(commandArgs),
             "inspect-volume" => RunInspectVolume(commandArgs),
+            "audit-reference" => RunAuditReference(commandArgs),
             "add-case" => await RunAddCaseAsync(commandArgs).ConfigureAwait(false),
             _ => throw new ArgumentException($"Unknown command: {args[0]}"),
         };
@@ -41,6 +42,16 @@ static int RunInspectVolume(string[] args)
 {
     var options = Parse(args, IsInspectOption, IsCommonFlag);
     WriteJson(VolumeInspector.Inspect(Require(options, "--input"), CancellationToken.None));
+    return 0;
+}
+
+static int RunAuditReference(string[] args)
+{
+    var options = Parse(args, IsAuditReferenceOption, IsCommonFlag);
+    WriteJson(ReferenceSuitabilityAuditor.AuditFile(
+        Require(options, "--input"),
+        ParseInt32(options, "--background", 0),
+        CancellationToken.None));
     return 0;
 }
 
@@ -215,6 +226,9 @@ static void PrintUsage()
 
           Dslt.Validation.Prepare inspect-volume --input <input.tif|input.lsm>
 
+          Dslt.Validation.Prepare audit-reference
+            --input <reference.tif> [--background <label>]
+
           Dslt.Validation.Prepare import-plantseg-hdf5
             --input <plantseg.h5>
             --output-volume <input.tif> --output-labels <reference.tif>
@@ -244,6 +258,10 @@ static void PrintUsage()
 
         inspect-volume decodes an input through the Workbench loader and emits file,
         canonical CZYX pixel, calibration, channel, and timestamp evidence as JSON.
+
+        audit-reference reports reference dimensionality, foreground/background
+        occupancy, touching positive-label interfaces, and the binary-foreground HD95
+        semantics. It is a structural preflight, not curator acceptance of a v1.0 case.
         """);
 }
 
@@ -263,6 +281,8 @@ static bool IsPlantSegOption(string key) => key.ToLowerInvariant() is
     "--crop-x" or "--crop-y" or "--crop-z" or "--crop-width" or "--crop-height" or "--crop-depth";
 
 static bool IsInspectOption(string key) => key.Equals("--input", StringComparison.OrdinalIgnoreCase);
+
+static bool IsAuditReferenceOption(string key) => key.ToLowerInvariant() is "--input" or "--background";
 
 static bool IsCommonFlag(string key) => key.ToLowerInvariant() is
     "--binary" or "--force" or "--representative-real" or "--append";

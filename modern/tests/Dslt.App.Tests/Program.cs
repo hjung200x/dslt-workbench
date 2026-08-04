@@ -63,6 +63,7 @@ internal static class Program
             LsmMetadataTests.Run();
             ReferenceLabelImporterTests.Run();
             PlantSegHdf5ImporterTests.Run();
+            ReferenceSuitabilityAuditorTests.Run();
             RunConfiguredRealVolumeSmokeTests();
             await RealDataManifestAssemblerTests.RunAsync();
             LegacyImageInteractionBehaviorTests.Run();

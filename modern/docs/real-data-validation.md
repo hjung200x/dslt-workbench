@@ -197,6 +197,43 @@ data have not been accepted as representative DSLT leaf evidence. The released
 manual preset remains the UI default, while dataset-specific parameters belong
 in each candidate's provenance.
 
+The fixed-parameter failures are not safely reducible to a `C` search. The
+`audit-reference` command found that all five PlantSeg reference crops encode
+instances as directly touching positive labels. Their positive-label face
+transition counts range from 94,746 to 407,011. The release HD95 contract
+intentionally merges every non-background label into one foreground occupancy
+mask, so those internal instance transitions are invisible in the reference,
+while the legacy-derived DSLT/Watershed result can retain explicit background
+walls. Movie1 is 100% foreground and Movie3 is 99.9728% foreground, making this
+representation mismatch especially pronounced.
+
+The exact file hashes, occupancy counts, label counts, interface counts, and
+fail-closed admission decision are locked in
+`modern/validation/public-plantseg-reference-suitability.lock.json`. Reproduce
+the audit locally with:
+
+```powershell
+./modern/scripts/verify-public-plantseg-reference-suitability.ps1
+```
+
+This structural finding does not authorize deriving a new reference from the
+candidate or changing the v1 metric after seeing results. These PlantSeg cases
+remain external-pipeline preflight with a v1 gate count of zero unless an
+independent curator approves a documented reference-conversion protocol.
+
+`audit-reference` can also be run on a prospective label stack before candidate
+generation:
+
+```powershell
+dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj -- `
+  audit-reference --input D:\cohort\reference.tif --background 0
+```
+
+It reports whether the reference is genuinely 3D, its foreground/background
+occupancy, exterior-connected background, and directly touching instance
+interfaces. The result is a structural preflight only; expert/legacy custody,
+leaf representativeness, and acquisition coverage still require curator review.
+
 ### Normalize an external reference mask
 
 Public and laboratory reference masks are often compressed unsigned or binary
