@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
 using Microsoft.Win32;
 
@@ -21,6 +22,25 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         };
         if (dialog.ShowDialog() != true) return null;
         return await Task.Run(() => ReadStack(dialog.FileName, cancellationToken), cancellationToken);
+    }
+
+    public async Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Load segment labels",
+            Filter = "Signed segment TIFF|*.tif;*.tiff|All files|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog() != true) return null;
+        return await Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var labels = LabelTiffCodec.Read(dialog.FileName);
+            cancellationToken.ThrowIfCancellationRequested();
+            return labels;
+        }, cancellationToken);
     }
 
     public string? ChooseExportBasePath()

@@ -41,3 +41,11 @@ adjacency is rejected before metric evaluation.
 optional Z-projection RGB presentation. The hashed/exported Float32 output stays
 the scalar projection; these fields make its display reproducible without
 changing the quantitative payload.
+
+`ImportLabels` is a managed workflow operation, not a C ABI v1 processing
+operation. Its first ordered history entry records the SHA-256 of decoded label
+samples before legacy background/ID normalization. The ordinary `inputSha256`
+continues to identify the working image volume, while `outputSha256` identifies
+the current normalized or edited label result. A label TIFF calibration mismatch
+is reported but does not replace the working-volume calibration, matching the
+legacy loader's dimension-only compatibility rule.

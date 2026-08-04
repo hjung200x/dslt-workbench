@@ -36,6 +36,7 @@ public enum ProcessingOperation
     Watershed = 24,
     HeightProjection = 25,
     ZGradient = 26,
+    ImportLabels = 27,
 }
 
 public enum OutputKind

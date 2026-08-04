@@ -159,6 +159,14 @@ The reader accepts multiple uncompressed strips per page, validates every
 offset and byte count against file length, rejects directory cycles, and
 requires identical dimensions and sample type across pages.
 
+When the WPF workflow imports a decoded label stack, X/Y/Z must match the
+working volume. Segment-file calibration is advisory because the legacy loader
+checked dimensions and sample type only; Workbench reports a mismatch and
+retains the working-volume calibration. Every negative value maps to background
+`-1`, and non-negative IDs are compacted in ascending order exactly as the
+legacy segment-vector reconstruction did. The decoded pre-normalization label
+hash is written to result history for reproducibility.
+
 The export rule is deterministic:
 
 ```text

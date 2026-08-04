@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Dslt.App.Infrastructure;
 using Dslt.App.Services;
+using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Provenance;
 using Dslt.Managed.Core.Segmentation;
@@ -84,6 +86,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private IReadOnlyList<ProcessingStepProvenance> _lastResultProcessingSteps = [];
     private byte[]? _lastDepthColorPixels;
     private LabelEditingSession? _editingSession;
+    private IReadOnlyDictionary<int, int> _labelVoxelCounts = new Dictionary<int, int>();
     private readonly List<string> _editHistory = [];
     private readonly Stack<(int X, int Y, int Z)> _editOriginUndo = [];
     private int _resultOriginX;
@@ -94,6 +97,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private float _selectionThreshold = 0.1F;
     private bool _deselectAboveThreshold;
     private bool _editClampImageEdges = true;
+    private int _minimumDisplayedSegmentSize;
     private string _selectionSummary = "No label selection";
     private bool _isBusy;
 
@@ -132,6 +136,7 @@ public sealed class MainWindowViewModel : ObservableObject
             option.Operation == ProcessingOperation.Threshold3D);
         GenerateSyntheticCommand = new RelayCommand(GenerateSynthetic, () => !IsBusy);
         OpenCommand = new AsyncRelayCommand(OpenAsync, () => !IsBusy);
+        LoadSegmentsCommand = new AsyncRelayCommand(LoadSegmentsAsync, () => HasVolume && !IsBusy);
         EstimateCommand = new AsyncRelayCommand(EstimateSelectedOperationAsync, CanEstimate);
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasResult && !IsBusy);
         RunCommand = new AsyncRelayCommand(RunSelectedOperationAsync, CanRun);
@@ -643,6 +648,16 @@ public sealed class MainWindowViewModel : ObservableObject
         set => SetProperty(ref _editClampImageEdges, value);
     }
 
+    public int MinimumDisplayedSegmentSize
+    {
+        get => _minimumDisplayedSegmentSize;
+        set
+        {
+            if (!SetProperty(ref _minimumDisplayedSegmentSize, Math.Clamp(value, 0, 100_000))) return;
+            RefreshResultImage();
+        }
+    }
+
     public string SelectionSummary
     {
         get => _selectionSummary;
@@ -734,6 +749,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public RelayCommand GenerateSyntheticCommand { get; }
     public AsyncRelayCommand OpenCommand { get; }
+    public AsyncRelayCommand LoadSegmentsCommand { get; }
     public AsyncRelayCommand EstimateCommand { get; }
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand RunCommand { get; }
@@ -770,6 +786,68 @@ public sealed class MainWindowViewModel : ObservableObject
         catch (Exception error)
         {
             Status = $"Open failed; the previous volume was preserved: {error.Message}";
+        }
+    }
+
+    private async Task LoadSegmentsAsync()
+    {
+        if (_volume is null) return;
+        IsBusy = true;
+        try
+        {
+            var imported = await _files.OpenLabelsAsync(CancellationToken.None);
+            if (imported is null) return;
+            if (imported.Width != _volume.Width || imported.Height != _volume.Height || imported.Depth != _volume.Depth)
+                throw new InvalidDataException(
+                    $"Segment dimensions {imported.Width} x {imported.Height} x {imported.Depth} do not match " +
+                    $"the working volume {_volume.Width} x {_volume.Height} x {_volume.Depth}.");
+            var calibrationMatches = CalibrationMatches(imported.Calibration, _volume.Calibration);
+            var importedLabelsSha256 = ProcessingProvenance.ComputeLabelSha256(imported.Labels);
+            var labels = NormalizeImportedLabels(imported.Labels, out var labelsNormalized);
+            var editingSession = new LabelEditingSession(
+                imported.Width, imported.Height, imported.Depth, labels);
+            var counts = CountLabelVoxels(labels);
+            var result = new ProcessingResult(
+                ProcessingBackend.Cpu,
+                OutputKind.LabelsInt32,
+                imported.Width,
+                imported.Height,
+                imported.Depth,
+                counts.Count,
+                null,
+                labels);
+
+            _editingSession = editingSession;
+            _labelVoxelCounts = counts;
+            _lastResult = result;
+            _lastParameters = new OperationParameters(ProcessingOperation.ImportLabels, ProcessingBackend.Cpu);
+            _lastResultProcessingSteps = _workingProcessingSteps.ToArray();
+            _lastDepthColorPixels = null;
+            _editHistory.Clear();
+            _editHistory.Add($"Imported segment labels SHA-256 {importedLabelsSha256} ({imported.Encoding}).");
+            ResetResultGeometry();
+            UpdateSelectionState();
+            RefreshResultImage();
+            SelectedStage = WorkflowStage.Edit;
+            Progress = 100;
+            var notices = new List<string>();
+            if (!calibrationMatches)
+                notices.Add("the working-volume calibration was retained");
+            if (labelsNormalized)
+                notices.Add("negative background and sparse label IDs were normalized to the legacy in-memory form");
+            Status = $"Loaded {counts.Count} segment(s) from {imported.Encoding} TIFF" +
+                     (notices.Count == 0 ? "." : $"; {string.Join("; ", notices)}.");
+            OnPropertyChanged(nameof(HasResult));
+            OnPropertyChanged(nameof(CanUseResultAsInput));
+            OnPropertyChanged(nameof(ResultGeometrySummary));
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            Status = $"Segment load failed; the previous result was preserved: {error.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 
@@ -915,6 +993,9 @@ public sealed class MainWindowViewModel : ObservableObject
                 _lastResultProcessingSteps = _workingProcessingSteps.ToArray();
             }
             _lastResult = result;
+            _labelVoxelCounts = result.Labels is null
+                ? new Dictionary<int, int>()
+                : CountLabelVoxels(result.Labels);
             _lastParameters = parameters.Operation == ProcessingOperation.ZGradient
                 ? parameters with { CropHeightMap = null }
                 : parameters;
@@ -1107,6 +1188,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _lastResultProcessingSteps = [];
         _lastDepthColorPixels = null;
         _editingSession = null;
+        _labelVoxelCounts = new Dictionary<int, int>();
         _editHistory.Clear();
         ResetResultGeometry();
         ResultImage = null;
@@ -1179,13 +1261,16 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             ResultImage = CreateLabelPlane(
                 _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Xy, ZIndex - ResultOriginZ, _editingSession?.Selection);
+                OrthogonalPlane.Xy, ZIndex - ResultOriginZ, _editingSession?.Selection,
+                _labelVoxelCounts, MinimumDisplayedSegmentSize);
             ResultYzImage = CreateLabelPlane(
                 _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Yz, XIndex - ResultOriginX, _editingSession?.Selection);
+                OrthogonalPlane.Yz, XIndex - ResultOriginX, _editingSession?.Selection,
+                _labelVoxelCounts, MinimumDisplayedSegmentSize);
             ResultZxImage = CreateLabelPlane(
                 _lastResult.Labels, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
-                OrthogonalPlane.Zx, YIndex - ResultOriginY, _editingSession?.Selection);
+                OrthogonalPlane.Zx, YIndex - ResultOriginY, _editingSession?.Selection,
+                _labelVoxelCounts, MinimumDisplayedSegmentSize);
         }
         else
         {
@@ -1382,6 +1467,7 @@ public sealed class MainWindowViewModel : ObservableObject
             Labels = labels,
             ComponentCount = labels.Where(label => label >= 0).Distinct().Count(),
         };
+        _labelVoxelCounts = CountLabelVoxels(labels);
         OnPropertyChanged(nameof(ResultOriginX));
         OnPropertyChanged(nameof(ResultOriginY));
         OnPropertyChanged(nameof(ResultOriginZ));
@@ -1425,6 +1511,7 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         GenerateSyntheticCommand.NotifyCanExecuteChanged();
         OpenCommand.NotifyCanExecuteChanged();
+        LoadSegmentsCommand.NotifyCanExecuteChanged();
         EstimateCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
         RunCommand.NotifyCanExecuteChanged();
@@ -1517,7 +1604,9 @@ public sealed class MainWindowViewModel : ObservableObject
         int depth,
         OrthogonalPlane plane,
         int coordinate,
-        IReadOnlySet<int>? selection)
+        IReadOnlySet<int>? selection,
+        IReadOnlyDictionary<int, int> labelVoxelCounts,
+        int minimumDisplayedSegmentSize)
     {
         var (planeWidth, planeHeight) = PlaneDimensions(width, height, depth, plane);
         var pixels = new byte[checked(planeWidth * planeHeight * 3)];
@@ -1527,7 +1616,8 @@ public sealed class MainWindowViewModel : ObservableObject
             var (x, y, z) = PlaneCoordinates(
                 horizontal, vertical, coordinate, width, height, depth, plane);
             var label = labels[checked(z * width * height + y * width + x)];
-            if (label < 0) continue;
+            if (label < 0 || !labelVoxelCounts.TryGetValue(label, out var voxelCount) ||
+                voxelCount <= minimumDisplayedSegmentSize) continue;
             var destination = checked((vertical * planeWidth + horizontal) * 3);
             if (selection?.Contains(label) == true)
             {
@@ -1547,6 +1637,50 @@ public sealed class MainWindowViewModel : ObservableObject
         bitmap.Freeze();
         return bitmap;
     }
+
+    private static Dictionary<int, int> CountLabelVoxels(ReadOnlySpan<int> labels)
+    {
+        var counts = new Dictionary<int, int>();
+        foreach (var label in labels)
+        {
+            if (label < 0) continue;
+            counts.TryGetValue(label, out var count);
+            counts[label] = checked(count + 1);
+        }
+        return counts;
+    }
+
+    private static int[] NormalizeImportedLabels(ReadOnlySpan<int> labels, out bool changed)
+    {
+        var sourceLabels = new SortedSet<int>();
+        foreach (var label in labels)
+        {
+            if (label >= 0) sourceLabels.Add(label);
+        }
+
+        var mapping = sourceLabels
+            .Select((sourceLabel, destinationLabel) => (sourceLabel, destinationLabel))
+            .ToDictionary(item => item.sourceLabel, item => item.destinationLabel);
+        var normalized = new int[labels.Length];
+        changed = false;
+        for (var index = 0; index < labels.Length; index++)
+        {
+            var source = labels[index];
+            var destination = source < 0 ? LabelEditingSession.Background : mapping[source];
+            normalized[index] = destination;
+            changed |= source != destination;
+        }
+        return normalized;
+    }
+
+    private static bool CalibrationMatches(Calibration left, Calibration right) =>
+        NearlyEqual(left.SpacingX, right.SpacingX) &&
+        NearlyEqual(left.SpacingY, right.SpacingY) &&
+        NearlyEqual(left.SpacingZ, right.SpacingZ) &&
+        left.UnitName.Equals(right.UnitName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool NearlyEqual(double left, double right) =>
+        Math.Abs(left - right) <= 1e-9 * Math.Max(1, Math.Max(Math.Abs(left), Math.Abs(right)));
 
     private static (int Width, int Height) PlaneDimensions(
         int width,

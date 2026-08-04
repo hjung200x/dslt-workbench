@@ -9,6 +9,11 @@ equivalence; that remains gated by representative datasets.
 
 - Open a multi-page TIFF or ImageJ hyperstack without replacing the current
   volume when decoding fails.
+- Load a legacy signed 16/32-bit segment TIFF onto a dimension-compatible
+  working volume and enter editing directly. As in the legacy loader, segment
+  calibration metadata does not replace the working-volume calibration;
+  mismatched metadata is reported. Decoding or geometry failure preserves the
+  previous result.
 - Generate a deterministic synthetic volume for installation and backend
   checks.
 - Show the main window before native/CUDA discovery completes, initialize the
@@ -61,6 +66,9 @@ equivalence; that remains gated by representative datasets.
   split, crop, dilate, erode with optional image-edge clamp, clear, or undo
   through `LabelEditingSession`.
   Selected labels are highlighted consistently in all result planes.
+- Filter segment presentation with the source-derived strict
+  `voxel count > minimum displayed size` rule without modifying labels,
+  selection, measurements, or exported results.
 - Preserve the manual's Ctrl+O/Ctrl+S, Alt+J/Alt+S, Ctrl+Z and Alt+A/Alt+D
   bindings. Shift-left/right-click zooms all synchronized views; middle-click
   maps a rendered result-plane pixel to its XY/YZ/ZX source coordinate and
@@ -130,6 +138,11 @@ equivalence; that remains gated by representative datasets.
     restores the selected source channel, exports bind the original input hash
     and selected channel to the final result, and Watershed binds its seed hash
     to the prior DSLT label step.
+21. loading a compatible segment TIFF creates an editable `ImportLabels`
+    result, compacts sparse IDs in ascending order, maps every negative sample
+    to background, retains the working-volume calibration, records the decoded
+    source-label hash, preserves the prior result on geometry mismatch, and
+    applies the legacy strict minimum-size comparison at equality.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.

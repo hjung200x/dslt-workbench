@@ -54,6 +54,7 @@
             <ListBox AutomationProperties.Name="Workflow stage" ItemsSource="{Binding WorkflowStages}" SelectedItem="{Binding SelectedStage}" Background="Transparent" BorderThickness="0" />
             <Separator Margin="0,12" Background="#283241" />
             <Button Content="Open TIFF / LSM" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" />
+            <Button AutomationProperties.Name="Load segment TIFF" Content="Load segment TIFF" Command="{Binding LoadSegmentsCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <Button Content="Generate synthetic" Command="{Binding GenerateSyntheticCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <TextBlock Text="CHANNEL" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,14,0,5" />
             <ComboBox AutomationProperties.Name="Channel selector" ItemsSource="{Binding ChannelLabels}" SelectedIndex="{Binding ChannelIndex}" />
@@ -350,6 +351,9 @@
               <TextBlock Text="LABEL EDITING" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
               <TextBlock Text="{Binding SelectionSummary}" TextWrapping="Wrap" Margin="0,8,0,8" Foreground="{StaticResource MutedBrush}" />
               <TextBlock Text="{Binding ResultGeometrySummary}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="{StaticResource MutedBrush}" />
+              <TextBlock Text="Minimum displayed segment size (strict)" Margin="0,0,0,5" />
+              <Slider AutomationProperties.Name="Minimum displayed segment size" Minimum="0" Maximum="100000" Value="{Binding MinimumDisplayedSegmentSize}" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <TextBlock Text="{Binding MinimumDisplayedSegmentSize}" Foreground="{StaticResource AccentBrush}" />
               <CheckBox Content="Add cursor label to selection" IsChecked="{Binding AddToSelection}" Margin="0,0,0,8" />
               <WrapPanel>
                 <Button Content="Select at cursor" Command="{Binding SelectAtCursorCommand}" />
