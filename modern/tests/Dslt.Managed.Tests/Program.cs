@@ -186,6 +186,40 @@ if (engine.IsAvailable)
     if (Math.Abs(heightProjectionData[0] - 0.8F) > 1e-6F)
         throw new InvalidOperationException("Height projection did not preserve Z-range maximum sampling.");
 
+    var providedSurfaceProjection = await engine.RunAsync(
+        new VolumeData(
+            1, 1, 4, 1, 0, Calibration.Unit,
+            [1.0F, 0.2F, 0.8F, 0.4F]),
+        new OperationParameters(
+            ProcessingOperation.HeightProjection,
+            ProcessingBackend.Cpu,
+            HeightMapXyRadius: 65,
+            UseHeightSurface: true,
+            HeightSurface: [2.0F],
+            ProjectionMode: HeightProjectionMode.Z,
+            ProjectionRange: 0),
+        null,
+        CancellationToken.None);
+    if (providedSurfaceProjection.FloatData is not [var providedProjectionValue] ||
+        Math.Abs(providedProjectionValue - 0.8F) > 1e-6F)
+        throw new InvalidOperationException("Height projection did not consume the provided height surface directly.");
+
+    var providedSurfaceDepth = await engine.RunAsync(
+        new VolumeData(
+            1, 1, 4, 1, 0, Calibration.Unit,
+            [1.0F, 0.2F, 0.8F, 0.4F]),
+        new OperationParameters(
+            ProcessingOperation.DepthMap,
+            ProcessingBackend.Cpu,
+            HeightMapXyRadius: 65,
+            UseHeightSurface: true,
+            HeightSurface: [2.0F]),
+        null,
+        CancellationToken.None);
+    if (providedSurfaceDepth.FloatData is not { Length: 4 } providedDepthValues ||
+        !providedDepthValues.SequenceEqual(new[] { 0.0F, 0.0F, 0.0F, 1.0F }))
+        throw new InvalidOperationException("Depth map did not consume the provided height surface directly.");
+
     var zGradientResult = await engine.RunAsync(
         new VolumeData(
             1, 1, 4, 1, 0, Calibration.Unit,

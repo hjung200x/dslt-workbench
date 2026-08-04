@@ -52,10 +52,12 @@ legacy loader's dimension-only compatibility rule.
 
 `ImportHeightMap` is likewise managed-only. A decoded legacy `.hmp` map records
 its canonical Float32 SHA-256, and any later height-relative crop or Z-gradient
-operation records that active surface hash in ordered history. The transient
-Float32 surface array is removed from `operation.cropHeightMap` before JSON
-serialization, preventing large unversioned arrays while retaining reproducible
-identity and the structured crop mode/bounds.
+operation, surface-area calculation, DepthMap, or HeightProjection records that
+active surface hash in ordered history. The transient Float32 surface array is
+removed from both `operation.cropHeightMap` and `operation.heightSurface`
+before JSON serialization. The corresponding use flag and SHA-256 remain, so
+large unversioned arrays are omitted without losing the selected surface's
+identity or operation semantics.
 
 `HeightSurfaceArea` is also managed-only. Its result sidecar identifies the
 operation while the first ordered history entry records the complete SHA-256 of

@@ -457,6 +457,35 @@ void cuda_pointwise_parity_test() {
         assert_float_parity(cpu, cuda);
     }
 
+    dslt_crop_options provided_surface_options{};
+    provided_surface_options.use_height_map = 1;
+    const std::vector<float> provided_surface(
+        static_cast<std::size_t>(projection_desc.width) * projection_desc.height, 2.0F);
+    require(dslt_set_crop(
+        handle, &provided_surface_options, provided_surface.data(), provided_surface.size()));
+    depth_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_provided_depth = run_float_operation_result(
+        handle, depth_request, DSLT_BACKEND_CPU);
+    depth_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_provided_depth = run_float_operation_result(
+        handle, depth_request, DSLT_BACKEND_CUDA);
+    assert_float_parity(cpu_provided_depth, cuda_provided_depth);
+
+    dslt_operation_request provided_projection_request{};
+    provided_projection_request.operation = DSLT_OP_HEIGHT_PROJECTION;
+    provided_projection_request.target_spacing_z = 1.0F;
+    provided_projection_request.minimum_component_size = 1;
+    provided_projection_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_provided_projection = run_float_operation_result(
+        handle, provided_projection_request, DSLT_BACKEND_CPU, DSLT_OUTPUT_IMAGE_FLOAT32);
+    provided_projection_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_provided_projection = run_float_operation_result(
+        handle, provided_projection_request, DSLT_BACKEND_CUDA, DSLT_OUTPUT_IMAGE_FLOAT32);
+    assert_float_parity(cpu_provided_projection, cuda_provided_projection);
+
+    provided_surface_options = {};
+    require(dslt_set_crop(handle, &provided_surface_options, nullptr, 0));
+
     request = {};
     request.operation = DSLT_OP_HEIGHT_MAP;
     request.radius = 1;
@@ -1216,6 +1245,12 @@ void cuda_pointwise_parity_test() {
     request.window_max = 1.0F;
     (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA); // Load kernels before the baseline.
 
+    // Keep the direct auxiliary-surface path active through the repeated
+    // DepthMap/HeightProjection requests so its request-owned CUDA buffer is
+    // covered by the memory-drift gate below.
+    require(dslt_set_crop(
+        handle, &provided_surface_options, provided_surface.data(), provided_surface.size()));
+
     auto memory_height = depth_request;
     memory_height.operation = DSLT_OP_HEIGHT_MAP;
     memory_height.backend = DSLT_BACKEND_CUDA;
@@ -1483,6 +1518,36 @@ int main() {
     require(dslt_copy_output_f32(handle, projection_result.data(), projection_result.size()));
     assert(projection_result.size() == 1 && std::abs(projection_result[0] - 0.8F) < 1.0e-6F);
 
+    dslt_crop_options provided_surface_options{};
+    provided_surface_options.use_height_map = 1;
+    const std::vector<float> provided_surface{2.0F};
+    require(dslt_set_crop(
+        handle, &provided_surface_options, provided_surface.data(), provided_surface.size()));
+    request.window_min = 0.0F;
+    request.minimum_component_size = 0;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    projection_result.resize(result.element_count);
+    require(dslt_copy_output_f32(handle, projection_result.data(), projection_result.size()));
+    assert(projection_result.size() == 1 && std::abs(projection_result[0] - 0.8F) < 1.0e-6F);
+
+    request = {};
+    request.operation = DSLT_OP_DEPTH_MAP;
+    request.backend = DSLT_BACKEND_CPU;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    std::vector<float> provided_depth_result(result.element_count);
+    require(dslt_copy_output_f32(
+        handle, provided_depth_result.data(), provided_depth_result.size()));
+    assert(provided_depth_result.size() == 4);
+    assert(provided_depth_result[0] == 0.0F && provided_depth_result[1] == 0.0F &&
+        provided_depth_result[2] == 0.0F &&
+        std::abs(provided_depth_result[3] - 1.0F) < 1.0e-6F);
+
+    provided_surface_options = {};
+    require(dslt_set_crop(handle, &provided_surface_options, nullptr, 0));
+
+    request = {};
+    request.operation = DSLT_OP_HEIGHT_PROJECTION;
+    request.backend = DSLT_BACKEND_CPU;
     request.target_spacing_z = 2.0F;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 

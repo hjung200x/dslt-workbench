@@ -195,6 +195,8 @@ public sealed record OperationParameters(
     int HeightMapZRadius = 4,
     DsltKernelType HeightMapKernel = DsltKernelType.Gaussian,
     int HeightMapSmoothLevel = 1,
+    bool UseHeightSurface = false,
+    float[]? HeightSurface = null,
     int ClosingRadius = 2,
     int MinimumInvalidStructureArea = 500,
     bool CropEnabled = false,

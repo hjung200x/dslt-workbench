@@ -323,6 +323,9 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
                     request.slice_index,
                     request.threshold,
                 },
+                crop_.options.use_height_map != 0
+                    ? std::span<const float>(crop_.height_map)
+                    : std::span<const float>{},
                 progress);
             break;
         case DSLT_OP_HEIGHT_PROJECTION:
@@ -342,6 +345,9 @@ dslt_status Engine::run(const dslt_operation_request& request, const Progress& p
                     request.window_min,
                     request.window_max,
                 },
+                crop_.options.use_height_map != 0
+                    ? std::span<const float>(crop_.height_map)
+                    : std::span<const float>{},
                 progress);
             result_.width = source_.descriptor().width;
             result_.height = source_.descriptor().height;

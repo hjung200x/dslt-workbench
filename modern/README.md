@@ -120,7 +120,9 @@ provenance; see `docs/height-surface-area-spec.md`.
 
 The exact 3D Euclidean depth map, scalar Z/normal projection, range and offset
 semantics, threshold behavior, and Z-only RGB depth-color presentation are
-defined in `docs/height-projection-spec.md`.
+defined in `docs/height-projection-spec.md`. Depth and projection operations
+reuse the compatible active `.hmp`/generated surface; when none is active they
+generate one from the visible height-map parameters.
 
 The WPF operation selector exposes 2D/3D thresholding, cube/sphere morphology,
 depth-dependent Z-gradient correction with an optional filtered height surface,

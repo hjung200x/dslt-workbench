@@ -1207,9 +1207,13 @@ public sealed class MainWindowViewModel : ObservableObject
             var parameters = BuildParameters(labelState);
             LegacyHeightMap? generatedHeightMap = null;
             string? usedHeightMapSha256 = null;
+            var directHeightSurfaceOperation =
+                parameters.Operation is ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection;
             var needsHeightMap =
                 (parameters.CropEnabled && parameters.CropUseHeightMap) ||
-                (parameters.Operation == ProcessingOperation.ZGradient && parameters.ZGradientUseHeightMap);
+                (parameters.Operation == ProcessingOperation.ZGradient && parameters.ZGradientUseHeightMap) ||
+                (directHeightSurfaceOperation && _activeHeightMap is not null) ||
+                parameters.DepthColorEnabled;
             if (needsHeightMap)
             {
                 var surface = _activeHeightMap?.Values;
@@ -1237,7 +1241,13 @@ public sealed class MainWindowViewModel : ObservableObject
                 {
                     usedHeightMapSha256 = _activeHeightMapSha256;
                 }
-                parameters = parameters with
+                parameters = directHeightSurfaceOperation
+                    ? parameters with
+                    {
+                        UseHeightSurface = true,
+                        HeightSurface = surface,
+                    }
+                    : parameters with
                 {
                     CropHeightMap = surface,
                 };
@@ -1250,9 +1260,12 @@ public sealed class MainWindowViewModel : ObservableObject
                     throw new InvalidOperationException("The DSLT request exceeds the native CPU safety limits.");
             }
             var useDepthColor = parameters.DepthColorEnabled;
+            var preparedHeightMap = generatedHeightMap is not null;
             var primaryProgress = useDepthColor
-                ? new Progress<double>(value => Progress = Math.Clamp(value * 50, 0, 50))
-                : parameters.Operation == ProcessingOperation.ZGradient && parameters.ZGradientUseHeightMap
+                ? new Progress<double>(value => Progress = preparedHeightMap
+                    ? Math.Clamp(35 + value * 35, 35, 70)
+                    : Math.Clamp(value * 70, 0, 70))
+                : preparedHeightMap
                     ? new Progress<double>(value => Progress = Math.Clamp(35 + value * 65, 35, 100))
                 : progress;
             var result = await _engine.RunAsync(
@@ -1260,28 +1273,22 @@ public sealed class MainWindowViewModel : ObservableObject
             byte[]? depthColorPixels = null;
             if (useDepthColor)
             {
-                var heightResult = await _engine.RunAsync(
-                    _volume,
-                    parameters with
-                    {
-                        Operation = ProcessingOperation.HeightMap,
-                        DepthColorEnabled = false,
-                    },
-                    new Progress<double>(value => Progress = Math.Clamp(50 + value * 20, 50, 70)),
-                    _cancellation.Token);
+                var heightSurface = parameters.HeightSurface ??
+                    throw new InvalidOperationException("An active height surface is required for depth coloring.");
                 var depthResult = await _engine.RunAsync(
                     _volume,
                     parameters with
                     {
                         Operation = ProcessingOperation.DepthMap,
                         DepthColorEnabled = false,
+                        UseHeightSurface = true,
+                        HeightSurface = heightSurface,
                     },
                     new Progress<double>(value => Progress = Math.Clamp(70 + value * 30, 70, 100)),
                     _cancellation.Token);
                 depthColorPixels = DepthColorProjectionRenderer.CreateRgb24(
                     _volume,
-                    heightResult.FloatData ??
-                        throw new InvalidOperationException("Height-map output is required for depth coloring."),
+                    heightSurface,
                     depthResult.FloatData ??
                         throw new InvalidOperationException("Depth-map output is required for depth coloring."),
                     result.FloatData ??
@@ -1319,7 +1326,7 @@ public sealed class MainWindowViewModel : ObservableObject
             _labelVoxelCounts = result.Labels is null
                 ? new Dictionary<int, int>()
                 : CountLabelVoxels(result.Labels);
-            _lastParameters = parameters with { CropHeightMap = null };
+            _lastParameters = parameters with { CropHeightMap = null, HeightSurface = null };
             _lastDepthColorPixels = depthColorPixels;
             ResetResultGeometry();
             UpdateSelectionState();

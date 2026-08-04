@@ -51,9 +51,11 @@ equivalence; that remains gated by representative datasets.
 - Run long operations asynchronously with progress and an enabled cancellation
   command.
 - Optionally compose Z height projection as legacy HSV depth color with default
-  range 100. The scalar projection, height map, and depth map come from the
-  selected CPU/CUDA backend; the deterministic RGB24 display remains separate
-  from the exported scalar payload.
+  range 100. A compatible active `.hmp`/generated surface is reused; otherwise
+  one height map is generated first. Scalar projection and depth map receive
+  that identical surface from the selected CPU/CUDA backend, while the
+  deterministic RGB24 display remains separate from the exported scalar
+  payload.
 - Configure fixed or height-map-relative upper/lower Z bounds and an XY border
   for DSLT segmentation, threshold sweep and watershed. Height-relative runs
   reuse the active `.hmp`/generated surface or generate one first, and pass it
@@ -140,9 +142,10 @@ equivalence; that remains gated by representative datasets.
     30-second gate while preserving dimensions, voxel type, 16 MiB of canonical
     source bytes, page/voxel order, and normalized maximum intensity.
 17. Z-only depth coloring preserves default/range parameters in provenance,
-    runs scalar projection, height map, and depth map in order, publishes one
-    RGB24 XY image, and matches the legacy HSV byte oracle. The native-CPU job
-    repeats the composition with actual C ABI outputs.
+    generates a surface only when none is active, passes the same surface to
+    scalar projection and depth map, publishes one RGB24 XY image, and matches
+    the legacy HSV byte oracle. Native CPU/CUDA fixtures verify the supplied
+    surface results through the C ABI.
 18. every user-facing native operation is present in the WPF selector; 2D
     threshold preserves the active Z slice, cube morphology preserves radius,
     and area/Lanczos Z resampling preserves target spacing, order, output depth,
@@ -164,8 +167,9 @@ equivalence; that remains gated by representative datasets.
     the last valid workspace state when export fails.
 23. legacy `.hmp` round trip and WPF commands preserve exact surface values,
     reject malformed/mismatched files without state loss, pass an active or
-    automatically generated height map into segmentation crop/Z-gradient, and
-    retain its hash without serializing the full surface in operation JSON.
+    automatically generated height map into segmentation crop, Z-gradient,
+    DepthMap, HeightProjection, and RGB coloring, and retain its hash without
+    serializing the full surface in operation JSON.
 24. the A command preserves the source-derived asymmetric normal accumulation
     and fixed 10 x 10 Simpson rule, presents normalized Gray8, writes exact
     IEEE Float32 scale factors, records the active-surface hash, and preserves

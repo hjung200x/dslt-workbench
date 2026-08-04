@@ -70,11 +70,14 @@ Height-map operations use the CPU reference's separable clamp-boundary line
 weights, threshold-crossing interpolation, and optional repeated XY smoothing.
 Normal and Z projections preserve the reference sampling and threshold rules.
 Depth maps run a two-pass squared-distance calculation for each output Z slice.
-These phases synchronize at cancellable boundaries and include their temporary
-volume and plane buffers in the VRAM preflight estimate. Optional RGB depth
-coloring requests the same CUDA height surface, depth volume, and scalar Z
-projection sequentially; deterministic HSV-to-RGB byte composition occurs in
-the WPF presentation layer and does not introduce a separate CUDA result kind.
+When the caller supplies an active/imported surface through ABI v1 auxiliary
+height-map state, DepthMap and HeightProjection validate and copy it once per
+request and skip the filtering phase. These phases synchronize at cancellable
+boundaries and include their temporary volume and plane buffers in the VRAM
+preflight estimate. Optional RGB depth coloring sends the same host surface to
+the CUDA depth volume and scalar Z projection requests; deterministic HSV-to-RGB
+byte composition occurs in the WPF presentation layer and does not introduce a
+separate CUDA result kind.
 
 Z-gradient correction applies the source-derived pointwise power gain using the
 voxel's Z distance from zero or from the optional filtered height surface. The
@@ -251,12 +254,13 @@ XY/YZ/ZX plane values and dimensions, image output kind, `Auto` selection,
 invalid parameters, and cancellation after a completed resampling slice.
 
 The height/depth projection fixture compares Gaussian and mean height surfaces,
-normal and Z projections, and volumetric depth values against CPU at the
-project float tolerance. It also covers variable image metadata, `Auto`
-selection, parameter rejection, and cancellation during depth-slice execution.
-After kernel warm-up, the memory fixture cycles pointwise execution, height
-maps, depth maps, and both projection modes across 100 requests and permits at
-most 1 MiB of apparent free-memory drift.
+direct caller-supplied surfaces, normal and Z projections, and volumetric depth
+values against CPU at the project float tolerance. It also covers variable
+image metadata, `Auto` selection, parameter rejection, and cancellation during
+depth-slice execution. After kernel warm-up, the memory fixture keeps the
+supplied-surface path active while cycling pointwise execution, height maps,
+depth maps, and both projection modes across 100 requests and permits at most
+1 MiB of apparent free-memory drift.
 
 ## Recorded height/depth projection runtime evidence
 

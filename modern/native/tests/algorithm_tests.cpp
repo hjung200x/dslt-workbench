@@ -606,7 +606,7 @@ void height_projection_and_depth_fixture() {
             0.0F, 0.0F, 0.0F,
         });
     const dslt::ops::HeightMapParameters height_parameters{0, 0, 0, 0, 0.5F};
-    const auto depth = dslt::ops::depth_map(depth_volume, height_parameters, {});
+    const auto depth = dslt::ops::depth_map(depth_volume, height_parameters, {}, {});
     assert(depth.size() == depth_volume.voxel_count());
     assert(close(depth[offset(0, 0, 1, depth_desc)], 1.0F));
     assert(close(depth[offset(0, 0, 2, depth_desc)], 1.0F));
@@ -618,28 +618,49 @@ void height_projection_and_depth_fixture() {
         projection_desc, std::vector<float>{1.0F, 0.2F, 0.8F, 0.4F});
     const dslt::ops::HeightProjectionParameters z_parameters{1, 2, 0.0F, 1.0F, 0.0F};
     const auto z_projection = dslt::ops::height_projection(
-        projection_volume, height_parameters, z_parameters, {});
+        projection_volume, height_parameters, z_parameters, {}, {});
     assert(z_projection.size() == 1 && close(z_projection[0], 0.8F));
 
     const dslt::ops::HeightProjectionParameters normal_parameters{0, 2, 0.0F, 1.0F, 0.0F};
     const auto normal_projection = dslt::ops::height_projection(
-        projection_volume, height_parameters, normal_parameters, {});
+        projection_volume, height_parameters, normal_parameters, {}, {});
     assert(normal_projection.size() == 1 && close(normal_projection[0], 0.8F));
 
     const auto binary_projection = dslt::ops::height_projection(
         projection_volume, height_parameters,
-        dslt::ops::HeightProjectionParameters{0, 2, 0.0F, 1.0F, 0.5F}, {});
+        dslt::ops::HeightProjectionParameters{0, 2, 0.0F, 1.0F, 0.5F}, {}, {});
     assert(binary_projection.size() == 1 && binary_projection[0] == 1.0F);
     const auto rejected_projection = dslt::ops::height_projection(
         projection_volume, height_parameters,
-        dslt::ops::HeightProjectionParameters{1, 2, 0.0F, 1.0F, 0.9F}, {});
+        dslt::ops::HeightProjectionParameters{1, 2, 0.0F, 1.0F, 0.9F}, {}, {});
     assert(rejected_projection.size() == 1 && rejected_projection[0] == 0.0F);
+
+    const std::vector<float> provided_surface{2.0F};
+    const auto provided_depth = dslt::ops::depth_map(
+        projection_volume, height_parameters, provided_surface, {});
+    assert(provided_depth.size() == 4);
+    assert(provided_depth[0] == 0.0F && provided_depth[1] == 0.0F &&
+        provided_depth[2] == 0.0F && close(provided_depth[3], 1.0F));
+    const auto provided_projection = dslt::ops::height_projection(
+        projection_volume, height_parameters,
+        dslt::ops::HeightProjectionParameters{1, 0, 0.0F, 0.0F, 0.0F},
+        provided_surface, {});
+    assert(provided_projection.size() == 1 && close(provided_projection[0], 0.8F));
+
+    bool rejected_surface = false;
+    try {
+        static_cast<void>(dslt::ops::depth_map(
+            projection_volume, height_parameters, std::vector<float>{1.0F, 2.0F}, {}));
+    } catch (const std::invalid_argument&) {
+        rejected_surface = true;
+    }
+    assert(rejected_surface);
 
     bool rejected = false;
     try {
         static_cast<void>(dslt::ops::height_projection(
             projection_volume, height_parameters,
-            dslt::ops::HeightProjectionParameters{2, 0, 0.0F, 0.0F, 0.0F}, {}));
+            dslt::ops::HeightProjectionParameters{2, 0, 0.0F, 0.0F, 0.0F}, {}, {}));
     } catch (const std::invalid_argument&) {
         rejected = true;
     }
@@ -648,7 +669,7 @@ void height_projection_and_depth_fixture() {
     bool cancelled = false;
     try {
         static_cast<void>(dslt::ops::depth_map(
-            depth_volume, height_parameters,
+            depth_volume, height_parameters, {},
             [](float value) { return value == 0.0F; }));
     } catch (const std::runtime_error& error) {
         cancelled = std::string_view(error.what()) == "cancelled";

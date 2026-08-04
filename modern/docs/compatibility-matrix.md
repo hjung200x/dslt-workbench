@@ -18,10 +18,10 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures plus WPF 2D active-slice and 3D operation coverage |
 | Adaptive 2D/3D threshold | `AdaptiveThreshold2D`, `AdaptiveThreshold3D` | scaffolded | CPU/CUDA mean/Gaussian, clamp boundary, strict tie, 2D/3D distinction, parameter/cancellation/memory, ABI and WPF fixtures implemented; legacy GPU discrepancy and archived-runtime comparison pending |
 | Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures plus WPF cube/sphere operation and radius coverage |
-| Filtered height map / 3D depth map | `HeightMap`, `DepthMap` | scaffolded | Height-map Gaussian/mean Z filter, strict crossing interpolation, repeated XY smoothing, clamp boundary, plus exact voxel-index Euclidean distance to the height surface; synthetic and cancellation fixtures implemented, legacy runtime comparison pending |
-| Legacy height-map file I/O | `.hmp` headers 120/240, X/Y dimensions, finite Float32 surface | scaffolded | Bit-exact header/value round trip, malformed/truncated rejection, H/J WPF import/export, geometry failure recovery, SHA-256 identity, height-relative segmentation crop, Z-gradient and surface-area reuse are implemented; direct imported-surface consumption by DepthMap/HeightProjection remains pending |
+| Filtered height map / 3D depth map | `HeightMap`, `DepthMap` | scaffolded | Height-map Gaussian/mean Z filter, strict crossing interpolation, repeated XY smoothing, clamp boundary, active/imported surface reuse, plus exact voxel-index Euclidean distance to that surface; CPU, CUDA, ABI, WPF, cancellation, and invalid-surface fixtures implemented, legacy runtime comparison pending |
+| Legacy height-map file I/O | `.hmp` headers 120/240, X/Y dimensions, finite Float32 surface | implemented | Bit-exact header/value round trip, malformed/truncated rejection, H/J WPF import/export, geometry failure recovery, SHA-256 identity, and direct active-surface reuse by crop, Z-gradient, surface area, DepthMap, HeightProjection, and RGB depth coloring |
 | Height-surface area map | `HeightSurfaceArea`: source-derived vertex/cell normals, bilinear slope and fixed 10 x 10 Simpson integration from the active height map | implemented | Flat/ramp/source-asymmetric normal oracles, cancellation/validation, normalized Gray8 preview, bit-preserving IEEE Float32 TIFF, legacy `area_map.tif`/`area_map32.tif` naming, A shortcut, failure preservation and hashed provenance fixtures |
-| Height projection and RGB depth coloring | `HeightProjection` + WPF RGB24 presentation | scaffolded | Source-derived Z/normal modes, surface offset, start depth, inclusive range, scalar/binary threshold behavior, trilinear sampling, plus Z-only HSV 0..270 depth coloring with default range 100, provenance, WPF/oracle fixtures, and native-CPU composition gate implemented; archived-runtime comparison pending |
+| Height projection and RGB depth coloring | `HeightProjection` + WPF RGB24 presentation | scaffolded | Source-derived Z/normal modes, active/imported surface reuse, surface offset, start depth, inclusive range, scalar/binary threshold behavior, trilinear sampling, plus Z-only HSV 0..270 depth coloring over one shared surface with default range 100; CPU/CUDA, provenance, WPF/oracle, and native composition fixtures implemented, archived-runtime comparison pending |
 | 6/18/26 connectivity | `ConnectedComponents` | implemented | Touching-object fixtures |
 | Flood-fill segmentation | Connected-components request | implemented | Noise/min-size fixtures |
 | h-minima transform | `HMinima` | scaffolded | CPU erosion reconstruction, lower-mask fitting, residual inversion, convergence, cancellation, ABI and WPF fixtures implemented; archived-runtime comparison pending |
@@ -42,5 +42,5 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Win32/x86 build | None | excluded | Windows x64 policy |
 
 Display-only RGB depth coloring remains a deterministic presentation layer over
-the scaffolded scalar projection, height-map, and depth-map contracts; it does
-not change the versioned C ABI payload.
+the scalar projection, height-map, and depth-map contracts; it does not change
+the versioned C ABI payload.

@@ -266,11 +266,18 @@ internal static class WorkflowViewModelTests
                 ProjectionMode: HeightProjectionMode.Normal,
                 ProjectionOffset: 1.5F,
                 ProjectionStartDepth: 2.0F,
-                ProjectionRange: 3,
-                ProjectionThreshold: 0.6F,
-                DepthColorEnabled: false,
-                DepthColorRange: 100,
-            }, "Height-projection UI parameters were not preserved in the processing request.");
+               ProjectionRange: 3,
+               ProjectionThreshold: 0.6F,
+               DepthColorEnabled: false,
+               DepthColorRange: 100,
+                UseHeightSurface: true,
+                HeightSurface: null,
+            } && engine.RunParameters[^1] is
+            {
+                Operation: ProcessingOperation.HeightProjection,
+                UseHeightSurface: true,
+                HeightSurface: not null,
+            }, "Height projection did not reuse the active surface or preserve its transient contract.");
         Assert(!target.CanUseDepthColoring && !target.DepthColorEnabled,
             "Normal projection did not disable Z-only depth coloring.");
 
@@ -306,9 +313,10 @@ internal static class WorkflowViewModelTests
         Assert(engine.RunOperations.SequenceEqual(new[]
             {
                 ProcessingOperation.HeightProjection,
-                ProcessingOperation.HeightMap,
                 ProcessingOperation.DepthMap,
-            }), "Depth coloring did not run scalar projection, height map, and depth map in order.");
+            }) && engine.RunParameters.TakeLast(2).All(parameters =>
+                parameters.UseHeightSurface && parameters.HeightSurface is not null),
+            "Depth coloring did not reuse one active surface for scalar projection and depth map.");
         Assert(target.ResultImage is BitmapSource depthColorImage &&
                depthColorImage.Format == PixelFormats.Rgb24 &&
                target.ResultYzImage is null && target.ResultZxImage is null,
@@ -740,6 +748,47 @@ internal static class WorkflowViewModelTests
         Assert(files.LastSavedHeightMap is not null &&
                files.LastSavedHeightMap.Values.SequenceEqual(surface.Values),
             "The active height map was not routed to legacy .hmp export.");
+
+        foreach (var operation in new[]
+                 {
+                     ProcessingOperation.DepthMap,
+                     ProcessingOperation.HeightProjection,
+                 })
+        {
+            target.SelectedOperation = target.Operations.Single(option => option.Operation == operation);
+            await target.RunCommand.ExecuteAsync();
+            Assert(engine.RunParameters[^1] is
+                   {
+                       UseHeightSurface: true,
+                       HeightSurface: not null,
+                   } request && request.Operation == operation &&
+                   request.HeightSurface.SequenceEqual(surface.Values) &&
+                   target.LastParameters is { UseHeightSurface: true, HeightSurface: null } persisted &&
+                   persisted.Operation == operation,
+                $"{operation} did not consume the imported .hmp surface or strip its transient array.");
+        }
+
+        var directSurfaceExport = Path.Combine(
+            Path.GetTempPath(), $"dslt-direct-height-surface-{Guid.NewGuid():N}");
+        files.ExportBasePath = directSurfaceExport;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            using var provenance = JsonDocument.Parse(
+                await File.ReadAllBytesAsync(directSurfaceExport + ".json"));
+            var operation = provenance.RootElement.GetProperty("operation");
+            Assert(operation.GetProperty("useHeightSurface").GetBoolean() &&
+                   operation.GetProperty("heightSurface").ValueKind == JsonValueKind.Null &&
+                   provenance.RootElement.GetProperty("editHistory").EnumerateArray().Any(item =>
+                       item.GetString()!.Contains(
+                           ProcessingProvenance.ComputeFloatSha256(surface.Values),
+                           StringComparison.Ordinal)),
+                "Direct imported-surface provenance did not retain the mode/hash or stripped-array contract.");
+        }
+        finally
+        {
+            DeletePackage(directSurfaceExport);
+        }
 
         var preservedResult = target.LastResult;
         var preservedSummary = target.ActiveHeightMapSummary;

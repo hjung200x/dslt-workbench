@@ -17,7 +17,7 @@ public sealed record ProcessingStepProvenance(
 {
     public static ProcessingStepProvenance Create(OperationParameters operation, ProcessingResult result) =>
         new(
-            operation,
+            ProcessingProvenance.WithoutTransientArrays(operation),
             result.UsedBackend,
             result.OutputKind,
             result.Width,
@@ -94,7 +94,7 @@ public sealed record ProcessingProvenance(
             input.Calibration,
             outputCalibration ?? input.Calibration,
             processingSteps?.ToArray() ?? [],
-            operation,
+            WithoutTransientArrays(operation),
             result.UsedBackend,
             result.OutputKind,
             result.Width,
@@ -109,6 +109,9 @@ public sealed record ProcessingProvenance(
             compatibilityWarning,
             editHistory?.ToArray() ?? []);
     }
+
+    public static OperationParameters WithoutTransientArrays(OperationParameters operation) =>
+        operation with { CropHeightMap = null, HeightSurface = null };
 
     public static string ComputeLabelSha256(ReadOnlySpan<int> labels) =>
         ComputeLittleEndianSha256(labels, static value => value);

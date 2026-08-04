@@ -739,6 +739,20 @@ std::vector<Vec3> surface_normals(
     return normals;
 }
 
+void validate_height_surface(
+    std::span<const float> height,
+    const dslt_volume_descriptor& descriptor) {
+    const auto expected = static_cast<std::size_t>(descriptor.width) * descriptor.height;
+    if (height.size() != expected) {
+        throw std::invalid_argument("provided height surface dimensions do not match the volume");
+    }
+    if (!std::all_of(height.begin(), height.end(), [](float value) {
+            return std::isfinite(value);
+        })) {
+        throw std::invalid_argument("provided height surface must contain only finite values");
+    }
+}
+
 } // namespace
 
 std::vector<float> threshold_sweep_schedule(float minimum, float maximum, float interval) {
@@ -1509,10 +1523,20 @@ std::vector<float> height_map(
 std::vector<float> depth_map(
     const Volume& volume,
     const HeightMapParameters& parameters,
+    std::span<const float> height_surface,
     const Engine::Progress& progress) {
-    const auto height = height_map(
-        volume, parameters, mapped_progress(progress, 0.0F, 0.45F));
     const auto& descriptor = volume.descriptor();
+    std::vector<float> generated_height;
+    auto height = height_surface;
+    auto processing_start = 0.0F;
+    if (height.empty()) {
+        generated_height = height_map(
+            volume, parameters, mapped_progress(progress, 0.0F, 0.45F));
+        height = std::span<const float>(generated_height);
+        processing_start = 0.45F;
+    } else {
+        validate_height_surface(height, descriptor);
+    }
     const auto width = static_cast<std::size_t>(descriptor.width);
     const auto height_count = static_cast<std::size_t>(descriptor.height);
     const auto plane = width * height_count;
@@ -1549,8 +1573,8 @@ std::vector<float> depth_map(
                 result[z * plane + index] = std::sqrt(std::max(distance_squared[index], 0.0F));
             }
         }
-        if (progress && !progress(0.45F + 0.55F * static_cast<float>(z + 1) /
-            static_cast<float>(descriptor.depth))) {
+        if (progress && !progress(processing_start + (1.0F - processing_start) *
+            static_cast<float>(z + 1) / static_cast<float>(descriptor.depth))) {
             throw std::runtime_error("cancelled");
         }
     }
@@ -1562,6 +1586,7 @@ std::vector<float> height_projection(
     const Volume& volume,
     const HeightMapParameters& height_parameters,
     const HeightProjectionParameters& projection_parameters,
+    std::span<const float> height_surface,
     const Engine::Progress& progress) {
     if (projection_parameters.mode != 0 && projection_parameters.mode != 1) {
         throw std::invalid_argument("height projection mode must be 0 (normal) or 1 (Z)");
@@ -1574,9 +1599,18 @@ std::vector<float> height_projection(
         !std::isfinite(projection_parameters.projection_threshold)) {
         throw std::invalid_argument("height projection parameters must be finite");
     }
-    const auto surface = height_map(
-        volume, height_parameters, mapped_progress(progress, 0.0F, 0.45F));
     const auto& descriptor = volume.descriptor();
+    std::vector<float> generated_surface;
+    auto surface = height_surface;
+    auto processing_start = 0.0F;
+    if (surface.empty()) {
+        generated_surface = height_map(
+            volume, height_parameters, mapped_progress(progress, 0.0F, 0.45F));
+        surface = std::span<const float>(generated_surface);
+        processing_start = 0.45F;
+    } else {
+        validate_height_surface(surface, descriptor);
+    }
     const auto source = selected_channel(volume);
     const auto normals = projection_parameters.mode == 0
         ? surface_normals(surface, descriptor)
@@ -1624,8 +1658,8 @@ std::vector<float> height_projection(
             }
             result[surface_index] = maximum;
         }
-        if (progress && !progress(0.45F + 0.55F * static_cast<float>(y + 1) /
-            static_cast<float>(descriptor.height))) {
+        if (progress && !progress(processing_start + (1.0F - processing_start) *
+            static_cast<float>(y + 1) / static_cast<float>(descriptor.height))) {
             throw std::runtime_error("cancelled");
         }
     }
