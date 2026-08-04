@@ -29,7 +29,7 @@ a secondary aid.
 | 5 | DSLT mean/Gaussian kernel, radius, level, Z correction alpha, min/max C, interval, validation threshold and closing; fixed or height-map crop bounds and XY edge | DSLT threshold/segmentation, validation, closing, and fixed/height-map crop are implemented with synthetic/CUDA validation; runtime oracle remains pending |
 | 6 | Segment erosion/dilation, optional clamp, middle-click select, Alt+J merge, Alt+S split, Ctrl+Z undo, Alt+A select all and Alt+D deselect all | Edit algorithms, image-edge clamp, keyboard bindings and result-plane middle-click selection are implemented |
 | 7 | Select/deselect segments by their mean intensity in the active channel | Strict active-channel mean-threshold selection/deselection is implemented, including cropped result origin mapping |
-| 8 | Watershed ignores unselected/hidden segments, optional minimum size, morphologic smoothing recipe, save result and save segments | Selected-seed watershed, minimum size, morphology and result/label export are implemented; display-filter semantics remain pending |
+| 8 | Watershed ignores unselected/hidden segments, optional minimum size, morphologic smoothing recipe, save result and save segments | Selected-seed watershed, minimum size, morphology, segment TIFF import/export, and the strict minimum-size display filter are implemented |
 | 9-10 | Qualitative effects of max C, min C and ValidTH; segment validation based on extracted inner structures | Parameter semantics and validation order are fixed in `dslt-algorithm-spec.md`; legacy-runtime comparison remains pending |
 
 ## Defaults confirmed by the manual screenshots

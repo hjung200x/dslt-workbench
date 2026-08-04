@@ -65,6 +65,13 @@ volume in JSON.
 `LabelTiffCodec` writes legacy-compatible signed 16-bit TIFF whenever all labels
 fit and otherwise writes signed 32-bit TIFF with an explicit compatibility
 warning. Result packages retain the `.i32.raw` payload and JSON provenance.
+The WPF import path requires matching X/Y/Z dimensions but, like legacy
+`Filter3D::loadSegData`, does not reject differing calibration metadata. The
+working volume remains authoritative and the mismatch is reported. Imported
+negative samples become background `-1`; non-negative sparse IDs are compacted
+in ascending source-ID order. The decoded pre-normalization label SHA-256 is
+retained in the ordered history so later edits remain traceable to their label
+input.
 See [`tiff-io-spec.md`](tiff-io-spec.md).
 
 ## Common error and state rules

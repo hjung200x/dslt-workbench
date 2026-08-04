@@ -3,6 +3,7 @@ using Dslt.App.Services;
 using Dslt.App.ViewModels;
 using Dslt.Managed.Core.IO;
 using Dslt.Managed.Core.Models;
+using Dslt.Managed.Core.Provenance;
 using Dslt.Managed.Core.Services;
 using System.Diagnostics;
 using System.IO;
@@ -31,6 +32,7 @@ internal static class WorkflowViewModelTests
             ProcessingOperation.ExtractXy,
             ProcessingOperation.ExtractYz,
             ProcessingOperation.ExtractZx,
+            ProcessingOperation.ImportLabels,
         };
         var expectedOperations = Enum.GetValues<ProcessingOperation>()
             .Where(operation => !internalOnly.Contains(operation))
@@ -556,7 +558,78 @@ internal static class WorkflowViewModelTests
             "The ZX plane did not preserve Z-vertical and X-horizontal coordinate order.");
 
         await RunProcessingChainTestsAsync();
+        await RunSegmentImportAndDisplayFilterTestsAsync();
         await RunLargeVolumeCancellationSmokeAsync();
+    }
+
+    private static async Task RunSegmentImportAndDisplayFilterTestsAsync()
+    {
+        var samples = Enumerable.Range(0, 12).Select(index => index / 11.0F).ToArray();
+        var calibration = new Calibration(0.5, 0.5, 1.25, true, "um");
+        var files = new FakeWorkspaceFileService
+        {
+            NextVolume = new VolumeData(3, 2, 2, 1, 0, calibration, samples),
+        };
+        var engine = new FakeProcessingEngine();
+        using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
+        var target = viewModel.Value;
+        await target.OpenCommand.ExecuteAsync();
+
+        var labels = Enumerable.Repeat(-1, 12).ToArray();
+        labels[6] = 3;
+        labels[7] = 7;
+        labels[8] = 7;
+        labels[9] = -2;
+        files.NextLabels = new LabelTiffVolume(
+            3, 2, 2, LabelTiffEncoding.SignedInt16, Calibration.Unit, labels);
+        await target.LoadSegmentsCommand.ExecuteAsync();
+        Assert(target.CanEdit && target.LastResult is { ComponentCount: 2 } &&
+               target.LastParameters?.Operation == ProcessingOperation.ImportLabels &&
+               target.Status.Contains("Loaded 2 segment", StringComparison.Ordinal) &&
+               target.Status.Contains("working-volume calibration was retained", StringComparison.Ordinal) &&
+               target.LastResult.Labels![6] == 0 && target.LastResult.Labels[7] == 1 &&
+               target.LastResult.Labels[8] == 1 && target.LastResult.Labels[9] == -1,
+            "A compatible legacy segment TIFF was not installed as an editable result.");
+
+        target.MinimumDisplayedSegmentSize = 1;
+        var pixels = ReadRgb24((BitmapSource)target.ResultImage!);
+        Assert(pixels[0] == 0 && pixels[1] == 0 && pixels[2] == 0 &&
+               pixels[3] != 0 && pixels[4] != 0 && pixels[5] != 0,
+            "The strict legacy minimum-size display filter did not hide only the one-voxel segment.");
+        target.MinimumDisplayedSegmentSize = 2;
+        pixels = ReadRgb24((BitmapSource)target.ResultImage!);
+        Assert(pixels.Take(9).All(value => value == 0),
+            "The strict legacy minimum-size display filter did not hide the two-voxel segment at equality.");
+
+        var exportBase = Path.Combine(Path.GetTempPath(), $"dslt-imported-labels-{Guid.NewGuid():N}");
+        var expectedExportedLabels = target.LastResult!.Labels!.ToArray();
+        files.ExportBasePath = exportBase;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            using var provenance = JsonDocument.Parse(await File.ReadAllBytesAsync(exportBase + ".json"));
+            var exportedLabels = LabelTiffCodec.Read(exportBase + ".labels.i16.tif");
+            Assert(provenance.RootElement.GetProperty("operation").GetProperty("operation").GetInt32() ==
+                       (int)ProcessingOperation.ImportLabels &&
+                   provenance.RootElement.GetProperty("editHistory")[0].GetString()!.Contains(
+                       ProcessingProvenance.ComputeLabelSha256(labels), StringComparison.Ordinal) &&
+                   exportedLabels.Labels.SequenceEqual(expectedExportedLabels),
+                "Imported labels, their source hash, or their managed-only provenance identity changed during export/display filtering.");
+        }
+        finally
+        {
+            DeletePackage(exportBase);
+        }
+
+        var preservedResult = target.LastResult;
+        var preservedImage = target.ResultImage;
+        files.NextLabels = new LabelTiffVolume(
+            2, 2, 2, LabelTiffEncoding.SignedInt16, calibration, new int[8]);
+        await target.LoadSegmentsCommand.ExecuteAsync();
+        Assert(ReferenceEquals(preservedResult, target.LastResult) &&
+               ReferenceEquals(preservedImage, target.ResultImage) &&
+               target.Status.Contains("previous result was preserved", StringComparison.OrdinalIgnoreCase),
+            "A mismatched segment TIFF replaced the last valid editable result.");
     }
 
     private static async Task RunProcessingChainTestsAsync()
@@ -811,6 +884,15 @@ internal static class WorkflowViewModelTests
         return pixels;
     }
 
+    private static byte[] ReadRgb24(BitmapSource source)
+    {
+        Assert(source.Format == PixelFormats.Rgb24, "Expected an RGB24 label image.");
+        var stride = checked(source.PixelWidth * 3);
+        var pixels = new byte[checked(stride * source.PixelHeight)];
+        source.CopyPixels(pixels, stride, 0);
+        return pixels;
+    }
+
     private static void Assert(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
@@ -978,9 +1060,12 @@ internal static class WorkflowViewModelTests
     private sealed class FakeWorkspaceFileService : IWorkspaceFileService
     {
         public VolumeData? NextVolume { get; set; }
+        public LabelTiffVolume? NextLabels { get; set; }
         public string? ExportBasePath { get; set; }
         public Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken) =>
             Task.FromResult(NextVolume);
+        public Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(NextLabels);
         public string? ChooseExportBasePath() => ExportBasePath;
     }
 }
