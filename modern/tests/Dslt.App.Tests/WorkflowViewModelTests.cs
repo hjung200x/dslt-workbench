@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
@@ -97,9 +98,10 @@ internal static class WorkflowViewModelTests
         target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.HeightProjection);
         Assert(target.IsHeightSurfaceOperation && target.IsHeightProjection &&
-               target.ProjectionMode == HeightProjectionMode.Z &&
+               target.ProjectionMode == HeightProjectionMode.Z && target.CanUseDepthColoring &&
                target.ProjectionOffset == 0 && target.ProjectionStartDepth == 0 &&
-               target.ProjectionRange == 0 && target.ProjectionThreshold == 0,
+               target.ProjectionRange == 0 && target.ProjectionThreshold == 0 &&
+               !target.DepthColorEnabled && target.DepthColorRange == 100,
             "Height-projection legacy defaults were not exposed by the UI.");
         target.ProjectionMode = HeightProjectionMode.Normal;
         target.ProjectionOffset = 1.5F;
@@ -115,7 +117,81 @@ internal static class WorkflowViewModelTests
                 ProjectionStartDepth: 2.0F,
                 ProjectionRange: 3,
                 ProjectionThreshold: 0.6F,
+                DepthColorEnabled: false,
+                DepthColorRange: 100,
             }, "Height-projection UI parameters were not preserved in the processing request.");
+        Assert(!target.CanUseDepthColoring && !target.DepthColorEnabled,
+            "Normal projection did not disable Z-only depth coloring.");
+
+        target.ProjectionMode = HeightProjectionMode.Z;
+        target.ProjectionOffset = 0;
+        target.ProjectionStartDepth = 0;
+        target.ProjectionRange = 3;
+        target.ProjectionThreshold = 0;
+        target.DepthColorRange = 4;
+        target.DepthColorEnabled = true;
+        var previousProjectionResult = target.LastResult;
+        var previousProjectionImage = target.ResultImage;
+        engine.WaitOnOperation = ProcessingOperation.DepthMap;
+        engine.ResetRunStarted();
+        var cancelledDepthColorRun = target.RunCommand.ExecuteAsync();
+        await engine.RunStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        target.CancelCommand.Execute(null);
+        await cancelledDepthColorRun;
+        Assert(ReferenceEquals(previousProjectionResult, target.LastResult) &&
+               ReferenceEquals(previousProjectionImage, target.ResultImage),
+            "Cancellation during auxiliary depth-map work replaced the previous projection.");
+        engine.WaitOnOperation = null;
+
+        engine.RunOperations.Clear();
+        await target.RunCommand.ExecuteAsync();
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.HeightProjection,
+                ProjectionMode: HeightProjectionMode.Z,
+                DepthColorEnabled: true,
+                DepthColorRange: 4,
+            }, "Depth-color UI parameters were not preserved in provenance parameters.");
+        Assert(engine.RunOperations.SequenceEqual(new[]
+            {
+                ProcessingOperation.HeightProjection,
+                ProcessingOperation.HeightMap,
+                ProcessingOperation.DepthMap,
+            }), "Depth coloring did not run scalar projection, height map, and depth map in order.");
+        Assert(target.ResultImage is BitmapSource depthColorImage &&
+               depthColorImage.Format == PixelFormats.Rgb24 &&
+               target.ResultYzImage is null && target.ResultZxImage is null,
+            "Depth coloring did not publish one RGB24 XY presentation image.");
+        var successfulDepthColorResult = target.LastResult;
+        var successfulDepthColorImage = target.ResultImage;
+        engine.FailOnOperation = ProcessingOperation.DepthMap;
+        await target.RunCommand.ExecuteAsync();
+        Assert(ReferenceEquals(successfulDepthColorResult, target.LastResult) &&
+               ReferenceEquals(successfulDepthColorImage, target.ResultImage) &&
+               target.Status.Contains("failed", StringComparison.OrdinalIgnoreCase),
+            "Failure during auxiliary depth-map work replaced the valid RGB projection.");
+        engine.FailOnOperation = null;
+
+        var depthColorExport = Path.Combine(
+            Path.GetTempPath(), $"dslt-depth-color-{Guid.NewGuid():N}");
+        files.ExportBasePath = depthColorExport;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            var provenance = await File.ReadAllTextAsync(depthColorExport + ".json");
+            Assert(provenance.Contains("\"depthColorEnabled\": true", StringComparison.Ordinal) &&
+                   provenance.Contains("\"depthColorRange\": 4", StringComparison.Ordinal) &&
+                   File.Exists(depthColorExport + ".f32.raw"),
+                "Depth-color provenance or scalar Float32 payload was not exported.");
+        }
+        finally
+        {
+            foreach (var suffix in new[] { ".f32.raw", ".json" })
+            {
+                var path = depthColorExport + suffix;
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
 
         target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.ThresholdSweep);
@@ -187,6 +263,7 @@ internal static class WorkflowViewModelTests
             "The label result did not publish all orthogonal planes.");
 
         engine.RunBehavior = FakeRunBehavior.WaitForCancellation;
+        engine.ResetRunStarted();
         var cancelledRun = target.RunCommand.ExecuteAsync();
         await engine.RunStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert(target.IsBusy && target.CancelCommand.CanExecute(null),
@@ -467,7 +544,13 @@ internal static class WorkflowViewModelTests
         public int EstimateCallCount { get; private set; }
         public FakeRunBehavior RunBehavior { get; set; }
         public ProcessingLabelState? LastLabelState { get; private set; }
-        public TaskCompletionSource RunStarted { get; } =
+        public List<ProcessingOperation> RunOperations { get; } = [];
+        public ProcessingOperation? WaitOnOperation { get; set; }
+        public ProcessingOperation? FailOnOperation { get; set; }
+        public TaskCompletionSource RunStarted { get; private set; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void ResetRunStarted() => RunStarted =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<ProcessingWorkEstimate> EstimateAsync(
@@ -498,13 +581,55 @@ internal static class WorkflowViewModelTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             LastLabelState = labelState;
-            if (RunBehavior == FakeRunBehavior.WaitForCancellation)
+            RunOperations.Add(parameters.Operation);
+            if (RunBehavior == FakeRunBehavior.WaitForCancellation ||
+                WaitOnOperation == parameters.Operation)
             {
                 RunStarted.TrySetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             }
-            if (RunBehavior == FakeRunBehavior.Fail)
+            if (RunBehavior == FakeRunBehavior.Fail || FailOnOperation == parameters.Operation)
                 throw new InvalidOperationException("Synthetic engine failure.");
+
+            if (parameters.Operation is ProcessingOperation.HeightMap or
+                ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection)
+            {
+                float[] values;
+                OutputKind outputKind;
+                int resultDepth;
+                if (parameters.Operation == ProcessingOperation.HeightMap)
+                {
+                    values = new float[checked(volume.Width * volume.Height)];
+                    outputKind = OutputKind.ImageFloat32;
+                    resultDepth = 1;
+                }
+                else if (parameters.Operation == ProcessingOperation.DepthMap)
+                {
+                    var plane = checked(volume.Width * volume.Height);
+                    values = Enumerable.Range(0, volume.VoxelCount)
+                        .Select(index => (float)(index / plane))
+                        .ToArray();
+                    outputKind = OutputKind.VolumeFloat32;
+                    resultDepth = volume.Depth;
+                }
+                else
+                {
+                    values = Enumerable.Repeat(
+                        0.8F, checked(volume.Width * volume.Height)).ToArray();
+                    outputKind = OutputKind.ImageFloat32;
+                    resultDepth = 1;
+                }
+                progress?.Report(1);
+                return new ProcessingResult(
+                    ProcessingBackend.Cpu,
+                    outputKind,
+                    volume.Width,
+                    volume.Height,
+                    resultDepth,
+                    0,
+                    values,
+                    null);
+            }
 
             var labels = Enumerable.Repeat(-1, volume.VoxelCount).ToArray();
             var center = volume.Depth / 2 * volume.Width * volume.Height +

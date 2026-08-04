@@ -56,6 +56,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private float _projectionStartDepth;
     private int _projectionRange;
     private float _projectionThreshold;
+    private bool _depthColorEnabled;
+    private int _depthColorRange = 100;
     private float _previewOffset = 20;
     private float _zCorrectionFactor = 0.2F;
     private float _minimumC;
@@ -72,6 +74,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private WorkflowStage _selectedStage = WorkflowStage.Inspect;
     private ProcessingResult? _lastResult;
     private OperationParameters? _lastParameters;
+    private byte[]? _lastDepthColorPixels;
     private LabelEditingSession? _editingSession;
     private readonly List<string> _editHistory = [];
     private readonly Stack<(int X, int Y, int Z)> _editOriginUndo = [];
@@ -153,6 +156,8 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsHeightMap));
             OnPropertyChanged(nameof(IsHeightSurfaceOperation));
             OnPropertyChanged(nameof(IsHeightProjection));
+            OnPropertyChanged(nameof(CanUseDepthColoring));
+            if (!CanUseDepthColoring) DepthColorEnabled = false;
             OnPropertyChanged(nameof(MinimumComponentSizeLabel));
             OnPropertyChanged(nameof(MinimumInvalidStructureArea));
             OnPropertyChanged(nameof(MinimumComponentSize));
@@ -381,7 +386,12 @@ public sealed class MainWindowViewModel : ObservableObject
     public HeightProjectionMode ProjectionMode
     {
         get => _projectionMode;
-        set => SetProperty(ref _projectionMode, value);
+        set
+        {
+            if (!SetProperty(ref _projectionMode, value)) return;
+            OnPropertyChanged(nameof(CanUseDepthColoring));
+            if (!CanUseDepthColoring) DepthColorEnabled = false;
+        }
     }
 
     public float ProjectionOffset
@@ -413,6 +423,19 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public int MaximumProjectionDepth => Math.Max(0, (_volume?.Depth ?? 1) - 1);
     public int MinimumProjectionDepth => -MaximumProjectionDepth;
+    public bool CanUseDepthColoring => IsHeightProjection && ProjectionMode == HeightProjectionMode.Z;
+
+    public bool DepthColorEnabled
+    {
+        get => _depthColorEnabled;
+        set => SetProperty(ref _depthColorEnabled, value && CanUseDepthColoring);
+    }
+
+    public int DepthColorRange
+    {
+        get => _depthColorRange;
+        set => SetProperty(ref _depthColorRange, Math.Clamp(value, 1, 500));
+    }
 
     public float PreviewOffset
     {
@@ -703,8 +726,43 @@ public sealed class MainWindowViewModel : ObservableObject
                 if (!estimate.WithinLimits)
                     throw new InvalidOperationException("The DSLT request exceeds the native CPU safety limits.");
             }
+            var useDepthColor = parameters.DepthColorEnabled;
+            var primaryProgress = useDepthColor
+                ? new Progress<double>(value => Progress = Math.Clamp(value * 50, 0, 50))
+                : progress;
             var result = await _engine.RunAsync(
-                _volume, parameters, progress, _cancellation.Token, labelState);
+                _volume, parameters, primaryProgress, _cancellation.Token, labelState);
+            byte[]? depthColorPixels = null;
+            if (useDepthColor)
+            {
+                var heightResult = await _engine.RunAsync(
+                    _volume,
+                    parameters with
+                    {
+                        Operation = ProcessingOperation.HeightMap,
+                        DepthColorEnabled = false,
+                    },
+                    new Progress<double>(value => Progress = Math.Clamp(50 + value * 20, 50, 70)),
+                    _cancellation.Token);
+                var depthResult = await _engine.RunAsync(
+                    _volume,
+                    parameters with
+                    {
+                        Operation = ProcessingOperation.DepthMap,
+                        DepthColorEnabled = false,
+                    },
+                    new Progress<double>(value => Progress = Math.Clamp(70 + value * 30, 70, 100)),
+                    _cancellation.Token);
+                depthColorPixels = DepthColorProjectionRenderer.CreateRgb24(
+                    _volume,
+                    heightResult.FloatData ??
+                        throw new InvalidOperationException("Height-map output is required for depth coloring."),
+                    depthResult.FloatData ??
+                        throw new InvalidOperationException("Depth-map output is required for depth coloring."),
+                    result.FloatData ??
+                        throw new InvalidOperationException("Height-projection output is required for depth coloring."),
+                    parameters);
+            }
             if (IsWatershed && previousEditingSession is not null && result.Labels is not null)
             {
                 previousEditingSession.ReplaceLabels(result.Labels);
@@ -721,6 +779,7 @@ public sealed class MainWindowViewModel : ObservableObject
             }
             _lastResult = result;
             _lastParameters = parameters;
+            _lastDepthColorPixels = depthColorPixels;
             ResetResultGeometry();
             UpdateSelectionState();
             RefreshResultImage();
@@ -825,6 +884,8 @@ public sealed class MainWindowViewModel : ObservableObject
         ProjectionStartDepth: ProjectionStartDepth,
         ProjectionRange: ProjectionRange,
         ProjectionThreshold: ProjectionThreshold,
+        DepthColorEnabled: DepthColorEnabled && CanUseDepthColoring,
+        DepthColorRange: DepthColorRange,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea,
         SeedLabelsSha256: labelState is null
@@ -850,6 +911,7 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ProjectionRange));
         _lastResult = null;
         _lastParameters = null;
+        _lastDepthColorPixels = null;
         _editingSession = null;
         _editHistory.Clear();
         ResetResultGeometry();
@@ -898,7 +960,13 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private void RefreshResultImage()
     {
-        if (_lastResult?.FloatData is not null)
+        if (_lastResult is { } colorResult && _lastDepthColorPixels is not null)
+        {
+            ResultImage = CreateRgb24Image(_lastDepthColorPixels, colorResult.Width, colorResult.Height);
+            ResultYzImage = null;
+            ResultZxImage = null;
+        }
+        else if (_lastResult?.FloatData is not null)
         {
             ResultImage = CreateFloatPlane(
                 _lastResult.FloatData, _lastResult.Width, _lastResult.Height, _lastResult.Depth,
@@ -1152,6 +1220,16 @@ public sealed class MainWindowViewModel : ObservableObject
         }
         var bitmap = BitmapSource.Create(
             planeWidth, planeHeight, 96, 96, PixelFormats.Gray8, null, pixels, planeWidth);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static BitmapSource CreateRgb24Image(byte[] pixels, int width, int height)
+    {
+        if (pixels.Length != checked(width * height * 3))
+            throw new ArgumentException("RGB24 pixels do not match the image dimensions.", nameof(pixels));
+        var bitmap = BitmapSource.Create(
+            width, height, 96, 96, PixelFormats.Rgb24, null, pixels, checked(width * 3));
         bitmap.Freeze();
         return bitmap;
     }

@@ -19,7 +19,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Adaptive 2D/3D threshold | `AdaptiveThreshold2D`, `AdaptiveThreshold3D` | scaffolded | CPU mean/Gaussian, clamp boundary, strict tie, 2D/3D distinction, ABI and WPF fixtures implemented; legacy GPU discrepancy and archived-runtime comparison pending |
 | Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures |
 | Filtered height map / 3D depth map | `HeightMap`, `DepthMap` | scaffolded | Height-map Gaussian/mean Z filter, strict crossing interpolation, repeated XY smoothing, clamp boundary, plus exact voxel-index Euclidean distance to the height surface; synthetic and cancellation fixtures implemented, legacy runtime comparison pending |
-| Scalar height projection controls | `HeightProjection` | scaffolded | Source-derived Z/normal modes, surface offset, start depth, inclusive range, scalar/binary threshold behavior, trilinear sampling, ABI and WPF fixtures implemented; RGB depth coloring and archived-runtime comparison remain pending presentation/reference work |
+| Height projection and RGB depth coloring | `HeightProjection` + WPF RGB24 presentation | scaffolded | Source-derived Z/normal modes, surface offset, start depth, inclusive range, scalar/binary threshold behavior, trilinear sampling, plus Z-only HSV 0..270 depth coloring with default range 100, provenance, WPF/oracle fixtures, and native-CPU composition gate implemented; archived-runtime comparison pending |
 | 6/18/26 connectivity | `ConnectedComponents` | implemented | Touching-object fixtures |
 | Flood-fill segmentation | Connected-components request | implemented | Noise/min-size fixtures |
 | h-minima transform | `HMinima` | scaffolded | CPU erosion reconstruction, lower-mask fitting, residual inversion, convergence, cancellation, ABI and WPF fixtures implemented; archived-runtime comparison pending |
@@ -34,5 +34,6 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 
 `pending-reference` algorithms are not exposed as completed UI actions. This
 prevents an approximation from being mistaken for preserved legacy behavior.
-Display-only RGB depth coloring remains separate from the scaffolded scalar
-projection contract.
+Display-only RGB depth coloring remains a deterministic presentation layer over
+the scaffolded scalar projection, height-map, and depth-map contracts; it does
+not change the versioned C ABI payload.

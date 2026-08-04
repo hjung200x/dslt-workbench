@@ -23,3 +23,8 @@ Schema 1.8 also carries the additive optional fields `inputChannelMetadata`
 (channel name and RGBA display color) and `inputTimeStampsSeconds` when the
 source container provides them. Empty arrays preserve compatibility for TIFFs
 and synthetic volumes without those metadata blocks.
+
+`operation.depthColorEnabled` and `operation.depthColorRange` record the
+optional Z-projection RGB presentation. The hashed/exported Float32 output stays
+the scalar projection; these fields make its display reproducible without
+changing the quantitative payload.

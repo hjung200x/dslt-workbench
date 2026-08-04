@@ -56,11 +56,12 @@ jobs:
       - name: Run native synthetic tests
         working-directory: modern/native
         run: ctest --preset windows-cpu
-      - name: Run managed-to-native ABI integration tests
+      - name: Run managed-to-native ABI and WPF integration tests
         shell: pwsh
         run: |
           $env:PATH = "$PWD\modern\native\out\build\windows-cpu\Release;$env:PATH"
           dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release
+          dotnet run --project modern/tests/Dslt.App.Tests/Dslt.App.Tests.csproj --configuration Release
       - name: Configure native AddressSanitizer build
         working-directory: modern/native
         run: cmake --preset windows-cpu-asan
