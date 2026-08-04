@@ -103,9 +103,14 @@ public sealed class NativeProcessingEngine : IProcessingEngine
         var crop = MapCrop(parameters);
         var usesZGradientHeightMap = parameters.Operation == ProcessingOperation.ZGradient &&
             parameters.ZGradientUseHeightMap;
-        var heightMap = (parameters.CropEnabled && parameters.CropUseHeightMap) || usesZGradientHeightMap
-            ? parameters.CropHeightMap
-            : null;
+        var usesOperationHeightSurface =
+            parameters.Operation is ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection &&
+            parameters.UseHeightSurface;
+        var heightMap = usesOperationHeightSurface
+            ? parameters.HeightSurface
+            : (parameters.CropEnabled && parameters.CropUseHeightMap) || usesZGradientHeightMap
+                ? parameters.CropHeightMap
+                : null;
         ThrowIfFailed(NativeMethods.dslt_set_crop(
             _handle, in crop, heightMap, checked((ulong)(heightMap?.LongLength ?? 0))));
 
@@ -193,7 +198,9 @@ public sealed class NativeProcessingEngine : IProcessingEngine
     {
         Enabled = value.CropEnabled ? (byte)1 : (byte)0,
         UseHeightMap = value.CropUseHeightMap ||
-            (value.Operation == ProcessingOperation.ZGradient && value.ZGradientUseHeightMap)
+            (value.Operation == ProcessingOperation.ZGradient && value.ZGradientUseHeightMap) ||
+            (value.Operation is ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection &&
+             value.UseHeightSurface)
                 ? (byte)1
                 : (byte)0,
         Upper = value.CropUpper,

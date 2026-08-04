@@ -255,7 +255,7 @@
               <TextBlock Text="XY smoothing passes" Margin="0,10,0,5" />
               <Slider AutomationProperties.Name="Height map XY smoothing passes" Minimum="0" Maximum="10" Value="{Binding HeightMapSmoothLevel}" TickFrequency="1" IsSnapToTickEnabled="True" />
               <TextBlock Text="{Binding HeightMapSmoothLevel}" Foreground="{StaticResource AccentBrush}" />
-              <TextBlock Text="The filtered surface is shared by height map, depth map, and height projection." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+              <TextBlock Text="Depth map/projection reuse the active loaded or generated surface. Run Height map first to replace it; these controls generate a surface only when none is active." Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             </StackPanel>
 
             <StackPanel Visibility="{Binding IsHeightProjection, Converter={StaticResource BooleanToVisibilityConverter}}">

@@ -2,11 +2,20 @@
 
 ## Shared filtered surface
 
-`DepthMap` and `HeightProjection` first generate the surface defined in
-[`height-map-spec.md`](height-map-spec.md). They therefore share its XY radius,
-Z radius, threshold, mean/Gaussian kernel, smoothing-pass defaults, clamp
-boundary, strict crossing, and no-crossing fallback. The selected channel is
-the scalar source for every subsequent sample.
+`DepthMap` and `HeightProjection` consume one shared `width x height` Float32
+surface. Workbench uses the compatible active surface loaded from `.hmp` or
+produced by `HeightMap`; only when no active surface exists does it first
+generate the surface defined in [`height-map-spec.md`](height-map-spec.md).
+Generated surfaces share its XY radius, Z radius, threshold, mean/Gaussian
+kernel, smoothing-pass defaults, clamp boundary, strict crossing, and
+no-crossing fallback. The selected channel remains the scalar source for every
+subsequent sample.
+
+The existing ABI v1 crop-state setter carries this optional auxiliary surface
+even when segmentation cropping is disabled. Native CPU and CUDA paths validate
+the exact sample count and finiteness, then bypass height generation when the
+surface is supplied. Loading a new volume clears the state so a surface cannot
+leak across incompatible geometry.
 
 ## Depth map
 
@@ -45,11 +54,11 @@ boundary rejects invalid modes, negative ranges, and non-finite values.
 ## Display-only depth coloring
 
 Legacy depth coloring is available only for Z projection. It remains outside
-the versioned native scalar operation: Workbench first requests
-`HeightProjection`, `HeightMap`, and `DepthMap` from the selected CPU/CUDA
-backend, then the WPF presentation layer composes one RGB24 XY image. A failure
-or cancellation in any of the three requests leaves the previous scalar result
-and RGB presentation unchanged.
+the versioned native scalar operation: Workbench obtains one active/generated
+surface, then requests `HeightProjection` and `DepthMap` with that exact surface
+from the selected CPU/CUDA backend. The WPF presentation layer composes one
+RGB24 XY image. A failure or cancellation in any request leaves the previous
+scalar result and RGB presentation unchanged.
 
 Depth coloring defaults off. Its range defaults to 100 and is validated as an
 integer from 1 through the legacy maximum 500. The legacy slider admitted zero,
@@ -74,6 +83,7 @@ Synthetic fixtures cover lateral 3D distance, Z and flat-normal projection,
 binary normal thresholding, scalar Z thresholding, depth hue/brightness,
 offset-independent depth sampling, unsafe parameter rejection, cancellation,
 invalid parameters, C ABI mapping, managed mapping, and WPF defaults. The
-native-CPU CI job also composes exact RGB bytes from real CPU height,
-depth-map, and projection outputs. Status remains `scaffolded` until
-archived-runtime and real microscopy comparisons are available.
+native fixture also verifies supplied-surface CPU/CUDA parity while the WPF
+fixture proves that projection and depth receive the identical imported values
+and that the transient array is removed from JSON. Status remains `scaffolded`
+until archived-runtime and real microscopy comparisons are available.

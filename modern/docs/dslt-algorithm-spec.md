@@ -365,6 +365,11 @@ thickness estimation and then to the upper value before low-component
 extraction. Loading a new volume clears crop state, preventing a stale height
 map from being applied to different dimensions.
 
+The same additive state also transports an auxiliary surface for `DepthMap`
+and `HeightProjection` when `use_height_map` is set while crop `enabled` is
+clear. Those operations validate exactly `width * height` finite samples and
+consume the supplied surface directly; segmentation crop bounds remain off.
+
 `dslt_estimate_operation` returns the 72-byte `dslt_work_estimate`. The same
 values are exposed as `.NET ProcessingWorkEstimate`; UI code can therefore show
 the estimate before starting, while native execution independently enforces the

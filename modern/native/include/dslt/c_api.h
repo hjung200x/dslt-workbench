@@ -174,6 +174,9 @@ DSLT_API dslt_status DSLT_CALL dslt_set_volume_f32(
     const dslt_volume_descriptor* descriptor,
     const float* data,
     uint64_t element_count);
+/* When use_height_map is 1, height_map is an X*Y auxiliary surface. It is
+   consumed by height-relative crop/Z-gradient and, even when enabled is 0,
+   directly by DepthMap/HeightProjection. */
 DSLT_API dslt_status DSLT_CALL dslt_set_crop(
     dslt_handle handle,
     const dslt_crop_options* options,

@@ -1290,6 +1290,12 @@ CudaRunResult run_cuda_operation(
     const auto dslt_threshold_operation = request.operation == DSLT_OP_DSLT_THRESHOLD;
     const auto dslt_response_operation = dslt_threshold_operation || dslt_segmentation;
     const auto z_gradient = request.operation == DSLT_OP_Z_GRADIENT;
+    const CropState empty_crop_state{};
+    const auto& crop_state = state.crop == nullptr ? empty_crop_state : *state.crop;
+    const auto provided_height_surface =
+        (request.operation == DSLT_OP_DEPTH_MAP ||
+         request.operation == DSLT_OP_HEIGHT_PROJECTION) &&
+        crop_state.options.use_height_map != 0;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
     }
@@ -1314,21 +1320,23 @@ CudaRunResult run_cuda_operation(
         request.lanczos_order != 2 && request.lanczos_order != 3) {
         return {CudaRunStatus::invalid_argument, {}, "Lanczos order must be 2 or 3"};
     }
-    if (height_processing &&
+    if (height_processing && !provided_height_surface &&
         (request.radius < 0 || request.radius > 64 ||
          request.lanczos_order < 0 || request.lanczos_order > 64)) {
         return {CudaRunStatus::invalid_argument, {},
             "height-map XY and Z radii must be between 0 and 64"};
     }
-    if (height_processing && request.connectivity != 0 && request.connectivity != 1) {
+    if (height_processing && !provided_height_surface &&
+        request.connectivity != 0 && request.connectivity != 1) {
         return {CudaRunStatus::invalid_argument, {},
             "height-map kernel must be 0 (Gaussian) or 1 (mean)"};
     }
-    if (height_processing && (request.slice_index < 0 || request.slice_index > 10)) {
+    if (height_processing && !provided_height_surface &&
+        (request.slice_index < 0 || request.slice_index > 10)) {
         return {CudaRunStatus::invalid_argument, {},
             "height-map smooth level must be between 0 and 10"};
     }
-    if (height_processing && !std::isfinite(request.threshold)) {
+    if (height_processing && !provided_height_surface && !std::isfinite(request.threshold)) {
         return {CudaRunStatus::invalid_argument, {}, "height-map threshold must be finite"};
     }
     const auto projection_mode = request.operation == DSLT_OP_HEIGHT_PROJECTION
@@ -1475,8 +1483,6 @@ CudaRunResult run_cuda_operation(
         }
         h_minima_maximum_iterations = source.size() + checkpoint_margin;
     }
-    const CropState empty_crop_state{};
-    const auto& crop_state = state.crop == nullptr ? empty_crop_state : *state.crop;
     if (watershed && state.labels.size() != source.size()) {
         return {CudaRunStatus::invalid_argument, {},
             "watershed seed dimensions do not match the volume"};
@@ -1492,7 +1498,8 @@ CudaRunResult run_cuda_operation(
         return {CudaRunStatus::invalid_argument, {}, "crop bounds are invalid"};
     }
     const auto crop_height_map_count =
-        ((crop_operation && crop_state.options.enabled != 0) || z_gradient) &&
+        ((crop_operation && crop_state.options.enabled != 0) || z_gradient ||
+         provided_height_surface) &&
         crop_state.options.use_height_map != 0
         ? plane_count
         : 0;
@@ -1957,17 +1964,28 @@ CudaRunResult run_cuda_operation(
             if (!run_height_map(device_output.get(), 0.75F)) return cancelled();
             break;
         case DSLT_OP_DEPTH_MAP:
-            if (!run_height_map(device_auxiliary->get(), 0.50F)) return cancelled();
+        {
+            const float* surface = device_auxiliary->get();
+            if (provided_height_surface) {
+                check_cuda(cudaMemcpyAsync(
+                    device_crop_height_map->get(), crop_state.height_map.data(),
+                    crop_height_map_count * sizeof(float), cudaMemcpyHostToDevice, stream.get()),
+                    "copying provided CUDA depth-map height surface");
+                surface = device_crop_height_map->get();
+                if (!report(progress, 0.50F)) return cancelled();
+            } else if (!run_height_map(device_auxiliary->get(), 0.50F)) {
+                return cancelled();
+            }
             for (std::size_t z = 0; z < depth; ++z) {
                 depth_cost_kernel<<<block_count(plane_count), threads, 0, stream.get()>>>(
-                    device_auxiliary->get(), device_scratch->get(), plane_count, z);
+                    surface, device_scratch->get(), plane_count, z);
                 check_cuda(cudaGetLastError(), "launching CUDA depth-map cost kernel");
                 depth_row_kernel<<<block_count(plane_count), threads, 0, stream.get()>>>(
                     device_scratch->get(), device_scratch->get() + plane_count,
                     width, height);
                 check_cuda(cudaGetLastError(), "launching CUDA depth-map row kernel");
                 depth_column_kernel<<<block_count(plane_count), threads, 0, stream.get()>>>(
-                    device_scratch->get() + plane_count, device_auxiliary->get(),
+                    device_scratch->get() + plane_count, surface,
                     device_output.get(), width, height, z);
                 check_cuda(cudaGetLastError(), "launching CUDA depth-map column kernel");
                 check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA depth-map slice");
@@ -1975,10 +1993,22 @@ CudaRunResult run_cuda_operation(
                     static_cast<float>(depth))) return cancelled();
             }
             break;
+        }
         case DSLT_OP_HEIGHT_PROJECTION:
-            if (!run_height_map(device_output.get(), 0.55F)) return cancelled();
+        {
+            const float* surface = device_output.get();
+            if (provided_height_surface) {
+                check_cuda(cudaMemcpyAsync(
+                    device_crop_height_map->get(), crop_state.height_map.data(),
+                    crop_height_map_count * sizeof(float), cudaMemcpyHostToDevice, stream.get()),
+                    "copying provided CUDA projection height surface");
+                surface = device_crop_height_map->get();
+                if (!report(progress, 0.55F)) return cancelled();
+            } else if (!run_height_map(device_output.get(), 0.55F)) {
+                return cancelled();
+            }
             height_projection_kernel<<<block_count(plane_count), threads, 0, stream.get()>>>(
-                device_source.get(), device_output.get(), device_auxiliary->get(),
+                device_source.get(), surface, device_auxiliary->get(),
                 width, height, depth, projection_mode, request.minimum_component_size,
                 request.constant_c, request.window_min, request.window_max);
             check_cuda(cudaGetLastError(), "launching CUDA height projection kernel");
@@ -1990,6 +2020,7 @@ CudaRunResult run_cuda_operation(
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing CUDA height projection output");
             if (!report(progress, 0.75F)) return cancelled();
             break;
+        }
         case DSLT_OP_CONNECTED_COMPONENTS: {
             auto* current_roots = device_component_roots_a->get();
             auto* next_roots = device_component_roots_b->get();

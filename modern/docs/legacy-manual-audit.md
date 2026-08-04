@@ -57,7 +57,8 @@ Workbench implements those active commands and their three-file naming. H/J
 actively read/write the binary 120/240-header `.hmp` surface format; Workbench
 implements that codec and uses the active surface for segmentation crop and
 Z-gradient correction and the A command's deterministic height-surface area
-map. Direct imported-surface DepthMap/HeightProjection use remains pending.
+map. DepthMap, HeightProjection, and optional RGB depth coloring also consume
+the exact active surface instead of silently regenerating it.
 C/V/M/N
 are observable no-ops at the pinned baseline because all calls in their command
 bodies are commented out, so Workbench excludes them rather than inventing new
@@ -69,5 +70,4 @@ The audit prevents implemented algorithms from being mistaken for complete
 legacy interaction equivalence. Before a v1.0 claim, the Workbench still needs:
 
 1. a real or archived-runtime oracle for ambiguous parameter mappings;
-2. direct imported `.hmp` surface consumption by DepthMap/HeightProjection;
-3. representative original or expert-labelled microscopy data.
+2. representative original or expert-labelled microscopy data.

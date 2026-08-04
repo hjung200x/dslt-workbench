@@ -196,11 +196,13 @@ std::vector<float> height_map(
 std::vector<float> depth_map(
     const Volume& volume,
     const HeightMapParameters& parameters,
+    std::span<const float> height_surface,
     const Engine::Progress& progress);
 std::vector<float> height_projection(
     const Volume& volume,
     const HeightMapParameters& height_parameters,
     const HeightProjectionParameters& projection_parameters,
+    std::span<const float> height_surface,
     const Engine::Progress& progress);
 std::uint32_t resample_output_depth(
     const dslt_volume_descriptor& descriptor,
