@@ -46,6 +46,7 @@ var composite = SyntheticVolumes.MultiChannelComposite();
 composite.Validate();
 Equal(3, composite.Channels, "Composite channel count");
 SegmentationValidationTests.Run();
+await ReferenceAcceptanceTests.RunAsync();
 LegacyHeightMapCodecTests.Run();
 HeightSurfaceAreaCalculatorTests.Run();
 await RealDataValidationTests.RunAsync();

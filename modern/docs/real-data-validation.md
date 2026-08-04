@@ -13,7 +13,8 @@ must confirm `dataClassification: representative-real` and the stated
    multi-channel inputs, `uint8`, `uint16`, and `float32`, and at least two Z
    spacings.
 3. For every acquisition, retain the original input, accepted reference label
-   TIFF, Workbench candidate label TIFF, and Workbench JSON provenance sidecar.
+   TIFF, hash-bound reference acceptance JSON, Workbench candidate label TIFF,
+   and Workbench JSON provenance sidecar.
 4. Set schema 2 `candidateSourceCommit` to the exact 40-hex `sourceCommit`
    from the release candidate's `BUILD-INFO.json`. Every candidate provenance
    sidecar must contain the same commit.
@@ -24,6 +25,14 @@ must confirm `dataClassification: representative-real` and the stated
    label values are foreground object identifiers.
 7. Set `container` to `tiff` or `lsm`; it must agree with provenance
    `inputContainer`.
+
+Schema-2 cases require a schema-1 reference acceptance record. It binds the
+exact reference TIFF SHA-256 to the acquisition ID, `legacy|expert` kind,
+reviewer identity, UTC acceptance time, and protocol ID. The reviewer must
+explicitly confirm whole-volume 3D coverage, representative-leaf
+classification, and the boundary representation used by the binary-foreground
+Dice/HD95 contract. Missing, future-dated, partial-volume, hash-mismatched, or
+unreviewed records fail before metrics run.
 
 Schema-2 v1 evidence requires candidate provenance schema 1.10. The validator
 cross-checks its source commit, input voxel type, container, channels, selected
@@ -262,6 +271,27 @@ the v1.0 gate without curator confirmation.
 
 ### Assemble a source-locked manifest
 
+After the reference has been reviewed, create its acceptance record. The three
+confirmation switches are deliberate human assertions and must not be supplied
+for an incomplete review:
+
+```powershell
+dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj -- `
+  create-reference-acceptance `
+  --reference-labels modern\validation\data\acquisition-01.reference.tif `
+  --output modern\validation\data\acquisition-01.reference.acceptance.json `
+  --acquisition-id microscope-run-01 --reference-kind expert `
+  --accepted-by "reviewer identity" --accepted-at-utc 2026-08-04T12:00:00Z `
+  --protocol-id leaf-3d-review-v1 `
+  --whole-volume-3d-coverage-confirmed `
+  --representative-leaf-confirmed `
+  --boundary-representation-reviewed
+```
+
+The command refuses to overwrite an existing record unless `--force` is
+explicit. Changing the reference TIFF invalidates the acceptance record rather
+than silently updating it.
+
 After Workbench has written the candidate label TIFF and provenance 1.10
 sidecar, create the first schema-2 case without copying metadata by hand:
 
@@ -274,6 +304,7 @@ dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepar
   --reference-kind expert `
   --input-volume modern\validation\data\acquisition-01.tif `
   --reference-labels modern\validation\data\acquisition-01.reference.tif `
+  --reference-acceptance modern\validation\data\acquisition-01.reference.acceptance.json `
   --candidate-labels modern\validation\data\acquisition-01.candidate.labels.i16.tif `
   --candidate-provenance modern\validation\data\acquisition-01.candidate.json `
   --representative-real
@@ -282,8 +313,9 @@ dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepar
 Use `--append` for every later case. The command derives voxel type, container,
 channel count, Z spacing, and decoded-input SHA-256 from the candidate
 provenance. It verifies provenance schema/source identity, candidate operation
-and backend, reference/candidate shape and calibration, decoded candidate-label
-SHA-256, and every file hash before atomically writing the manifest. Existing
+and backend, reference/candidate shape and calibration, reference acceptance,
+decoded candidate-label SHA-256, and every file hash before atomically writing
+the manifest. Existing
 manifests are not changed without `--append`, duplicate case IDs are rejected,
 and a failed append leaves the prior manifest intact.
 

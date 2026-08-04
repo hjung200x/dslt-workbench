@@ -195,6 +195,8 @@ try {
             inputFileSha256 = ('d' * 64)
             inputDecodedSha256 = ('e' * 64)
             referenceLabelsSha256 = ('f' * 64)
+            referenceAcceptancePath = "data/case-$_.reference.acceptance.json"
+            referenceAcceptanceSha256 = ('c' * 64)
             candidateLabelsSha256 = ('a' * 64)
             candidateProvenanceSha256 = ('b' * 64)
         }
@@ -210,6 +212,9 @@ try {
         [ordered]@{
             id = "case-$_"
             passed = $true
+            referenceAcceptanceSha256 = ('c' * 64)
+            referenceAcceptedBy = 'fixture reviewer'
+            referenceProtocolId = 'fixture-protocol-v1'
             metrics = [ordered]@{
                 referenceObjectCount = 2
                 candidateObjectCount = 2
@@ -299,6 +304,27 @@ try {
     $positive = Read-JsonFile $parameters.OutputPath 'Positive gate report'
     if ($positive.passed -ne $true) { throw 'Valid release-gate fixture did not pass.' }
 
+    $acceptanceReport = Read-JsonFile $realReportPath 'Reference-acceptance fixture report'
+    $acceptanceReport.cases[0].referenceAcceptedBy = ''
+    [void](Write-JsonWithChecksum $realReportPath $acceptanceReport)
+    $parameters.OutputPath = Join-Path $root 'v1-gate-reference-acceptance-negative.json'
+    $acceptanceRejected = $false
+    try {
+        & (Join-Path $PSScriptRoot 'verify-v1-release-evidence.ps1') @parameters
+    }
+    catch {
+        $acceptanceRejected = $true
+    }
+    if (-not $acceptanceRejected) { throw 'Missing reference reviewer identity was not rejected.' }
+    $acceptanceNegative = Read-JsonFile $parameters.OutputPath 'Reference-acceptance negative gate report'
+    if ($acceptanceNegative.passed -ne $false -or
+        $acceptanceNegative.error -notmatch 'validated reference acceptance') {
+        throw 'Reference-acceptance negative gate did not preserve the rejection reason.'
+    }
+    $acceptanceReport.cases[0].referenceAcceptedBy = 'fixture reviewer'
+    [void](Write-JsonWithChecksum $realReportPath $acceptanceReport)
+    $parameters.OutputPath = Join-Path $root 'v1-gate.json'
+
     $legacyManualPath = Join-Path $docsRoot 'DSLT_Demo_User_Manual_v1.11.pdf'
     [IO.File]::WriteAllBytes($legacyManualPath, [byte[]]@(1, 2, 3))
     $manualTamperRoot = Join-Path $root 'manual-tamper'
@@ -362,7 +388,7 @@ try {
         throw 'Negative gate report did not preserve the rejection reason.'
     }
 
-    Write-Host 'V1.0 release evidence gate positive, unfinished-capability, legacy-manual-tamper, and manual-observation fixtures passed.'
+    Write-Host 'V1.0 release evidence gate positive, reference-acceptance, unfinished-capability, legacy-manual-tamper, and manual-observation fixtures passed.'
 }
 finally {
     if (Test-Path -LiteralPath $root) {

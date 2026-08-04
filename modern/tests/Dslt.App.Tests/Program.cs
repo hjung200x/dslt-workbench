@@ -64,6 +64,7 @@ internal static class Program
             ReferenceLabelImporterTests.Run();
             PlantSegHdf5ImporterTests.Run();
             ReferenceSuitabilityAuditorTests.Run();
+            await ReferenceAcceptanceWriterTests.RunAsync();
             RunConfiguredRealVolumeSmokeTests();
             await RealDataManifestAssemblerTests.RunAsync();
             LegacyImageInteractionBehaviorTests.Run();

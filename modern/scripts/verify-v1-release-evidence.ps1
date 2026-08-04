@@ -270,10 +270,13 @@ try {
         }
         foreach ($hashProperty in @(
             'inputFileSha256', 'inputDecodedSha256', 'referenceLabelsSha256',
-            'candidateLabelsSha256', 'candidateProvenanceSha256')) {
+            'referenceAcceptanceSha256', 'candidateLabelsSha256', 'candidateProvenanceSha256')) {
             if ([string]$manifestCase.$hashProperty -notmatch '^[0-9a-fA-F]{64}$') {
                 throw "Manifest case '$($manifestCase.id)' has an invalid $hashProperty."
             }
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$manifestCase.referenceAcceptancePath)) {
+            throw "Manifest case '$($manifestCase.id)' has no reference acceptance record."
         }
     }
     if (@($manifestCases.acquisitionId | Sort-Object -Unique).Count -lt 5) {
@@ -303,6 +306,13 @@ try {
         }
     }
     foreach ($case in $realCases) {
+        $manifestCase = @($manifestCases | Where-Object id -eq $case.id)
+        if ($manifestCase.Count -ne 1 -or
+            $case.referenceAcceptanceSha256 -ne $manifestCase[0].referenceAcceptanceSha256 -or
+            [string]::IsNullOrWhiteSpace([string]$case.referenceAcceptedBy) -or
+            [string]::IsNullOrWhiteSpace([string]$case.referenceProtocolId)) {
+            throw "Real-data case '$($case.id)' is not bound to a validated reference acceptance record."
+        }
         if ($case.passed -ne $true -or $null -eq $case.metrics -or
             [double]$case.metrics.dice -lt 0.995 -or
             $case.metrics.referenceObjectCount -ne $case.metrics.candidateObjectCount -or

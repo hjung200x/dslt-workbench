@@ -52,6 +52,24 @@ internal static class RealDataManifestAssemblerTests
             if (File.Exists(unclassifiedPath))
                 throw new InvalidOperationException("Rejected classification created a manifest file.");
 
+            var mismatchedAcceptancePath = Path.Combine(directory, "mismatched-acceptance.json");
+            var mismatchedAcceptance = Request(
+                mismatchedAcceptancePath,
+                "case-mismatch",
+                "acquisition-mismatch",
+                inputPath,
+                referencePath,
+                candidatePath,
+                provenancePath) with
+            {
+                ReferenceAcceptancePath = EnsureAcceptance(referencePath, "different-acquisition"),
+            };
+            await ExpectFailureAsync<InvalidDataException>(
+                () => RealDataManifestAssembler.AddCaseAsync(mismatchedAcceptance),
+                "Manifest case accepted a reference review for a different acquisition.");
+            if (File.Exists(mismatchedAcceptancePath))
+                throw new InvalidOperationException("Rejected reference acceptance created a manifest file.");
+
             var first = await RealDataManifestAssembler.AddCaseAsync(Request(
                 manifestPath, "case-01", "acquisition-01", inputPath, referencePath, candidatePath, provenancePath));
             if (first.CaseCount != 1 || first.ManifestSha256 != await Sha256FileAsync(manifestPath))
@@ -66,7 +84,9 @@ internal static class RealDataManifestAssemblerTests
                 item.VoxelType != "uint16" || item.Container != "tiff" || item.Channels != 2 ||
                 item.SelectedChannel != 1 ||
                 Math.Abs(item.SpacingZ - 1.5) > 1e-9 || item.InputDecodedSha256 != new string('b', 64) ||
-                !item.InputPath.StartsWith("data/", StringComparison.Ordinal))
+                !item.InputPath.StartsWith("data/", StringComparison.Ordinal) ||
+                !item.ReferenceAcceptancePath.StartsWith("data/", StringComparison.Ordinal) ||
+                item.ReferenceAcceptanceSha256.Length != 64)
                 throw new InvalidOperationException("Manifest fields were not derived from provenance and local paths.");
 
             var firstReport = await RealDataValidationRunner.EvaluateAsync(manifestPath);
@@ -164,6 +184,7 @@ internal static class RealDataManifestAssemblerTests
             "expert",
             inputPath,
             referencePath,
+            EnsureAcceptance(referencePath, acquisitionId),
             candidatePath,
             provenancePath,
             0,
@@ -171,6 +192,28 @@ internal static class RealDataManifestAssemblerTests
             26,
             RepresentativeReal: true,
             Append: false);
+
+    private static string EnsureAcceptance(string referencePath, string acquisitionId)
+    {
+        var path = Path.Combine(
+            Path.GetDirectoryName(referencePath)!,
+            $"{Path.GetFileNameWithoutExtension(referencePath)}.{acquisitionId}.acceptance.json");
+        if (!File.Exists(path))
+            ReferenceAcceptanceWriter.WriteAsync(new ReferenceAcceptanceRequest(
+                referencePath,
+                path,
+                acquisitionId,
+                "expert",
+                "fixture reviewer",
+                DateTimeOffset.UtcNow.AddMinutes(-1),
+                "fixture-protocol-v1",
+                WholeVolume3dCoverageConfirmed: true,
+                RepresentativeLeafConfirmed: true,
+                BoundaryRepresentationReviewed: true,
+                Notes: "Manifest assembler fixture.",
+                Force: false)).GetAwaiter().GetResult();
+        return path;
+    }
 
     private static async Task WriteProvenanceAsync(
         string path,
