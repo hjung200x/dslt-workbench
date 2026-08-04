@@ -31,12 +31,14 @@ user manual and its page-by-page evidence are recorded in
 | Cube/sphere morphology | radius, filter shape | Radius 1 in segment edit panels | Radius 0-64 in native core |
 | Flood fill/components | threshold, 6/18/26 connectivity, minimum size | Threshold 0.1, connectivity 6, minimum size 0 | Connectivity is exactly 6, 18, or 26; preview minimum size is at least 1 |
 | Height map | XY/Z radius, threshold, mean/Gaussian filter, smooth level | Manual example: XY radius 64, Z radius 4, threshold 0.1, Gaussian, smooth level 1; source-derived preview defaults differ | GPU-visible source path is implemented on CPU: clamp-boundary Z filtering, strict threshold crossing with linear Z interpolation, and repeated separable XY smoothing; ABI/WPF fixtures pass, archived-runtime comparison pending |
+| Height-map persistence | H/J read/write binary headers 120/240, width, height, then row-major Float32 | Active surface must match image X/Y | Workbench validates exact length, dimensions and finite values, records SHA-256, preserves state on failure, and reuses the surface for height-relative crop and Z-gradient; imported-surface DepthMap/HeightProjection remains pending |
 | Depth map/projection | height map, normal/Z mode, offset, start depth, range, projection threshold, depth-code settings | Z mode selected; offset/range/start/threshold 0; depth code off; depth range 100 | Exact voxel-index 3D Euclidean depth, scalar Z/normal sampling, inclusive range, legacy threshold behavior, and Z-only HSV depth coloring are implemented with cancellation, provenance, ABI, and WPF fixtures; archived-runtime comparison remains pending |
 | Depth-dependent Z-gradient correction | `applyBC`: coefficient, exponent, optional height surface, brightness min/max | coefficient 10, exponent 1, height-relative correction off | CPU/CUDA use `max(0, z - surface)`, divide by the Z-slice count, apply the source-derived power gain, then range-adjust to 0..1; optional surface generation, cancellation, ABI, WPF, and provenance fixtures are implemented; archived-runtime comparison remains pending |
 | H-minima | h, check interval | h 0.1, interval 50 (hidden) | CPU 3x3x3 erosion reconstruction, lower-mask fitting, exact fixed point, residual inversion, progress/cancellation, ABI and WPF controls are synthetic-validated; archived-runtime comparison pending |
 | DSLT/Sobel-like | radius, geodesic direction level, Z factor, C sweep, mean/Gaussian kernel | Manual segmentation example: radius 14, level 2, Z factor 0.2, Gaussian, min C 4, max C 10, interval -1, ValidTH 800, closing 2 | CPU threshold, iterative sweep, fixed/height-map crop, public work estimate, resource rejection, and ramp oracles implemented; archived-runtime comparison pending |
 | Threshold sweep | min, max, interval, minimum volumes, closing | min 0, effective max 1 after WPF coercion, interval 0.02, hidden minimum volume 0, valid area 100, closing 2 | CPU and CUDA descending sweep, closing, crop, validation, append-only labeling, final-pass acceptance, progress/cancellation, and WPF controls are synthetic-validated; RTX 4060 parity complete, archived-runtime comparison pending |
 | Watershed | selected segment seeds, minimum segment volume; hidden stride is passed but unused | stride 0.001 (hidden), minimum size 0 | CPU fixed 256-level flooding, source-order 6-neighbor priority, per-level radius-one label opening, crop, selection, cancellation, ABI/WPF undo, and seed-hash provenance are synthetic-validated; archived-runtime comparison pending |
+| Segmentation crop | fixed or height-map-relative upper/lower Z bounds and XY border | Cropping off; height-map-relative mode selected; upper 0, lower 1, border 0 | WPF exposes the source parameters for DSLT segmentation, threshold sweep and watershed. A compatible active `.hmp` is reused; otherwise the configured height map is generated first. The surface array crosses the C ABI only for execution and provenance stores its hash rather than embedding it. |
 
 Several legacy XAML controls contain defaults outside their declared slider
 ranges (for example a maximum of 1 with a value of 20). Those values are
@@ -72,6 +74,10 @@ negative samples become background `-1`; non-negative sparse IDs are compacted
 in ascending source-ID order. The decoded pre-normalization label SHA-256 is
 retained in the ordered history so later edits remain traceable to their label
 input.
+`LegacyHeightMapCodec` preserves the little-endian 120/240-header `.hmp`
+layout. Imported maps require matching X/Y but do not replace volume
+calibration. `ImportHeightMap` is a managed workflow identity rather than a C
+ABI operation.
 See [`tiff-io-spec.md`](tiff-io-spec.md).
 
 ## Common error and state rules

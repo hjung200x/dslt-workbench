@@ -34,6 +34,7 @@ internal static class WorkflowViewModelTests
             ProcessingOperation.ExtractYz,
             ProcessingOperation.ExtractZx,
             ProcessingOperation.ImportLabels,
+            ProcessingOperation.ImportHeightMap,
         };
         var expectedOperations = Enum.GetValues<ProcessingOperation>()
             .Where(operation => !internalOnly.Contains(operation))
@@ -230,11 +231,9 @@ internal static class WorkflowViewModelTests
         target.ZGradientUseHeightMap = true;
         engine.RunOperations.Clear();
         await target.RunCommand.ExecuteAsync();
-        Assert(engine.RunOperations.SequenceEqual(new[]
-            {
-                ProcessingOperation.HeightMap,
-                ProcessingOperation.ZGradient,
-            }), "Z-gradient height-map mode did not generate the surface before correction.");
+        Assert(engine.RunOperations.SequenceEqual([ProcessingOperation.ZGradient]) &&
+               engine.RunParameters[^1].CropHeightMap is not null,
+            "Z-gradient height-map mode did not reuse the active surface.");
         Assert(target.LastParameters is
             {
                 Operation: ProcessingOperation.ZGradient,
@@ -560,6 +559,7 @@ internal static class WorkflowViewModelTests
 
         await RunProcessingChainTestsAsync();
         await RunSegmentImportAndDisplayFilterTestsAsync();
+        await RunLegacyHeightMapWorkflowTestsAsync();
         await RunLargeVolumeCancellationSmokeAsync();
     }
 
@@ -679,6 +679,99 @@ internal static class WorkflowViewModelTests
         {
             if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static async Task RunLegacyHeightMapWorkflowTestsAsync()
+    {
+        var calibration = new Calibration(0.5, 0.5, 1.5, true, "um");
+        var files = new FakeWorkspaceFileService
+        {
+            NextVolume = new VolumeData(3, 2, 2, 1, 0, calibration, new float[12]),
+        };
+        var engine = new FakeProcessingEngine();
+        using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
+        var target = viewModel.Value;
+        await target.OpenCommand.ExecuteAsync();
+
+        var surface = new LegacyHeightMap(3, 2, [0F, 0.25F, 0.5F, 0.75F, 1F, 1.25F]);
+        files.NextHeightMap = surface;
+        await target.LoadHeightMapCommand.ExecuteAsync();
+        Assert(target.HasActiveHeightMap &&
+               target.LastParameters?.Operation == ProcessingOperation.ImportHeightMap &&
+               target.LastResult is { OutputKind: OutputKind.ImageFloat32, Depth: 1 } importedResult &&
+               importedResult.FloatData!.SequenceEqual(surface.Values) &&
+               target.ActiveHeightMapSummary.Contains(
+                   ProcessingProvenance.ComputeFloatSha256(surface.Values)[..12], StringComparison.Ordinal),
+            "A compatible legacy .hmp surface was not installed as the active height map.");
+
+        await target.SaveHeightMapCommand.ExecuteAsync();
+        Assert(files.LastSavedHeightMap is not null &&
+               files.LastSavedHeightMap.Values.SequenceEqual(surface.Values),
+            "The active height map was not routed to legacy .hmp export.");
+
+        var preservedResult = target.LastResult;
+        var preservedSummary = target.ActiveHeightMapSummary;
+        files.NextHeightMap = new LegacyHeightMap(2, 2, [0F, 0F, 0F, 0F]);
+        await target.LoadHeightMapCommand.ExecuteAsync();
+        Assert(ReferenceEquals(preservedResult, target.LastResult) &&
+               target.ActiveHeightMapSummary == preservedSummary &&
+               target.Status.Contains("preserved", StringComparison.OrdinalIgnoreCase),
+            "A mismatched legacy .hmp file replaced the prior result or active surface.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.ThresholdSweep);
+        target.CropEnabled = true;
+        target.CropUseHeightMap = true;
+        target.CropUpper = 0;
+        target.CropLower = 1;
+        target.CropBorderXy = 0;
+        await target.RunCommand.ExecuteAsync();
+        var cropRequest = engine.RunParameters.Last(parameters =>
+            parameters.Operation == ProcessingOperation.ThresholdSweep);
+        Assert(cropRequest is
+               {
+                   CropEnabled: true,
+                   CropUseHeightMap: true,
+                   CropUpper: 0,
+                   CropLower: 1,
+                   CropBorderXy: 0,
+                   CropHeightMap: not null,
+               } && cropRequest.CropHeightMap.SequenceEqual(surface.Values) &&
+               target.LastParameters is { CropEnabled: true, CropUseHeightMap: true, CropHeightMap: null },
+            "The active legacy height map was not passed to height-relative segmentation crop or stripped from JSON parameters.");
+
+        var exportBase = Path.Combine(Path.GetTempPath(), $"dslt-height-crop-{Guid.NewGuid():N}");
+        files.ExportBasePath = exportBase;
+        try
+        {
+            await target.SaveCommand.ExecuteAsync();
+            using var provenance = JsonDocument.Parse(await File.ReadAllBytesAsync(exportBase + ".json"));
+            Assert(provenance.RootElement.GetProperty("editHistory").EnumerateArray().Any(item =>
+                       item.GetString()!.Contains(
+                           ProcessingProvenance.ComputeFloatSha256(surface.Values), StringComparison.Ordinal)),
+                "Height-relative crop provenance did not retain the active height-map hash.");
+        }
+        finally
+        {
+            DeletePackage(exportBase);
+        }
+
+        var generatedFiles = new FakeWorkspaceFileService();
+        var generatedEngine = new FakeProcessingEngine();
+        using var generatedViewModel = new ViewModelScope(
+            new MainWindowViewModel(generatedEngine, generatedFiles));
+        var generatedTarget = generatedViewModel.Value;
+        generatedTarget.SelectedOperation = generatedTarget.Operations.Single(option =>
+            option.Operation == ProcessingOperation.DsltSegmentation);
+        generatedTarget.CropEnabled = true;
+        generatedTarget.CropUseHeightMap = true;
+        Assert(generatedTarget.ShowsHeightMapParameters,
+            "Height-map generation parameters were hidden for a height-relative segmentation crop.");
+        await generatedTarget.RunCommand.ExecuteAsync();
+        Assert(generatedEngine.RunOperations.TakeLast(2).SequenceEqual(
+                   [ProcessingOperation.HeightMap, ProcessingOperation.DsltSegmentation]) &&
+               generatedTarget.HasActiveHeightMap,
+            "Height-relative crop did not generate and retain a surface when no .hmp was loaded.");
     }
 
     private static async Task RunProcessingChainTestsAsync()
@@ -989,6 +1082,7 @@ internal static class WorkflowViewModelTests
         public FakeRunBehavior RunBehavior { get; set; }
         public ProcessingLabelState? LastLabelState { get; private set; }
         public List<ProcessingOperation> RunOperations { get; } = [];
+        public List<OperationParameters> RunParameters { get; } = [];
         public ProcessingOperation? WaitOnOperation { get; set; }
         public ProcessingOperation? FailOnOperation { get; set; }
         public TaskCompletionSource RunStarted { get; private set; } =
@@ -1026,6 +1120,7 @@ internal static class WorkflowViewModelTests
             cancellationToken.ThrowIfCancellationRequested();
             LastLabelState = labelState;
             RunOperations.Add(parameters.Operation);
+            RunParameters.Add(parameters);
             if (RunBehavior == FakeRunBehavior.WaitForCancellation ||
                 WaitOnOperation == parameters.Operation)
             {
@@ -1130,6 +1225,8 @@ internal static class WorkflowViewModelTests
     {
         public VolumeData? NextVolume { get; set; }
         public LabelTiffVolume? NextLabels { get; set; }
+        public LegacyHeightMap? NextHeightMap { get; set; }
+        public LegacyHeightMap? LastSavedHeightMap { get; private set; }
         public string? ExportBasePath { get; set; }
         public string? LastOrthogonalViewName { get; private set; }
         public BitmapSource[]? LastOrthogonalViews { get; private set; }
@@ -1138,6 +1235,16 @@ internal static class WorkflowViewModelTests
             Task.FromResult(NextVolume);
         public Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken) =>
             Task.FromResult(NextLabels);
+        public Task<LegacyHeightMap?> OpenHeightMapAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(NextHeightMap);
+        public Task<string?> SaveHeightMapAsync(
+            LegacyHeightMap heightMap,
+            CancellationToken cancellationToken)
+        {
+            LastSavedHeightMap = new LegacyHeightMap(
+                heightMap.Width, heightMap.Height, heightMap.Values.ToArray());
+            return Task.FromResult<string?>("surface.hmp");
+        }
         public Task<IReadOnlyList<string>?> SaveOrthogonalViewsAsync(
             string viewName,
             BitmapSource xy,

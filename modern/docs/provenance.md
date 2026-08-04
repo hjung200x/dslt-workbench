@@ -49,3 +49,10 @@ continues to identify the working image volume, while `outputSha256` identifies
 the current normalized or edited label result. A label TIFF calibration mismatch
 is reported but does not replace the working-volume calibration, matching the
 legacy loader's dimension-only compatibility rule.
+
+`ImportHeightMap` is likewise managed-only. A decoded legacy `.hmp` map records
+its canonical Float32 SHA-256, and any later height-relative crop or Z-gradient
+operation records that active surface hash in ordered history. The transient
+Float32 surface array is removed from `operation.cropHeightMap` before JSON
+serialization, preventing large unversioned arrays while retaining reproducible
+identity and the structured crop mode/bounds.

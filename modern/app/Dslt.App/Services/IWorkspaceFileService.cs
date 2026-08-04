@@ -8,6 +8,8 @@ public interface IWorkspaceFileService
 {
     Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken);
     Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken);
+    Task<LegacyHeightMap?> OpenHeightMapAsync(CancellationToken cancellationToken);
+    Task<string?> SaveHeightMapAsync(LegacyHeightMap heightMap, CancellationToken cancellationToken);
     Task<IReadOnlyList<string>?> SaveOrthogonalViewsAsync(
         string viewName,
         BitmapSource xy,

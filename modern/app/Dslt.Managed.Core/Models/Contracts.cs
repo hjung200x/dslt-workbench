@@ -37,6 +37,7 @@ public enum ProcessingOperation
     HeightProjection = 25,
     ZGradient = 26,
     ImportLabels = 27,
+    ImportHeightMap = 28,
 }
 
 public enum OutputKind

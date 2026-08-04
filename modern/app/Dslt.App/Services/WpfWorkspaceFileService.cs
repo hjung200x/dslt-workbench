@@ -43,6 +43,41 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         }, cancellationToken);
     }
 
+    public async Task<LegacyHeightMap?> OpenHeightMapAsync(CancellationToken cancellationToken)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Load legacy height map",
+            Filter = "DSLT height map|*.hmp|All files|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog() != true) return null;
+        return await Task.Run(
+            () => LegacyHeightMapCodec.Read(dialog.FileName, cancellationToken),
+            cancellationToken);
+    }
+
+    public async Task<string?> SaveHeightMapAsync(
+        LegacyHeightMap heightMap,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(heightMap);
+        var dialog = new SaveFileDialog
+        {
+            Title = "Save legacy height map",
+            Filter = "DSLT height map|*.hmp",
+            DefaultExt = ".hmp",
+            AddExtension = true,
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog() != true) return null;
+        await Task.Run(
+            () => LegacyHeightMapCodec.Write(dialog.FileName, heightMap, cancellationToken),
+            cancellationToken);
+        return dialog.FileName;
+    }
+
     public async Task<IReadOnlyList<string>?> SaveOrthogonalViewsAsync(
         string viewName,
         BitmapSource xy,

@@ -54,8 +54,11 @@ remain `capture-required` until the archived executable can be observed.
 
 The root XAML binds unmodified S/D to Source/Result XY/YZ/ZX TIFF snapshots;
 Workbench implements those active commands and their three-file naming. H/J
-actively read/write the binary 120/240-header `.hmp` surface format, and A
-actively calculates height-surface area maps; those remain tracked gaps. C/V/M/N
+actively read/write the binary 120/240-header `.hmp` surface format; Workbench
+implements that codec and uses the active surface for segmentation crop and
+Z-gradient correction. Direct imported-surface DepthMap/HeightProjection use
+remains pending. A actively calculates height-surface area maps and remains a
+tracked gap. C/V/M/N
 are observable no-ops at the pinned baseline because all calls in their command
 bodies are commented out, so Workbench excludes them rather than inventing new
 behavior.
@@ -66,6 +69,6 @@ The audit prevents implemented algorithms from being mistaken for complete
 legacy interaction equivalence. Before a v1.0 claim, the Workbench still needs:
 
 1. a real or archived-runtime oracle for ambiguous parameter mappings;
-2. legacy `.hmp` height-map import/export and external-surface processing;
+2. direct imported `.hmp` surface consumption by DepthMap/HeightProjection;
 3. a deterministic replacement for the legacy height-surface area-map command;
 4. representative original or expert-labelled microscopy data.

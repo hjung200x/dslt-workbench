@@ -9,6 +9,8 @@
     <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
     <KeyBinding Key="S" Command="{Binding SaveSourceViewsCommand}" />
     <KeyBinding Key="D" Command="{Binding SaveResultViewsCommand}" />
+    <KeyBinding Key="H" Command="{Binding LoadHeightMapCommand}" />
+    <KeyBinding Key="J" Command="{Binding SaveHeightMapCommand}" />
     <KeyBinding Key="J" Modifiers="Alt" Command="{Binding MergeSelectionCommand}" />
     <KeyBinding Key="S" Modifiers="Alt" Command="{Binding SplitSelectionCommand}" />
     <KeyBinding Key="A" Modifiers="Alt" Command="{Binding SelectAllCommand}" />
@@ -57,6 +59,9 @@
             <Separator Margin="0,12" Background="#283241" />
             <Button Content="Open TIFF / LSM" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" />
             <Button AutomationProperties.Name="Load segment TIFF" Content="Load segment TIFF" Command="{Binding LoadSegmentsCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
+            <Button AutomationProperties.Name="Load legacy height map" Content="Load height map (.hmp)" Command="{Binding LoadHeightMapCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
+            <Button AutomationProperties.Name="Save legacy height map" Content="Save active height map (.hmp)" Command="{Binding SaveHeightMapCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
+            <TextBlock Text="{Binding ActiveHeightMapSummary}" TextWrapping="Wrap" Margin="0,4,0,4" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             <Button AutomationProperties.Name="Save source orthogonal TIFF views" Content="Save source XY / YZ / ZX" Command="{Binding SaveSourceViewsCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <Button AutomationProperties.Name="Save result orthogonal TIFF views" Content="Save result XY / YZ / ZX" Command="{Binding SaveResultViewsCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
             <Button Content="Generate synthetic" Command="{Binding GenerateSyntheticCommand}" HorizontalContentAlignment="Left" Background="#39475A" Foreground="White" />
@@ -229,9 +234,12 @@
               <TextBox AutomationProperties.Name="H-minima convergence check interval" Text="{Binding HMinimaCheckInterval, UpdateSourceTrigger=PropertyChanged}" />
             </StackPanel>
 
-            <StackPanel Visibility="{Binding IsHeightSurfaceOperation, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Visibility="{Binding ShowsHeightMapParameters, Converter={StaticResource BooleanToVisibilityConverter}}">
               <Separator Margin="0,16,0,12" Background="#354152" />
               <TextBlock Text="HEIGHT MAP" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <TextBlock Text="Surface threshold" Margin="0,10,0,5" />
+              <Slider AutomationProperties.Name="Height map surface threshold" Minimum="0" Maximum="1" Value="{Binding HeightMapThreshold}" SmallChange="0.01" />
+              <TextBlock Text="{Binding HeightMapThreshold, StringFormat=F3}" Foreground="{StaticResource AccentBrush}" />
               <TextBlock Text="Filter type" Margin="0,10,0,5" />
               <ComboBox AutomationProperties.Name="Height map filter type" ItemsSource="{Binding DsltKernels}" SelectedItem="{Binding HeightMapKernel}" />
               <TextBlock Text="XY smoothing radius" Margin="0,10,0,5" />
@@ -343,6 +351,23 @@
               <Border Padding="10" Background="#10161E" CornerRadius="5" Margin="0,4,0,0">
                 <TextBlock Text="{Binding WorkEstimateSummary}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
               </Border>
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding IsCropCapableOperation, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <Separator Margin="0,16,0,12" Background="#354152" />
+              <TextBlock Text="SEGMENTATION CROP" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+              <CheckBox AutomationProperties.Name="Enable segmentation crop" Content="Enable crop" IsChecked="{Binding CropEnabled}" Margin="0,10,0,5" />
+              <CheckBox AutomationProperties.Name="Use height map for segmentation crop" Content="Bounds are relative to active/generated height map" IsChecked="{Binding CropUseHeightMap}" IsEnabled="{Binding CropEnabled}" />
+              <TextBlock Text="Upper / lower Z bound" Margin="0,10,0,5" />
+              <Grid IsEnabled="{Binding CropEnabled}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <TextBox AutomationProperties.Name="Segmentation crop upper bound" Text="{Binding CropUpper, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox AutomationProperties.Name="Segmentation crop lower bound" Grid.Column="2" Text="{Binding CropLower, UpdateSourceTrigger=PropertyChanged}" />
+              </Grid>
+              <TextBlock Text="XY border" Margin="0,10,0,5" />
+              <Slider AutomationProperties.Name="Segmentation crop XY border" Minimum="0" Maximum="{Binding MaximumCropBorderXy}" Value="{Binding CropBorderXy}" TickFrequency="1" IsSnapToTickEnabled="True" IsEnabled="{Binding CropEnabled}" />
+              <TextBlock Text="{Binding CropBorderXy}" Foreground="{StaticResource AccentBrush}" />
+              <TextBlock Text="Without a loaded surface, Workbench generates one from the height-map parameters before processing." Margin="0,7,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             </StackPanel>
 
             <TextBlock Text="Connectivity" Margin="0,14,0,5" />
