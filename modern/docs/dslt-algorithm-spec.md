@@ -205,6 +205,13 @@ conditions are at `filter3d.cpp:3978-4048`. Low-valued component extraction and
 the strict minimum-size test are at `filter3d.cpp:2818-2865` and
 `filter3d.cpp:2875-2933`.
 
+CPU and CUDA obtain the C values from the same endpoint-inclusive schedule.
+CUDA computes the directional minimum and latitude volumes once, keeps them in
+dedicated device buffers, and then reuses the scalar-sweep morphology,
+wall-thickness, six-connected labeling, invalid-structure, crop, and
+append-only label stages. This preserves CPU component order and completed-pass
+count while avoiding a host fallback inside a CUDA request.
+
 Watershed is **not** called by this function. It is a separate selected-segment
 editing action (`filter3d.cpp:6877-6925`, `MainWindow.xaml.cs:1591-1595`). The
 paper-level end-to-end workflow may include watershed, but Workbench must not

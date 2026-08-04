@@ -745,6 +745,10 @@ std::vector<float> threshold_sweep_schedule(float minimum, float maximum, float 
     return descending_threshold_schedule(minimum, maximum, interval);
 }
 
+std::vector<float> dslt_c_schedule(float minimum, float maximum, float interval) {
+    return c_schedule(minimum, maximum, interval);
+}
+
 std::vector<float> adaptive_threshold(
     const Volume& volume,
     int radius,

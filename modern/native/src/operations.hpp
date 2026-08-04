@@ -145,6 +145,7 @@ std::vector<float> spherical_closing(
     int radius,
     const Engine::Progress& progress);
 std::vector<float> threshold_sweep_schedule(float minimum, float maximum, float interval);
+std::vector<float> dslt_c_schedule(float minimum, float maximum, float interval);
 ComponentLabels connected_components_low_6(
     std::span<const float> source,
     const dslt_volume_descriptor& descriptor,
