@@ -54,6 +54,13 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _heightMapZRadius = 4;
     private DsltKernelType _heightMapKernel = DsltKernelType.Gaussian;
     private int _heightMapSmoothLevel = 1;
+    private LegacyHeightMap? _activeHeightMap;
+    private string? _activeHeightMapSha256;
+    private bool _cropEnabled;
+    private bool _cropUseHeightMap = true;
+    private int _cropUpper;
+    private int _cropLower = 1;
+    private int _cropBorderXy;
     private HeightProjectionMode _projectionMode = HeightProjectionMode.Z;
     private float _projectionOffset;
     private float _projectionStartDepth;
@@ -137,6 +144,9 @@ public sealed class MainWindowViewModel : ObservableObject
         GenerateSyntheticCommand = new RelayCommand(GenerateSynthetic, () => !IsBusy);
         OpenCommand = new AsyncRelayCommand(OpenAsync, () => !IsBusy);
         LoadSegmentsCommand = new AsyncRelayCommand(LoadSegmentsAsync, () => HasVolume && !IsBusy);
+        LoadHeightMapCommand = new AsyncRelayCommand(LoadHeightMapAsync, () => HasVolume && !IsBusy);
+        SaveHeightMapCommand = new AsyncRelayCommand(
+            SaveHeightMapAsync, () => _activeHeightMap is not null && !IsBusy);
         SaveSourceViewsCommand = new AsyncRelayCommand(
             () => SaveOrthogonalViewsAsync(resultViews: false),
             () => CanSaveOrthogonalViews(resultViews: false));
@@ -192,6 +202,8 @@ public sealed class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsAdaptiveThreshold));
             OnPropertyChanged(nameof(IsHMinima));
             OnPropertyChanged(nameof(IsWatershed));
+            OnPropertyChanged(nameof(IsCropCapableOperation));
+            OnPropertyChanged(nameof(ShowsHeightMapParameters));
             OnPropertyChanged(nameof(IsHeightMap));
             OnPropertyChanged(nameof(IsHeightSurfaceOperation));
             OnPropertyChanged(nameof(IsHeightProjection));
@@ -426,6 +438,58 @@ public sealed class MainWindowViewModel : ObservableObject
         get => _heightMapSmoothLevel;
         set => SetProperty(ref _heightMapSmoothLevel, Math.Clamp(value, 0, 10));
     }
+
+    public float HeightMapThreshold
+    {
+        get => _heightMapThreshold;
+        set => SetProperty(ref _heightMapThreshold,
+            float.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0.25F);
+    }
+
+    public bool HasActiveHeightMap => _activeHeightMap is not null;
+    public string ActiveHeightMapSummary => _activeHeightMap is null
+        ? "No active height map"
+        : $"Active height map: {_activeHeightMap.Width} x {_activeHeightMap.Height} · SHA-256 {_activeHeightMapSha256![..12]}";
+
+    public bool CropEnabled
+    {
+        get => _cropEnabled;
+        set
+        {
+            if (!SetProperty(ref _cropEnabled, value)) return;
+            OnPropertyChanged(nameof(ShowsHeightMapParameters));
+        }
+    }
+
+    public bool CropUseHeightMap
+    {
+        get => _cropUseHeightMap;
+        set
+        {
+            if (!SetProperty(ref _cropUseHeightMap, value)) return;
+            OnPropertyChanged(nameof(ShowsHeightMapParameters));
+        }
+    }
+
+    public int CropUpper
+    {
+        get => _cropUpper;
+        set => SetProperty(ref _cropUpper, Math.Clamp(value, 0, MaximumZIndex));
+    }
+
+    public int CropLower
+    {
+        get => _cropLower;
+        set => SetProperty(ref _cropLower, Math.Clamp(value, 0, MaximumZIndex));
+    }
+
+    public int CropBorderXy
+    {
+        get => _cropBorderXy;
+        set => SetProperty(ref _cropBorderXy, Math.Clamp(value, 0, MaximumCropBorderXy));
+    }
+
+    public int MaximumCropBorderXy => Math.Max(0, Math.Min(_volume?.Width ?? 1, _volume?.Height ?? 1) / 2);
 
     public HeightProjectionMode ProjectionMode
     {
@@ -727,17 +791,20 @@ public sealed class MainWindowViewModel : ObservableObject
         ProcessingOperation.AdaptiveThreshold2D or ProcessingOperation.AdaptiveThreshold3D;
     public bool IsHMinima => SelectedOperation.Operation == ProcessingOperation.HMinima;
     public bool IsWatershed => SelectedOperation.Operation == ProcessingOperation.Watershed;
+    public bool IsCropCapableOperation => SelectedOperation.Operation is
+        ProcessingOperation.DsltSegmentation or ProcessingOperation.ThresholdSweep or ProcessingOperation.Watershed;
     public bool IsHeightMap => SelectedOperation.Operation == ProcessingOperation.HeightMap;
     public bool IsHeightSurfaceOperation => SelectedOperation.Operation is ProcessingOperation.HeightMap or
         ProcessingOperation.DepthMap or ProcessingOperation.HeightProjection or ProcessingOperation.ZGradient;
+    public bool ShowsHeightMapParameters => IsHeightSurfaceOperation ||
+        (IsCropCapableOperation && CropEnabled && CropUseHeightMap);
     public bool IsHeightProjection => SelectedOperation.Operation == ProcessingOperation.HeightProjection;
     public bool IsZGradient => SelectedOperation.Operation == ProcessingOperation.ZGradient;
     public string MinimumComponentSizeLabel => IsWatershed
         ? "Minimum selected seed size"
         : "Exclusive minimum component size";
-    public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or ProcessingOperation.Threshold3D or
-        ProcessingOperation.ConnectedComponents or ProcessingOperation.HeightMap or ProcessingOperation.DepthMap or
-        ProcessingOperation.HeightProjection or ProcessingOperation.ZGradient;
+    public bool UsesThreshold => SelectedOperation.Operation is ProcessingOperation.Threshold2D or
+        ProcessingOperation.Threshold3D or ProcessingOperation.ConnectedComponents;
     public bool UsesRadius => SelectedOperation.Operation is ProcessingOperation.SmoothMean or ProcessingOperation.SmoothGaussian or
         ProcessingOperation.DilateCube or ProcessingOperation.ErodeCube or ProcessingOperation.DilateSphere or
         ProcessingOperation.ErodeSphere or ProcessingOperation.DsltThreshold or ProcessingOperation.DsltSegmentation or
@@ -756,6 +823,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand GenerateSyntheticCommand { get; }
     public AsyncRelayCommand OpenCommand { get; }
     public AsyncRelayCommand LoadSegmentsCommand { get; }
+    public AsyncRelayCommand LoadHeightMapCommand { get; }
+    public AsyncRelayCommand SaveHeightMapCommand { get; }
     public AsyncRelayCommand SaveSourceViewsCommand { get; }
     public AsyncRelayCommand SaveResultViewsCommand { get; }
     public AsyncRelayCommand EstimateCommand { get; }
@@ -859,6 +928,84 @@ public sealed class MainWindowViewModel : ObservableObject
         }
     }
 
+    private async Task LoadHeightMapAsync()
+    {
+        if (_volume is null) return;
+        IsBusy = true;
+        try
+        {
+            var imported = await _files.OpenHeightMapAsync(CancellationToken.None);
+            if (imported is null) return;
+            imported.Validate();
+            if (imported.Width != _volume.Width || imported.Height != _volume.Height)
+                throw new InvalidDataException(
+                    $"Height-map dimensions {imported.Width} x {imported.Height} do not match " +
+                    $"the working volume {_volume.Width} x {_volume.Height}.");
+            var values = imported.Values.ToArray();
+            var result = new ProcessingResult(
+                ProcessingBackend.Cpu,
+                OutputKind.ImageFloat32,
+                imported.Width,
+                imported.Height,
+                1,
+                0,
+                values,
+                null);
+            var installed = new LegacyHeightMap(imported.Width, imported.Height, values);
+            SetActiveHeightMap(installed);
+            _editingSession = null;
+            _labelVoxelCounts = new Dictionary<int, int>();
+            _lastResult = result;
+            _lastParameters = new OperationParameters(
+                ProcessingOperation.ImportHeightMap, ProcessingBackend.Cpu);
+            _lastResultProcessingSteps = _workingProcessingSteps.ToArray();
+            _lastDepthColorPixels = null;
+            _editHistory.Clear();
+            _editHistory.Add($"Imported height map SHA-256 {_activeHeightMapSha256} (legacy 120/240 .hmp).");
+            ResetResultGeometry();
+            UpdateSelectionState();
+            RefreshResultImage();
+            SelectedStage = WorkflowStage.Process;
+            Progress = 100;
+            Status = $"Loaded legacy height map {imported.Width} x {imported.Height}; it is active for height-relative crop and Z-gradient correction.";
+            OnPropertyChanged(nameof(HasResult));
+            OnPropertyChanged(nameof(CanUseResultAsInput));
+            OnPropertyChanged(nameof(ResultGeometrySummary));
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            Status = $"Height-map load failed; the previous result and active surface were preserved: {error.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SaveHeightMapAsync()
+    {
+        if (_activeHeightMap is null) return;
+        IsBusy = true;
+        try
+        {
+            var path = await _files.SaveHeightMapAsync(_activeHeightMap, CancellationToken.None);
+            if (path is null) return;
+            Status = $"Saved legacy height map: {path}.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Height-map save was cancelled; the workspace was preserved.";
+        }
+        catch (Exception error)
+        {
+            Status = $"Height-map save failed; the workspace was preserved: {error.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private async Task SaveOrthogonalViewsAsync(bool resultViews)
     {
         var xy = (resultViews ? ResultImage : SourceImage) as BitmapSource;
@@ -943,22 +1090,41 @@ public sealed class MainWindowViewModel : ObservableObject
                 labelState.Validate(_volume);
             }
             var parameters = BuildParameters(labelState);
-            if (parameters.Operation == ProcessingOperation.ZGradient &&
-                parameters.ZGradientUseHeightMap)
+            LegacyHeightMap? generatedHeightMap = null;
+            string? usedHeightMapSha256 = null;
+            var needsHeightMap =
+                (parameters.CropEnabled && parameters.CropUseHeightMap) ||
+                (parameters.Operation == ProcessingOperation.ZGradient && parameters.ZGradientUseHeightMap);
+            if (needsHeightMap)
             {
-                var surfaceResult = await _engine.RunAsync(
-                    _volume,
-                    parameters with
-                    {
-                        Operation = ProcessingOperation.HeightMap,
-                        ZGradientUseHeightMap = false,
-                    },
-                    new Progress<double>(value => Progress = Math.Clamp(value * 35, 0, 35)),
-                    _cancellation.Token);
+                var surface = _activeHeightMap?.Values;
+                if (surface is null)
+                {
+                    var surfaceResult = await _engine.RunAsync(
+                        _volume,
+                        parameters with
+                        {
+                            Operation = ProcessingOperation.HeightMap,
+                            CropEnabled = false,
+                            CropUseHeightMap = false,
+                            CropHeightMap = null,
+                            ZGradientUseHeightMap = false,
+                        },
+                        new Progress<double>(value => Progress = Math.Clamp(value * 35, 0, 35)),
+                        _cancellation.Token);
+                    surface = surfaceResult.FloatData ??
+                        throw new InvalidOperationException("Height-map output is required for height-relative processing.");
+                    generatedHeightMap = new LegacyHeightMap(_volume.Width, _volume.Height, surface.ToArray());
+                    generatedHeightMap.Validate();
+                    usedHeightMapSha256 = ProcessingProvenance.ComputeFloatSha256(generatedHeightMap.Values);
+                }
+                else
+                {
+                    usedHeightMapSha256 = _activeHeightMapSha256;
+                }
                 parameters = parameters with
                 {
-                    CropHeightMap = surfaceResult.FloatData ??
-                        throw new InvalidOperationException("Height-map output is required for Z-gradient correction."),
+                    CropHeightMap = surface,
                 };
             }
             if (IsDsltOperation)
@@ -1029,13 +1195,16 @@ public sealed class MainWindowViewModel : ObservableObject
                     : new LabelEditingSession(result.Width, result.Height, result.Depth, result.Labels);
                 _lastResultProcessingSteps = _workingProcessingSteps.ToArray();
             }
+            if (usedHeightMapSha256 is not null)
+                _editHistory.Add($"Used active height map SHA-256 {usedHeightMapSha256}.");
+            if (generatedHeightMap is not null) SetActiveHeightMap(generatedHeightMap);
+            if (parameters.Operation == ProcessingOperation.HeightMap && result.FloatData is not null)
+                SetActiveHeightMap(new LegacyHeightMap(result.Width, result.Height, result.FloatData.ToArray()));
             _lastResult = result;
             _labelVoxelCounts = result.Labels is null
                 ? new Dictionary<int, int>()
                 : CountLabelVoxels(result.Labels);
-            _lastParameters = parameters.Operation == ProcessingOperation.ZGradient
-                ? parameters with { CropHeightMap = null }
-                : parameters;
+            _lastParameters = parameters with { CropHeightMap = null };
             _lastDepthColorPixels = depthColorPixels;
             ResetResultGeometry();
             UpdateSelectionState();
@@ -1114,7 +1283,7 @@ public sealed class MainWindowViewModel : ObservableObject
             : MinimumComponentSize,
         SliceIndex: ZIndex,
         LanczosOrder: LanczosOrder,
-        Threshold: Threshold,
+        Threshold: ShowsHeightMapParameters ? HeightMapThreshold : Threshold,
         ConstantC: SelectedOperation.Operation == ProcessingOperation.DsltThreshold
             ? -PreviewOffset * 0.002F
             : IsAdaptiveThreshold ? -AdaptiveThresholdOffset * 0.002F : 0,
@@ -1149,6 +1318,11 @@ public sealed class MainWindowViewModel : ObservableObject
         ZGradientCoefficient: ZGradientCoefficient,
         ZGradientExponent: ZGradientExponent,
         ZGradientUseHeightMap: ZGradientUseHeightMap,
+        CropEnabled: IsCropCapableOperation && CropEnabled,
+        CropUseHeightMap: IsCropCapableOperation && CropEnabled && CropUseHeightMap,
+        CropUpper: CropUpper,
+        CropLower: CropLower,
+        CropBorderXy: CropBorderXy,
         ClosingRadius: ClosingRadius,
         MinimumInvalidStructureArea: MinimumInvalidStructureArea,
         SeedLabelsSha256: labelState is null
@@ -1226,7 +1400,12 @@ public sealed class MainWindowViewModel : ObservableObject
         _lastDepthColorPixels = null;
         _editingSession = null;
         _labelVoxelCounts = new Dictionary<int, int>();
+        _activeHeightMap = null;
+        _activeHeightMapSha256 = null;
         _editHistory.Clear();
+        _cropUpper = Math.Clamp(_cropUpper, 0, MaximumZIndex);
+        _cropLower = Math.Clamp(_cropLower, 0, MaximumZIndex);
+        _cropBorderXy = Math.Clamp(_cropBorderXy, 0, MaximumCropBorderXy);
         ResetResultGeometry();
         ResultImage = null;
         ResultYzImage = null;
@@ -1246,6 +1425,12 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(MaximumXIndex));
         OnPropertyChanged(nameof(MaximumYIndex));
         OnPropertyChanged(nameof(MaximumZIndex));
+        OnPropertyChanged(nameof(MaximumCropBorderXy));
+        OnPropertyChanged(nameof(CropUpper));
+        OnPropertyChanged(nameof(CropLower));
+        OnPropertyChanged(nameof(CropBorderXy));
+        OnPropertyChanged(nameof(HasActiveHeightMap));
+        OnPropertyChanged(nameof(ActiveHeightMapSummary));
         OnPropertyChanged(nameof(VolumeSummary));
         OnPropertyChanged(nameof(HasVolume));
         OnPropertyChanged(nameof(HasResult));
@@ -1554,6 +1739,8 @@ public sealed class MainWindowViewModel : ObservableObject
         GenerateSyntheticCommand.NotifyCanExecuteChanged();
         OpenCommand.NotifyCanExecuteChanged();
         LoadSegmentsCommand.NotifyCanExecuteChanged();
+        LoadHeightMapCommand.NotifyCanExecuteChanged();
+        SaveHeightMapCommand.NotifyCanExecuteChanged();
         SaveSourceViewsCommand.NotifyCanExecuteChanged();
         SaveResultViewsCommand.NotifyCanExecuteChanged();
         EstimateCommand.NotifyCanExecuteChanged();
@@ -1692,6 +1879,19 @@ public sealed class MainWindowViewModel : ObservableObject
             counts[label] = checked(count + 1);
         }
         return counts;
+    }
+
+    private void SetActiveHeightMap(LegacyHeightMap heightMap)
+    {
+        heightMap.Validate();
+        if (_volume is null || heightMap.Width != _volume.Width || heightMap.Height != _volume.Height)
+            throw new ArgumentException("Active height-map dimensions must match the working volume.", nameof(heightMap));
+        _activeHeightMap = new LegacyHeightMap(
+            heightMap.Width, heightMap.Height, heightMap.Values.ToArray());
+        _activeHeightMapSha256 = ProcessingProvenance.ComputeFloatSha256(_activeHeightMap.Values);
+        OnPropertyChanged(nameof(HasActiveHeightMap));
+        OnPropertyChanged(nameof(ActiveHeightMapSummary));
+        NotifyCommandStates();
     }
 
     private static int[] NormalizeImportedLabels(ReadOnlySpan<int> labels, out bool changed)

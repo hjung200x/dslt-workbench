@@ -14,6 +14,9 @@ equivalence; that remains gated by representative datasets.
   calibration metadata does not replace the working-volume calibration;
   mismatched metadata is reported. Decoding or geometry failure preserves the
   previous result.
+- Load/save the source-derived little-endian `.hmp` height-map format with H/J,
+  retain one active X/Y-compatible surface and its SHA-256, and preserve both
+  the active surface and prior result when loading fails.
 - Generate a deterministic synthetic volume for installation and backend
   checks.
 - Show the main window before native/CUDA discovery completes, initialize the
@@ -48,6 +51,10 @@ equivalence; that remains gated by representative datasets.
   range 100. The scalar projection, height map, and depth map come from the
   selected CPU/CUDA backend; the deterministic RGB24 display remains separate
   from the exported scalar payload.
+- Configure fixed or height-map-relative upper/lower Z bounds and an XY border
+  for DSLT segmentation, threshold sweep and watershed. Height-relative runs
+  reuse the active `.hmp`/generated surface or generate one first, and pass it
+  to CPU/CUDA through the existing C ABI crop state.
 - Run both 2D and 3D global thresholding, cube or sphere morphology, and Z
   area-average or Lanczos 2/3 resampling from the operation selector. The 2D
   threshold uses the shared Z cursor; resampling defaults target Z spacing to
@@ -74,7 +81,8 @@ equivalence; that remains gated by representative datasets.
   `voxel count > minimum displayed size` rule without modifying labels,
   selection, measurements, or exported results.
 - Preserve the manual's Ctrl+O/Ctrl+S, Alt+J/Alt+S, Ctrl+Z and Alt+A/Alt+D
-  bindings, plus the original unmodified S/D orthogonal snapshot commands.
+  bindings, plus the original unmodified S/D orthogonal snapshot and H/J
+  height-map load/save commands.
   Shift-left/right-click zooms all synchronized views; middle-click
   maps a rendered result-plane pixel to its XY/YZ/ZX source coordinate and
   selects that label without accepting clicks in image letterboxing.
@@ -151,6 +159,10 @@ equivalence; that remains gated by representative datasets.
 22. Source/Result orthogonal snapshot commands route the three frozen rendered
     planes, write legacy-compatible TIFF names and exact pixels, and preserve
     the last valid workspace state when export fails.
+23. legacy `.hmp` round trip and WPF commands preserve exact surface values,
+    reject malformed/mismatched files without state loss, pass an active or
+    automatically generated height map into segmentation crop/Z-gradient, and
+    retain its hash without serializing the full surface in operation JSON.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
