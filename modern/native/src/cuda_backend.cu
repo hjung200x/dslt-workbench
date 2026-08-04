@@ -120,6 +120,20 @@ __global__ void threshold_kernel(
     }
 }
 
+__global__ void adaptive_threshold_kernel(
+    const float* source,
+    const float* local,
+    float* output,
+    std::size_t count,
+    float constant_c) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        output[index] = source[index] > local[index] - constant_c ? 0.8F : 0.0F;
+    }
+}
+
 __device__ std::size_t flat_index(
     std::size_t x,
     std::size_t y,
@@ -1191,6 +1205,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_WINDOW_LEVEL ||
         operation == DSLT_OP_THRESHOLD_2D ||
         operation == DSLT_OP_THRESHOLD_3D ||
+        operation == DSLT_OP_ADAPTIVE_THRESHOLD_2D ||
+        operation == DSLT_OP_ADAPTIVE_THRESHOLD_3D ||
         operation == DSLT_OP_SMOOTH_MEAN ||
         operation == DSLT_OP_SMOOTH_GAUSSIAN ||
         operation == DSLT_OP_DILATE_CUBE ||
@@ -1227,6 +1243,9 @@ CudaRunResult run_cuda_operation(
     }
     const auto smoothing = request.operation == DSLT_OP_SMOOTH_MEAN ||
         request.operation == DSLT_OP_SMOOTH_GAUSSIAN;
+    const auto adaptive_thresholding =
+        request.operation == DSLT_OP_ADAPTIVE_THRESHOLD_2D ||
+        request.operation == DSLT_OP_ADAPTIVE_THRESHOLD_3D;
     const auto morphology = request.operation == DSLT_OP_DILATE_CUBE ||
         request.operation == DSLT_OP_ERODE_CUBE ||
         request.operation == DSLT_OP_DILATE_SPHERE ||
@@ -1247,6 +1266,17 @@ CudaRunResult run_cuda_operation(
     const auto dslt_response_operation = dslt_threshold_operation || dslt_segmentation;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
+    }
+    if (adaptive_thresholding && (request.radius < 0 || request.radius > 100)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "adaptive threshold radius must be between 0 and 100"};
+    }
+    if (adaptive_thresholding && request.connectivity != 0 && request.connectivity != 1) {
+        return {CudaRunStatus::invalid_argument, {},
+            "adaptive threshold kernel must be 0 (Gaussian) or 1 (mean)"};
+    }
+    if (adaptive_thresholding && !std::isfinite(request.constant_c)) {
+        return {CudaRunStatus::invalid_argument, {}, "adaptive threshold C must be finite"};
     }
     if (morphology && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "morphology radius must be between 0 and 64"};
@@ -1550,8 +1580,8 @@ CudaRunResult run_cuda_operation(
             return {CudaRunStatus::out_of_memory, {},
                 "CUDA depth-map workspace overflows addressable memory"};
         }
-        const auto scratch_count = height_processing || h_minima || watershed || segmentation_sweep ||
-            dslt_response_operation
+        const auto scratch_count = adaptive_thresholding || height_processing || h_minima ||
+            watershed || segmentation_sweep || dslt_response_operation
             ? std::max(
                 source.size(),
                 request.operation == DSLT_OP_DEPTH_MAP ? plane_count * 2 : source.size())
@@ -1765,6 +1795,45 @@ CudaRunResult run_cuda_operation(
                 device_source.get(), device_output.get(), source.size(), request.threshold);
             check_cuda(cudaGetLastError(), "launching CUDA threshold kernel");
             break;
+        case DSLT_OP_ADAPTIVE_THRESHOLD_2D:
+        case DSLT_OP_ADAPTIVE_THRESHOLD_3D: {
+            const auto gaussian = request.connectivity == 0;
+            line_convolve_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(), device_output.get(), source.size(), width, height, depth,
+                request.radius, gaussian, 0);
+            check_cuda(cudaGetLastError(), "launching CUDA adaptive-threshold X convolution");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA adaptive-threshold X convolution");
+            if (!report(progress, 0.40F)) return cancelled();
+
+            line_convolve_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_output.get(), device_scratch->get(), source.size(), width, height, depth,
+                request.radius, gaussian, 1);
+            check_cuda(cudaGetLastError(), "launching CUDA adaptive-threshold Y convolution");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA adaptive-threshold Y convolution");
+            if (!report(progress, 0.55F)) return cancelled();
+
+            const float* local = device_scratch->get();
+            if (request.operation == DSLT_OP_ADAPTIVE_THRESHOLD_3D) {
+                line_convolve_kernel<<<blocks, threads, 0, stream.get()>>>(
+                    device_scratch->get(), device_output.get(), source.size(), width, height, depth,
+                    request.radius, gaussian, 2);
+                check_cuda(cudaGetLastError(), "launching CUDA adaptive-threshold Z convolution");
+                check_cuda(cudaStreamSynchronize(stream.get()),
+                    "synchronizing CUDA adaptive-threshold Z convolution");
+                if (!report(progress, 0.70F)) return cancelled();
+                local = device_output.get();
+            }
+
+            adaptive_threshold_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(), local, device_output.get(), source.size(), request.constant_c);
+            check_cuda(cudaGetLastError(), "launching CUDA adaptive-threshold comparison kernel");
+            check_cuda(cudaStreamSynchronize(stream.get()),
+                "synchronizing CUDA adaptive-threshold comparison kernel");
+            if (!report(progress, 0.75F)) return cancelled();
+            break;
+        }
         case DSLT_OP_SMOOTH_MEAN:
         case DSLT_OP_SMOOTH_GAUSSIAN:
         case DSLT_OP_DILATE_CUBE:
@@ -2493,7 +2562,8 @@ CudaRunResult run_cuda_operation(
             return {CudaRunStatus::unsupported, {}, "CUDA does not implement the requested operation"};
         }
 
-        if (!slice_based_filter && !resampling && !height_processing && !labeling && !h_minima &&
+        if (!slice_based_filter && !adaptive_thresholding && !resampling && !height_processing &&
+            !labeling && !h_minima &&
             !dslt_threshold_operation &&
             !report(progress, 0.75F)) {
             check_cuda(cudaStreamSynchronize(stream.get()), "synchronizing cancelled CUDA operation");

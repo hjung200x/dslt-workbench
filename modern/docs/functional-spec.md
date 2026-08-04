@@ -24,7 +24,7 @@ The detailed DSLT mathematical and ordering contract is maintained in
 | Capability | Legacy parameter evidence | Legacy UI default | Workbench validation |
 |---|---|---:|---|
 | Global binary threshold | `thresholding(float th)` | Tool-specific | Float threshold; output is 0 or 1 |
-| Adaptive 2D/3D threshold | radius, constant C, mean/Gaussian kernel | radius 14, UI C 20, mean | CPU XY/XYZ separable convolution, clamp boundary, strict comparison, C mapping, progress/cancellation, ABI and WPF controls are synthetic-validated; legacy GPU discrepancy and archived-runtime comparison pending |
+| Adaptive 2D/3D threshold | radius, constant C, mean/Gaussian kernel | radius 14, UI C 20, mean | CPU/CUDA XY/XYZ separable convolution, clamp boundary, strict comparison, C mapping, progress/cancellation, VRAM preflight, ABI and WPF controls are synthetic-validated; legacy GPU discrepancy and archived-runtime comparison pending |
 | Mean/Gaussian smoothing | filter type, block/radius | Mean is selected in relevant panel | Radius 0-64 in native core |
 | Cube/sphere morphology | radius, filter shape | Radius 1 in segment edit panels | Radius 0-64 in native core |
 | Flood fill/components | threshold, 6/18/26 connectivity, minimum size | Threshold 0.1, connectivity 6, minimum size 0 | Connectivity is exactly 6, 18, or 26; preview minimum size is at least 1 |

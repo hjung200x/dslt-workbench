@@ -16,7 +16,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Brightness/contrast | `WindowLevel` | implemented | Range fixtures |
 | Mean/Gaussian smoothing | `SmoothMean`, `SmoothGaussian` | implemented | Impulse fixture |
 | Global binary threshold | `Threshold2D`, `Threshold3D` preview IDs | implemented | Boundary fixtures plus WPF 2D active-slice and 3D operation coverage |
-| Adaptive 2D/3D threshold | `AdaptiveThreshold2D`, `AdaptiveThreshold3D` | scaffolded | CPU mean/Gaussian, clamp boundary, strict tie, 2D/3D distinction, ABI and WPF fixtures implemented; legacy GPU discrepancy and archived-runtime comparison pending |
+| Adaptive 2D/3D threshold | `AdaptiveThreshold2D`, `AdaptiveThreshold3D` | scaffolded | CPU/CUDA mean/Gaussian, clamp boundary, strict tie, 2D/3D distinction, parameter/cancellation/memory, ABI and WPF fixtures implemented; legacy GPU discrepancy and archived-runtime comparison pending |
 | Cubic/spherical morphology | `Dilate*`, `Erode*` | implemented | Sphere/shell fixtures plus WPF cube/sphere operation and radius coverage |
 | Filtered height map / 3D depth map | `HeightMap`, `DepthMap` | scaffolded | Height-map Gaussian/mean Z filter, strict crossing interpolation, repeated XY smoothing, clamp boundary, plus exact voxel-index Euclidean distance to the height surface; synthetic and cancellation fixtures implemented, legacy runtime comparison pending |
 | Height projection and RGB depth coloring | `HeightProjection` + WPF RGB24 presentation | scaffolded | Source-derived Z/normal modes, surface offset, start depth, inclusive range, scalar/binary threshold behavior, trilinear sampling, plus Z-only HSV 0..270 depth coloring with default range 100, provenance, WPF/oracle fixtures, and native-CPU composition gate implemented; archived-runtime comparison pending |
@@ -29,7 +29,7 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Watershed | `Watershed` | scaffolded | CPU and CUDA selected-seed flooding, fixed 256 levels, legacy 6-neighbor priority, per-level label opening, crop, minimum seed size, cancellation, ABI and WPF undo/provenance fixtures implemented; voxel-exact RTX 4060 parity complete, archived-runtime comparison pending |
 | Segment select/merge/split/crop/dilate/erode/undo | `LabelEditingSession` | implemented | 3D connectivity fixtures; WPF edit fixture; crop dimension/origin/label bit-exact undo fixture |
 | Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |
-| Optional CUDA backend | `Auto`, `CPU`, `CUDA` execution policy | scaffolded | Hosted CUDA 13.2 NVCC/MSVC build plus registered RTX 4060 self-hosted runtime parity completed through iterative DSLT segmentation, including exact masks/labels, cancellation, validation, and mixed-operation memory fixtures; broader GPU-fleet and legacy-runtime comparison pending |
+| Optional CUDA backend | `Auto`, `CPU`, `CUDA` execution policy | scaffolded | Every public C ABI v1 operation has a CUDA path; hosted CUDA 13.2 NVCC/MSVC build plus registered RTX 4060 self-hosted runtime parity covers exact masks/labels, float tolerances, cancellation, validation, and mixed-operation memory fixtures; broader GPU-fleet and legacy-runtime comparison pending |
 | Win32/x86 build | None | excluded | Windows x64 policy |
 
 `pending-reference` algorithms are not exposed as completed UI actions. This

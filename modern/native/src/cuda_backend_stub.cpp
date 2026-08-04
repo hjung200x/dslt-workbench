@@ -11,6 +11,8 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_WINDOW_LEVEL ||
         operation == DSLT_OP_THRESHOLD_2D ||
         operation == DSLT_OP_THRESHOLD_3D ||
+        operation == DSLT_OP_ADAPTIVE_THRESHOLD_2D ||
+        operation == DSLT_OP_ADAPTIVE_THRESHOLD_3D ||
         operation == DSLT_OP_SMOOTH_MEAN ||
         operation == DSLT_OP_SMOOTH_GAUSSIAN ||
         operation == DSLT_OP_DILATE_CUBE ||
