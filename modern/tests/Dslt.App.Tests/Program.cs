@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -60,6 +61,8 @@ internal static class Program
             RunImageJHyperStackTest();
             LsmMetadataTests.Run();
             ReferenceLabelImporterTests.Run();
+            PlantSegHdf5ImporterTests.Run();
+            RunConfiguredRealVolumeSmokeTests();
             await RealDataManifestAssemblerTests.RunAsync();
             LegacyImageInteractionBehaviorTests.Run();
             await DepthColorProjectionTests.RunAsync();
@@ -70,6 +73,31 @@ internal static class Program
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    private static void RunConfiguredRealVolumeSmokeTests()
+    {
+        var configured = Environment.GetEnvironmentVariable("DSLT_REAL_VOLUME_SMOKE");
+        if (string.IsNullOrWhiteSpace(configured)) return;
+        foreach (var path in configured.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            RunOneRealVolumeSmokeTest(path);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+    }
+
+    private static void RunOneRealVolumeSmokeTest(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var volume = WpfWorkspaceFileService.ReadStack(fullPath, CancellationToken.None);
+        volume.Validate();
+        if (volume.Source is null) throw new InvalidOperationException("Real-volume smoke input lost its source metadata.");
+        var decodedHash = Convert.ToHexString(SHA256.HashData(volume.Source.ChannelPlanarRawSamples)).ToLowerInvariant();
+        Console.WriteLine(
+            $"Real-volume smoke passed: {Path.GetFileName(fullPath)} " +
+            $"{volume.Width} x {volume.Height} x {volume.Depth} x {volume.Channels}, " +
+            $"{volume.Source.VoxelType}, decoded SHA-256 {decodedHash}.");
     }
 
     private static void RunMainWindowStartupSmokeTest()

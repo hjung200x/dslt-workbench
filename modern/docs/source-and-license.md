@@ -27,3 +27,7 @@ recorded in `modern/legacy/README.md` and `docs/legacy-manual-audit.md`.
 The software is provided without warranty. Preview packages are
 synthetic-data-validated research builds and must not be represented as v1.0
 legacy-equivalent releases.
+
+The developer-only `Dslt.Validation.Prepare` tool uses PureHDF 2.1.4 under the
+MIT license to read public HDF5 validation fixtures. PureHDF is not included in
+the Workbench application package. See <https://github.com/Apollo3zehn/PureHDF>.

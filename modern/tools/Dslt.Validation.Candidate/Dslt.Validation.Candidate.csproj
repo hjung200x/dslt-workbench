@@ -3,12 +3,11 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <AssemblyName>Dslt.Validation.Prepare</AssemblyName>
+    <AssemblyName>Dslt.Validation.Candidate</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\app\Dslt.App\Dslt.App.csproj" />
     <ProjectReference Include="..\..\app\Dslt.Managed.Core\Dslt.Managed.Core.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="PureHDF" Version="2.1.4" />
   </ItemGroup>
 </Project>

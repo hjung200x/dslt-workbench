@@ -23,6 +23,7 @@ static async Task<int> RunAsync(string[] args)
         return command switch
         {
             "normalize-reference" => RunNormalizeReference(commandArgs),
+            "import-plantseg-hdf5" => RunImportPlantSegHdf5(commandArgs),
             "add-case" => await RunAddCaseAsync(commandArgs).ConfigureAwait(false),
             _ => throw new ArgumentException($"Unknown command: {args[0]}"),
         };
@@ -33,6 +34,35 @@ static async Task<int> RunAsync(string[] args)
         Console.Error.WriteLine($"Validation preparation failed: {exception.Message}");
         return 2;
     }
+}
+
+static int RunImportPlantSegHdf5(string[] args)
+{
+    var options = Parse(args, IsPlantSegOption, IsCommonFlag);
+    var calibration = new Calibration(
+        ParsePositiveDouble(options, "--spacing-x"),
+        ParsePositiveDouble(options, "--spacing-y"),
+        ParsePositiveDouble(options, "--spacing-z"),
+        true,
+        Require(options, "--unit"));
+    var voxelType = Require(options, "--voxel-type").ToLowerInvariant() switch
+    {
+        "uint8" => VolumeVoxelType.UnsignedInt8,
+        "uint16" => VolumeVoxelType.UnsignedInt16,
+        "float32" => VolumeVoxelType.Float32,
+        var value => throw new ArgumentException($"--voxel-type must be uint8, uint16, or float32; received {value}."),
+    };
+    var result = PlantSegHdf5Importer.Import(
+        Require(options, "--input"),
+        Require(options, "--output-volume"),
+        Require(options, "--output-labels"),
+        new PlantSegHdf5ImportOptions(
+            calibration,
+            voxelType,
+            ParseInt32(options, "--channels", 1)),
+        options.ContainsKey("--force"));
+    WriteJson(result);
+    return 0;
 }
 
 static int RunNormalizeReference(string[] args)
@@ -158,9 +188,21 @@ static void PrintUsage()
             [--reference-background <label>] [--candidate-background <label>]
             [--connectivity <6|18|26>] [--append]
 
+          Dslt.Validation.Prepare import-plantseg-hdf5
+            --input <plantseg.h5>
+            --output-volume <input.tif> --output-labels <reference.tif>
+            --spacing-x <value> --spacing-y <value> --spacing-z <value> --unit <name>
+            --voxel-type <uint8|uint16|float32> [--channels <1|2>] [--force]
+
         normalize-reference accepts compressed 1- to 16-bit grayscale/indexed TIFF.
         With --binary, other WIC-supported mask images such as PNG are also accepted.
         Existing normalized output is never replaced unless --force is used.
+
+        import-plantseg-hdf5 reads the public PlantSeg /raw uint8 and /label uint16
+        ZYX datasets. uint16 and float32 inputs are intensity-preserving normalized
+        encodings of the same acquisition. Two-channel output duplicates the acquired
+        signal only to exercise ImageJ HyperStack channel interoperability; it does not
+        claim a native multichannel acquisition. Both outputs are staged before commit.
 
         add-case derives voxel type, container, channels, Z spacing, and decoded input
         hash from provenance 1.8. It verifies the candidate decoded-label hash and both
@@ -179,6 +221,10 @@ static bool IsAddCaseOption(string key) => key.ToLowerInvariant() is
     "--reference-kind" or "--input-volume" or "--reference-labels" or "--candidate-labels" or
     "--candidate-provenance" or "--representative-real" or "--reference-background" or
     "--candidate-background" or "--connectivity" or "--append";
+
+static bool IsPlantSegOption(string key) => key.ToLowerInvariant() is
+    "--input" or "--output-volume" or "--output-labels" or "--spacing-x" or "--spacing-y" or
+    "--spacing-z" or "--unit" or "--voxel-type" or "--channels" or "--force";
 
 static bool IsCommonFlag(string key) => key.ToLowerInvariant() is
     "--binary" or "--force" or "--representative-real" or "--append";

@@ -61,7 +61,7 @@ Build the exact CUDA release candidate with
 not approved merely because packaging succeeds.
 
 `verify-v1-release-evidence.ps1` combines the candidate ZIP, source-locked
-real-data report, complete 26-operation CUDA parity evidence, both supported Windows host
+real-data report, complete 27-operation CUDA parity evidence, both supported Windows host
 records, and both structured manual-observation records. It also rejects any
 `scaffolded` or `pending-reference` row in the packaged compatibility matrix.
 Only its SHA-256-locked report with `passed: true` is v1.0 approval evidence.
