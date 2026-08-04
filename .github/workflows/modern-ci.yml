@@ -32,6 +32,8 @@ jobs:
         run: dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release -p:SourceRevisionId=${{ github.sha }}
       - name: Build real-data validation tool
         run: dotnet build modern/tools/Dslt.Validation/Dslt.Validation.csproj --configuration Release
+      - name: Build real-data preparation tool
+        run: dotnet build modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj --configuration Release
       - name: Test fail-closed v1 release evidence gate
         shell: pwsh
         run: ./modern/scripts/test-v1-release-evidence.ps1

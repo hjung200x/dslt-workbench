@@ -65,7 +65,9 @@ Use `tools/Dslt.Validation` with
 `validation/real-data-manifest.example.json` to evaluate five or more accepted
 legacy/expert label pairs. The tool verifies input, label, and provenance hashes
 before calculating Dice, object-count, volume, and HD95 gates. See
-`docs/real-data-validation.md`.
+`docs/real-data-validation.md`. Candidate sources, licenses, and the boundary
+between public pipeline preflight and representative release evidence are
+tracked in `docs/real-data-cohort-sources.md`.
 The schema-2 manifest and provenance 1.8 sidecars must identify the exact
 release-candidate source commit; results from another build are rejected.
 

@@ -59,6 +59,7 @@ internal static class Program
             RunMalformedInt32StripTest();
             RunImageJHyperStackTest();
             LsmMetadataTests.Run();
+            ReferenceLabelImporterTests.Run();
             await DepthColorProjectionTests.RunAsync();
             await WorkflowViewModelTests.RunAsync();
             Console.WriteLine("DSLT WPF TIFF, metadata, hyperstack, and workflow tests passed.");

@@ -36,6 +36,32 @@ linking the sidecar to the candidate labels.
 Do not commit private microscopy data. `modern/validation/data/`, local
 manifests, and generated reports are ignored by Git.
 
+### Normalize an external reference mask
+
+Public and laboratory reference masks are often compressed unsigned or binary
+TIFF stacks, while the release validator deliberately accepts the legacy DSLT
+signed-label interchange format. Normalize a 1- to 16-bit grayscale or indexed
+TIFF stack before adding it to a local manifest. Binary masks may also be read
+from other WIC-supported formats such as PNG when `--binary` is explicit:
+
+```powershell
+dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj -- `
+  --input D:\cohort\expert-mask.tif `
+  --output modern\validation\data\acquisition-01.reference.tif `
+  --spacing-x 0.25 --spacing-y 0.25 --spacing-z 1.0 --unit um
+```
+
+Use `--binary` when every non-background source value is foreground. The
+default source/output background is `0` and the default foreground label is
+`1`; all three labels can be set explicitly. The tool reports source and output
+SHA-256 values and refuses to replace an existing output unless `--force` is
+provided. Keep the original reference file and its license/citation alongside
+the private cohort records so normalization remains auditable.
+
+Normalization only changes the interchange encoding. It does not make a public
+benchmark representative of the DSLT leaf-imaging use case and does not satisfy
+the v1.0 gate without curator confirmation.
+
 ## Run
 
 ```powershell
