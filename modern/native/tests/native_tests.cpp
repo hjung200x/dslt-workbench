@@ -192,6 +192,63 @@ void cuda_pointwise_parity_test() {
         }
     }
 
+    for (const auto operation : {
+             DSLT_OP_ADAPTIVE_THRESHOLD_2D,
+             DSLT_OP_ADAPTIVE_THRESHOLD_3D}) {
+        for (const auto kernel : {0, 1}) {
+            for (const auto constant_c : {-0.04F, 0.07F}) {
+                dslt_operation_request adaptive_request{};
+                adaptive_request.operation = operation;
+                adaptive_request.radius = 1;
+                adaptive_request.connectivity = kernel;
+                adaptive_request.constant_c = constant_c;
+                adaptive_request.backend = DSLT_BACKEND_CPU;
+                const auto cpu = run_float_operation(
+                    handle, adaptive_request, DSLT_BACKEND_CPU);
+                adaptive_request.backend = DSLT_BACKEND_CUDA;
+                const auto cuda = run_float_operation(
+                    handle, adaptive_request, DSLT_BACKEND_CUDA);
+                assert(cpu == cuda);
+            }
+        }
+    }
+
+    dslt_operation_request adaptive_request{};
+    adaptive_request.operation = DSLT_OP_ADAPTIVE_THRESHOLD_3D;
+    adaptive_request.radius = 0;
+    adaptive_request.connectivity = 1;
+    adaptive_request.constant_c = 0.0F;
+    adaptive_request.backend = DSLT_BACKEND_CUDA;
+    const auto adaptive_tie = run_float_operation(
+        handle, adaptive_request, DSLT_BACKEND_CUDA);
+    assert(std::all_of(
+        adaptive_tie.begin(), adaptive_tie.end(),
+        [](float value) { return value == 0.0F; }));
+
+    adaptive_request.radius = 1;
+    adaptive_request.backend = DSLT_BACKEND_AUTO;
+    (void)run_float_operation(handle, adaptive_request, DSLT_BACKEND_CUDA);
+
+    dslt_operation_result adaptive_result{};
+    adaptive_request.backend = DSLT_BACKEND_CUDA;
+    adaptive_request.radius = 101;
+    require(dslt_run_operation(
+        handle, &adaptive_request, nullptr, nullptr, &adaptive_result), DSLT_INVALID_ARGUMENT);
+    adaptive_request.radius = 1;
+    adaptive_request.connectivity = 2;
+    require(dslt_run_operation(
+        handle, &adaptive_request, nullptr, nullptr, &adaptive_result), DSLT_INVALID_ARGUMENT);
+    adaptive_request.connectivity = 1;
+    adaptive_request.constant_c = std::numeric_limits<float>::quiet_NaN();
+    require(dslt_run_operation(
+        handle, &adaptive_request, nullptr, nullptr, &adaptive_result), DSLT_INVALID_ARGUMENT);
+    adaptive_request.constant_c = 0.0F;
+    const auto cancel_adaptive = [](float progress, void*) -> std::int32_t {
+        return progress >= 0.55F ? 1 : 0;
+    };
+    require(dslt_run_operation(
+        handle, &adaptive_request, cancel_adaptive, nullptr, &adaptive_result), DSLT_CANCELLED);
+
     request = {};
     request.operation = DSLT_OP_SMOOTH_GAUSSIAN;
     request.backend = DSLT_BACKEND_CUDA;
@@ -1177,11 +1234,18 @@ void cuda_pointwise_parity_test() {
     auto memory_dslt_segmentation = dslt_segmentation_request;
     memory_dslt_segmentation.backend = DSLT_BACKEND_CUDA;
     (void)run_label_operation_result(handle, memory_dslt_segmentation, DSLT_BACKEND_CUDA);
+    dslt_operation_request memory_adaptive{};
+    memory_adaptive.operation = DSLT_OP_ADAPTIVE_THRESHOLD_3D;
+    memory_adaptive.backend = DSLT_BACKEND_CUDA;
+    memory_adaptive.radius = 1;
+    memory_adaptive.connectivity = 0;
+    memory_adaptive.constant_c = 0.05F;
+    (void)run_float_operation(handle, memory_adaptive, DSLT_BACKEND_CUDA);
 
     dslt_backend_info before{};
     require(dslt_get_backend_info(handle, &before));
     for (int iteration = 0; iteration < 100; ++iteration) {
-        switch (iteration % 10) {
+        switch (iteration % 11) {
         case 0:
             (void)run_float_operation(handle, request, DSLT_BACKEND_CUDA);
             break;
@@ -1214,6 +1278,9 @@ void cuda_pointwise_parity_test() {
             break;
         case 9:
             (void)run_label_operation_result(handle, memory_dslt_segmentation, DSLT_BACKEND_CUDA);
+            break;
+        case 10:
+            (void)run_float_operation(handle, memory_adaptive, DSLT_BACKEND_CUDA);
             break;
         default:
             (void)run_label_operation_result(handle, memory_components, DSLT_BACKEND_CUDA);

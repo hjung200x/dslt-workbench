@@ -6,8 +6,9 @@ This contract follows the pinned legacy CPU functions
 `AdaptiveThreshold2D_CPU` and `AdaptiveThreshold3D_CPU` together with the
 reference convolution and binarization functions in
 `ConvolutionSeparableGPU/convolutionSeparable_gold.cpp`. The Workbench CPU
-implementation is synthetic-data validated. Archived-runtime comparison is
-still required, so the compatibility status remains `scaffolded`.
+implementation is synthetic-data validated and is the behavioral reference
+for the matching CUDA implementation. Archived-runtime comparison is still
+required, so the compatibility status remains `scaffolded`.
 
 The legacy CLR selects a GPU implementation whenever CUDA is available. Its
 `AdaptiveThreshold2D_GPU` path changes the evaluated axes and C multiplier for
@@ -73,5 +74,8 @@ legacy offset into `OperationParameters.ConstantC` for reproducible provenance.
 - 2D/3D distinction on a `1 x 1 x 3` Z impulse
 - strict tie at radius zero
 - invalid radius, invalid kernel, non-finite C, and cancellation
+- voxel-exact CPU/CUDA parity for both axes modes, both kernels, and positive
+  and negative C values
+- repeated CUDA execution without measured device-memory growth
 - C ABI and managed-to-native output checks
 - WPF default and parameter-mapping checks

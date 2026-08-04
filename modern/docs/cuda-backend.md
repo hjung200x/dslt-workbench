@@ -14,9 +14,10 @@ shape, and output kind as CPU.
 - Invalid parameters, cancellation, insufficient memory, and kernel/runtime
   failures are returned to the caller. They do not silently rerun on CPU.
 
-The currently ported groups are:
+All public C ABI v1 operations are now ported. The groups are:
 
 - `Copy`, `WindowLevel`, `Threshold2D`, and `Threshold3D`;
+- 2D/3D adaptive threshold with mean or Gaussian local kernels;
 - mean/Gaussian smoothing;
 - cubic/spherical dilation and erosion;
 - area-average and Lanczos 2/3 Z resampling; and
@@ -51,6 +52,13 @@ Progress is reported at start, input transfer, execution, and completion.
 Smoothing and morphology synchronize and report after every output Z slice so
 longer filters can be cancelled between slices. Cancellation drains the owned
 stream and discards the partial result.
+
+Adaptive threshold reuses the CPU reference's normalized separable line
+weights and clamp boundary rule. It evaluates X then Y for the 2D operation and
+X, Y, then Z for the 3D operation, with cancellation checkpoints between axes.
+The comparison kernel preserves the strict `source > local - C` rule and emits
+the legacy `0.8`/`0.0` mask. Its full-volume scratch buffer is included in the
+VRAM preflight estimate.
 
 Z resampling likewise synchronizes and reports after every output slice. The
 CUDA result carries its own output width, height, depth, and kind so the C ABI
@@ -138,7 +146,7 @@ hosted build gate without occupying the GPU host. Its native test suite checks:
 
 - CPU/CUDA output parity for every ported operation;
 - `Auto` selecting CUDA for a ported operation;
-- explicit rejection of an unported operation;
+- execution coverage for every public C ABI v1 operation;
 - cancellation propagation; and
 - 100 repeated operations without more than 1 MiB apparent free-memory drift
   after kernel warm-up.
