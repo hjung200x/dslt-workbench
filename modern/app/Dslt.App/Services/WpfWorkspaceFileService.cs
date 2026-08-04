@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Dslt.Managed.Core.IO;
@@ -335,6 +336,9 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
 
         NormalizeChannels(samples, voxelCount, channels);
         var calibration = ResolveCalibration(metadata, imageJ);
+        var imageJChannelMetadata = lsm is null
+            ? ParseImageJChannelMetadata(imageJ, channels)
+            : null;
         var container = metadata.HasLsmInfo || Path.GetExtension(path).Equals(".lsm", StringComparison.OrdinalIgnoreCase)
             ? "LSM"
             : "TIFF";
@@ -351,7 +355,7 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
                 container,
                 metadata.ImageDescription,
                 rawSamples,
-                lsm?.ChannelMetadata.ToArray(),
+                lsm?.ChannelMetadata.ToArray() ?? imageJChannelMetadata,
                 lsm?.TimeStampsSeconds.ToArray()));
     }
 
@@ -465,6 +469,26 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
             values[line[..separator].Trim()] = line[(separator + 1)..].Trim();
         }
         return values;
+    }
+
+    private static VolumeChannelInfo[]? ParseImageJChannelMetadata(
+        Dictionary<string, string> values,
+        int channelCount)
+    {
+        if (!values.TryGetValue("channel_names", out var json)) return null;
+        string[]? names;
+        try
+        {
+            names = JsonSerializer.Deserialize<string[]>(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("ImageJ channel_names metadata is not valid JSON.", exception);
+        }
+        if (names is null || names.Length != channelCount || names.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException(
+                $"ImageJ channel_names must contain exactly {channelCount} non-empty names.");
+        return names.Select(name => new VolumeChannelInfo(name, 255, 255, 255, 255)).ToArray();
     }
 
     private static int ReadPositiveImageJInteger(Dictionary<string, string> values, string key, int defaultValue) =>

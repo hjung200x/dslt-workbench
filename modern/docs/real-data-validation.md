@@ -40,6 +40,28 @@ linking the sidecar to the candidate labels.
 Do not commit private microscopy data. `modern/validation/data/`, local
 manifests, and generated reports are ignored by Git.
 
+### Convert a private CZI input cohort
+
+The application intentionally preserves the legacy TIFF/LSM input contract,
+but private CZI acquisitions can be prepared as pixel-verified ImageJ
+HyperStacks for validation:
+
+```powershell
+python -m pip install -r modern/scripts/requirements-czi.txt
+python modern/scripts/convert-czi-cohort.py `
+  --source D:\private\czi-cohort `
+  --output modern\validation\data\private-czi
+```
+
+The optional tool uses the pinned `scripts/requirements-czi.txt` environment.
+It records source,
+decoded-pixel, and output hashes and refuses to publish a TIFF unless the
+read-back samples are identical. CZI channel names are stored as validated JSON
+in the ImageJ description and restored by the Workbench loader. Conversion
+provides neither reference labels nor biological classification. See
+[`cortex-real-data-preflight.md`](cortex-real-data-preflight.md) for the audited
+five-acquisition example and its remaining release gaps.
+
 ### Fetch and convert the public PlantSeg candidate cohort
 
 Download the five locked gate candidates. Add `-IncludeSpare` for the sixth
@@ -99,7 +121,10 @@ dotnet run --project modern\tools\Dslt.Validation.Prepare --configuration Releas
 `Dslt.Validation.Candidate` loads the same TIFF path as the WPF application and
 executes the production `DsltSegmentation` operation through the native C ABI.
 Use `--estimate-only` first; it rejects an unsafe memory/work estimate without
-starting segmentation:
+starting segmentation. Its JSON also records the loader-observed voxel type,
+container, selected channel, calibration, channel metadata, and canonical
+decoded-input SHA-256 so a converted acquisition can be audited before an
+expensive run:
 
 ```powershell
 dotnet run --project modern\tools\Dslt.Validation.Candidate --configuration Release -- `

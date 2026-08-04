@@ -21,7 +21,23 @@ same acquisition count once, so these files alone cannot meet the five-unique-
 acquisition release rule. The source list also provides no accepted label
 output; legacy output or expert review is still required.
 
-## Priority 2: public plant-cell volumetric references
+## Priority 2: local Cortex five-acquisition candidate
+
+Five private Cortex CZI acquisitions have been audited as distinct 3D,
+three-channel, anisotropic plant-cell volumes. Pixel-exact conversion to ImageJ
+HyperStack, Workbench loading, calibration, and resource preflight pass. The
+source/output hashes and limitations are locked in
+[`cortex-stg1-cohort.lock.json`](../validation/cortex-stg1-cohort.lock.json),
+and the procedure and admission decision are recorded in
+[`cortex-real-data-preflight.md`](cortex-real-data-preflight.md).
+
+They are strong input and performance candidates, but they currently provide
+no accepted full-volume 3D labels. All five are native three-channel uint8 at
+the same Z spacing, so additional native single-channel, uint16, float32, and
+different-spacing acquisitions are still required. Curator confirmation is
+also required before `representative-real` release classification.
+
+## Priority 3: public plant-cell volumetric references
 
 The PlantSeg paper's public core datasets contain real 3D plant microscopy
 volumes and voxel-aligned instance labels. The Workbench source lock is
@@ -46,7 +62,7 @@ classification for the intended DSLT leaf workflow.
 - [PlantSeg core dataset project](https://osf.io/uzq3w/)
 - [PlantSeg paper](https://doi.org/10.7554/eLife.57613)
 
-## Priority 3: public pipeline preflight
+## Priority 4: public pipeline preflight
 
 The [Broad Bioimage Benchmark Collection](https://bbbc.broadinstitute.org/)
 provides real microscopy data and ground truth with explicit licensing. These

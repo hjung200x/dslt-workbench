@@ -59,6 +59,7 @@ internal static class Program
             Int32TiffCompressionTests.Run();
             RunMalformedInt32StripTest();
             RunImageJHyperStackTest();
+            RunMalformedImageJChannelMetadataTests();
             LsmMetadataTests.Run();
             ReferenceLabelImporterTests.Run();
             PlantSegHdf5ImporterTests.Run();
@@ -668,7 +669,7 @@ internal static class Program
         var path = Path.Combine(Path.GetTempPath(), $"dslt-imagej-{Guid.NewGuid():N}.tif");
         try
         {
-            const string description = "ImageJ=1.54\nimages=4\nchannels=2\nslices=2\nframes=1\nhyperstack=true\nunit=um\npixel_width=0.25\npixel_height=0.5\nspacing=1.5\n";
+            const string description = "ImageJ=1.54\nimages=4\nchannels=2\nslices=2\nframes=1\nhyperstack=true\nunit=um\npixel_width=0.25\npixel_height=0.5\nspacing=1.5\nchannel_names=[\"CW2MR\",\"mCher\"]\n";
             var pageValues = new byte[] { 10, 100, 20, 200 };
             var encoder = new TiffBitmapEncoder();
             for (var page = 0; page < pageValues.Length; page++)
@@ -700,6 +701,58 @@ internal static class Program
             if (volume.Calibration.SpacingX != 0.25 || volume.Calibration.SpacingY != 0.5 ||
                 volume.Calibration.SpacingZ != 1.5 || volume.Calibration.UnitName != "um")
                 throw new InvalidOperationException("ImageJ voxel calibration was not preserved.");
+            var channels = volume.Source.ChannelMetadata ?? [];
+            if (channels.Count != 2 ||
+                channels[0] != new VolumeChannelInfo("CW2MR", 255, 255, 255, 255) ||
+                channels[1] != new VolumeChannelInfo("mCher", 255, 255, 255, 255))
+                throw new InvalidOperationException("ImageJ channel names were not preserved.");
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    private static void RunMalformedImageJChannelMetadataTests()
+    {
+        ExpectInvalidImageJChannelMetadata("channel_names=not-json\n");
+        ExpectInvalidImageJChannelMetadata("channel_names=[\"only-one\"]\n");
+    }
+
+    private static void ExpectInvalidImageJChannelMetadata(string channelMetadata)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"dslt-imagej-invalid-{Guid.NewGuid():N}.tif");
+        try
+        {
+            var description =
+                "ImageJ=1.54\nimages=2\nchannels=2\nslices=1\nframes=1\nhyperstack=true\n" +
+                channelMetadata;
+            var encoder = new TiffBitmapEncoder();
+            for (var page = 0; page < 2; page++)
+            {
+                var bitmap = BitmapSource.Create(
+                    1, 1, 96, 96, PixelFormats.Gray8, null, new byte[] { (byte)(page + 1) }, 1);
+                if (page == 0)
+                {
+                    var metadata = new BitmapMetadata("tiff");
+                    metadata.SetQuery("/ifd/{ushort=270}", description);
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap, null, metadata, null));
+                }
+                else
+                {
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                }
+            }
+            using (var stream = File.Create(path)) encoder.Save(stream);
+            try
+            {
+                _ = WpfWorkspaceFileService.ReadStack(path, CancellationToken.None);
+                throw new InvalidOperationException("Malformed ImageJ channel_names metadata was accepted.");
+            }
+            catch (InvalidDataException exception) when (
+                exception.Message.Contains("channel_names", StringComparison.Ordinal))
+            {
+            }
         }
         finally
         {

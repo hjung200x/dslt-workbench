@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dslt.App.Services;
@@ -57,6 +58,12 @@ static async Task<int> RunAsync(string[] args)
                 volume.Height,
                 volume.Depth,
                 volume.Channels,
+                volume.SelectedChannel,
+                voxelType = volume.Source?.VoxelType ?? VolumeVoxelType.Float32,
+                inputContainer = volume.Source?.Container ?? "synthetic",
+                inputCalibration = volume.Calibration,
+                decodedInputSha256 = ComputeInputSha256(volume),
+                channelMetadata = volume.Source?.ChannelMetadata,
                 preprocessingParameters,
                 dsltParameters,
                 estimate,
@@ -220,6 +227,14 @@ static bool NearlyEqual(double left, double right)
 {
     var scale = Math.Max(1.0, Math.Max(Math.Abs(left), Math.Abs(right)));
     return Math.Abs(left - right) <= 1e-9 * scale;
+}
+
+static string ComputeInputSha256(VolumeData volume)
+{
+    ReadOnlySpan<byte> bytes = volume.Source is null
+        ? MemoryMarshal.AsBytes(volume.Samples.AsSpan())
+        : volume.Source.ChannelPlanarRawSamples;
+    return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 }
 
 static void ValidateOutputBase(string outputBase, bool force)
