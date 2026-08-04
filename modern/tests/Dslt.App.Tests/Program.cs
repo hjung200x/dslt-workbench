@@ -1,11 +1,13 @@
 using System.Buffers.Binary;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using Dslt.App.Services;
 using Dslt.Managed.Core.Models;
@@ -14,6 +16,8 @@ namespace Dslt.App.Tests;
 
 internal static class Program
 {
+    private static readonly nint DpiAwarenessContextPerMonitorV2 = new(-4);
+
     [STAThread]
     private static async Task Main()
     {
@@ -96,6 +100,16 @@ internal static class Program
                 if (!window.IsLoaded)
                     throw new InvalidOperationException("The WPF main window did not reach the loaded state.");
 
+                var windowHandle = new WindowInteropHelper(window).Handle;
+                if (windowHandle == nint.Zero ||
+                    !AreDpiAwarenessContextsEqual(
+                        GetWindowDpiAwarenessContext(windowHandle),
+                        DpiAwarenessContextPerMonitorV2))
+                {
+                    throw new InvalidOperationException(
+                        "The WPF main window must run with PerMonitorV2 DPI awareness.");
+                }
+
                 var progress = FindVisualChild<ProgressBar>(window) ??
                     throw new InvalidOperationException("The WPF main window has no progress indicator.");
                 var binding = BindingOperations.GetBindingExpression(progress, ProgressBar.ValueProperty);
@@ -157,6 +171,13 @@ internal static class Program
         }
         return null;
     }
+
+    [DllImport("user32.dll")]
+    private static extern nint GetWindowDpiAwarenessContext(nint windowHandle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AreDpiAwarenessContextsEqual(nint first, nint second);
 
     private static void RunGray16RoundTripTest()
     {

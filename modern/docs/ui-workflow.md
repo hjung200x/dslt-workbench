@@ -72,9 +72,10 @@ equivalence; that remains gated by representative datasets.
 12. Watershed is enabled only with a selected full-volume seed, passes seed
     state to the engine, records seed provenance, and remains undoable.
 13. the real `Application.Run()` startup path creates and loads the main window,
-    keeps the read-only progress property on a one-way binding, and gives every
-    slider, combo box, text box, list, progress indicator, and scrollable view
-    an explicit UI Automation name.
+    runs in a `PerMonitorV2` DPI-awareness context, keeps the read-only progress
+    property on a one-way binding, and gives every slider, combo box, text box,
+    list, progress indicator, and scrollable view an explicit UI Automation
+    name.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
@@ -84,10 +85,11 @@ calibration, and metadata fixtures.
 On 2026-08-04, a locally published self-contained `win-x64` build was launched
 with the hosted CUDA artifact previously validated on the same RTX 4060. The
 window loaded at 1500 x 920 on a 96-DPI Windows host, reported `CPU + CUDA` and
-the RTX 4060 device, exposed 107 UI Automation descendants, and had zero
-keyboard-focusable elements without an accessible name. The app then accepted
-a normal window-close request and exited. This is one-host startup evidence,
-not completion of the dual-OS and multi-DPI release gate.
+the RTX 4060 device, ran with `PerMonitorV2=True`, exposed 107 UI Automation
+descendants, and had zero keyboard-focusable elements without an accessible
+name. The app then accepted a normal window-close request and exited. This is
+one-host startup evidence, not completion of the dual-OS and multi-DPI release
+gate.
 
 ## Remaining UI work
 
