@@ -3,6 +3,7 @@ using Dslt.App.Services;
 using Dslt.App.ViewModels;
 using Dslt.Managed.Core.Models;
 using Dslt.Managed.Core.Services;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -297,6 +298,65 @@ internal static class WorkflowViewModelTests
             "The YZ plane did not preserve Y-vertical and Z-horizontal coordinate order.");
         Assert(ReadGray8((BitmapSource)target.SourceZxImage!).SequenceEqual(new byte[] { 255, 230, 153, 128 }),
             "The ZX plane did not preserve Z-vertical and X-horizontal coordinate order.");
+
+        await RunLargeVolumeCancellationSmokeAsync();
+    }
+
+    private static async Task RunLargeVolumeCancellationSmokeAsync()
+    {
+        const int width = 512;
+        const int height = 512;
+        const int depth = 64;
+        var samples = new float[checked(width * height * depth)];
+        samples[^1] = 1;
+        var files = new FakeWorkspaceFileService
+        {
+            NextVolume = new VolumeData(
+                width,
+                height,
+                depth,
+                1,
+                0,
+                new Calibration(0.25, 0.25, 1.0, true, "um"),
+                samples),
+        };
+        var engine = new FakeProcessingEngine { RunBehavior = FakeRunBehavior.WaitForCancellation };
+        using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
+        var target = viewModel.Value;
+
+        await target.OpenCommand.ExecuteAsync();
+        Assert(target.MaximumXIndex == width - 1 &&
+               target.MaximumYIndex == height - 1 &&
+               target.MaximumZIndex == depth - 1,
+            "The large-volume navigation bounds were not published.");
+        Assert(!target.HasResult, "Opening a large volume retained a stale result.");
+
+        var navigationTimer = Stopwatch.StartNew();
+        target.ZIndex = depth - 1;
+        navigationTimer.Stop();
+        Assert(navigationTimer.Elapsed < TimeSpan.FromSeconds(2),
+            "Large-volume Z navigation blocked the caller for two seconds or longer.");
+        var navigatedSourceImage = target.SourceImage;
+
+        target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.Threshold3D);
+        var cancelledRun = target.RunCommand.ExecuteAsync();
+        await engine.RunStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert(target.IsBusy && target.CancelCommand.CanExecute(null),
+            "Large-volume processing did not expose cancellation.");
+
+        var cancelTimer = Stopwatch.StartNew();
+        target.CancelCommand.Execute(null);
+        cancelTimer.Stop();
+        Assert(cancelTimer.Elapsed < TimeSpan.FromSeconds(1),
+            "The large-volume cancellation command blocked the caller for one second or longer.");
+        await cancelledRun.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert(!target.IsBusy && !target.HasResult && ReferenceEquals(navigatedSourceImage, target.SourceImage),
+            "Large-volume cancellation did not preserve the source view and empty result state.");
+        Assert(target.Status.Contains("cancelled", StringComparison.OrdinalIgnoreCase) &&
+               target.Status.Contains("preserved", StringComparison.OrdinalIgnoreCase),
+            "Large-volume cancellation did not report state preservation.");
     }
 
     private static void RunScrollSyncTest()
