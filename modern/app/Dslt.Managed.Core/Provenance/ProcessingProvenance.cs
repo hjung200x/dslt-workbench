@@ -36,10 +36,12 @@ public sealed record ProcessingProvenance(
     int InputHeight,
     int InputDepth,
     int InputChannels,
+    int InputSelectedChannel,
     string InputVoxelType,
     string InputContainer,
     IReadOnlyList<VolumeChannelInfo> InputChannelMetadata,
     IReadOnlyList<double> InputTimeStampsSeconds,
+    Calibration InputCalibration,
     Calibration Calibration,
     IReadOnlyList<ProcessingStepProvenance> ProcessingSteps,
     OperationParameters Operation,
@@ -67,14 +69,15 @@ public sealed record ProcessingProvenance(
         int outputOriginX = 0,
         int outputOriginY = 0,
         int outputOriginZ = 0,
-        IReadOnlyList<ProcessingStepProvenance>? processingSteps = null)
+        IReadOnlyList<ProcessingStepProvenance>? processingSteps = null,
+        Calibration? outputCalibration = null)
     {
         ReadOnlySpan<byte> bytes = input.Source is null
             ? MemoryMarshal.AsBytes(input.Samples.AsSpan())
             : input.Source.ChannelPlanarRawSamples;
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         return new ProcessingProvenance(
-            "1.9",
+            "1.10",
             "synthetic-data-validated",
             ResolveSourceCommit(),
             DateTimeOffset.UtcNow,
@@ -83,11 +86,13 @@ public sealed record ProcessingProvenance(
             input.Height,
             input.Depth,
             input.Channels,
+            input.SelectedChannel,
             (input.Source?.VoxelType ?? VolumeVoxelType.Float32).ToString(),
             input.Source?.Container ?? "memory-float32",
             input.Source?.ChannelMetadata?.ToArray() ?? [],
             input.Source?.TimeStampsSeconds?.ToArray() ?? [],
             input.Calibration,
+            outputCalibration ?? input.Calibration,
             processingSteps?.ToArray() ?? [],
             operation,
             result.UsedBackend,

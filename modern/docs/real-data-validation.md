@@ -25,11 +25,13 @@ must confirm `dataClassification: representative-real` and the stated
 7. Set `container` to `tiff` or `lsm`; it must agree with provenance
    `inputContainer`.
 
-Schema-2 v1 evidence requires candidate provenance schema 1.9. The validator
-cross-checks its source commit, input voxel type, container, channels, Z
-spacing, final DSLT or Watershed operation, actual CPU/CUDA backend, label
-output kind, and output dimensions instead of trusting the manifest coverage
-fields alone. A Watershed result is accepted only when its final prior step is
+Schema-2 v1 evidence requires candidate provenance schema 1.10. The validator
+cross-checks its source commit, input voxel type, container, channels, selected
+input channel, input calibration, exported-result Z spacing, final DSLT or
+Watershed operation, actual CPU/CUDA backend, label output kind, and output
+dimensions instead of trusting the manifest coverage fields alone. The label
+TIFF calibration must agree with the exported-result calibration. A Watershed
+result is accepted only when its final prior step is
 a hashed DSLT label result and the Watershed seed hash matches that output. The
 validator also recomputes the canonical little-endian int32 label payload
 SHA-256 and requires it to match provenance `outputSha256`, cryptographically
@@ -107,7 +109,7 @@ dotnet run --project modern\tools\Dslt.Validation.Candidate --configuration Rele
 ```
 
 Run the candidate with an aligned reference and an ignored output base to save
-the int32 payload, signed label TIFF, and provenance 1.9 sidecar before metric
+the int32 payload, signed label TIFF, and provenance 1.10 sidecar before metric
 evaluation:
 
 ```powershell
@@ -136,7 +138,7 @@ cannot be admitted to a schema-2 v1 manifest.
 
 The default DSLT values match the preserved version 1.11 manual preset. Enabled
 Gaussian smoothing and Z-gradient correction execute through the same native
-engine before segmentation. Provenance 1.9 records each preprocessing
+engine before segmentation. Provenance 1.10 records the selected input channel and each preprocessing
 operation, parameters, actual backend, dimensions, and output hash in order.
 With `--apply-watershed`, the DSLT label output is hashed as the last prior
 processing step, every extracted label is selected as a marker, and Watershed
@@ -198,7 +200,7 @@ the v1.0 gate without curator confirmation.
 
 ### Assemble a source-locked manifest
 
-After Workbench has written the candidate label TIFF and provenance 1.9
+After Workbench has written the candidate label TIFF and provenance 1.10
 sidecar, create the first schema-2 case without copying metadata by hand:
 
 ```powershell

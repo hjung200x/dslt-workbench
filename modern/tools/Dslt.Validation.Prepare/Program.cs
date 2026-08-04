@@ -227,7 +227,7 @@ static void PrintUsage()
         staged before commit.
 
         add-case derives voxel type, container, channels, Z spacing, and decoded input
-        hash from provenance 1.9. It verifies the candidate decoded-label hash and both
+        hash and selected input channel from provenance 1.10. It verifies the candidate decoded-label hash and both
         label volumes before atomically creating or extending a schema-2 manifest.
         Existing manifests require --append. Classification requires the explicit
         --representative-real acknowledgement.

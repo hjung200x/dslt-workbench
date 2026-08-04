@@ -15,6 +15,7 @@ public sealed class MainWindowViewModel : ObservableObject
 {
     private readonly IProcessingEngine _engine;
     private readonly IWorkspaceFileService _files;
+    private VolumeData? _rootVolume;
     private VolumeData? _volume;
     private CancellationTokenSource? _cancellation;
     private ImageSource? _sourceImage;
@@ -79,6 +80,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private WorkflowStage _selectedStage = WorkflowStage.Inspect;
     private ProcessingResult? _lastResult;
     private OperationParameters? _lastParameters;
+    private readonly List<ProcessingStepProvenance> _workingProcessingSteps = [];
+    private IReadOnlyList<ProcessingStepProvenance> _lastResultProcessingSteps = [];
     private byte[]? _lastDepthColorPixels;
     private LabelEditingSession? _editingSession;
     private readonly List<string> _editHistory = [];
@@ -132,6 +135,9 @@ public sealed class MainWindowViewModel : ObservableObject
         EstimateCommand = new AsyncRelayCommand(EstimateSelectedOperationAsync, CanEstimate);
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasResult && !IsBusy);
         RunCommand = new AsyncRelayCommand(RunSelectedOperationAsync, CanRun);
+        UseResultAsInputCommand = new RelayCommand(UseResultAsInput, () => CanUseResultAsInput && !IsBusy);
+        ResetProcessingChainCommand = new RelayCommand(
+            ResetProcessingChain, () => _rootVolume is not null && _workingProcessingSteps.Count > 0 && !IsBusy);
         CancelCommand = new RelayCommand(() => _cancellation?.Cancel(), () => _cancellation is not null);
         SelectAtCursorCommand = new RelayCommand(SelectAtCursor, () => CanEdit && !IsBusy);
         SelectPlanePointCommand = new RelayCommand<OrthogonalPointerPosition>(
@@ -269,6 +275,8 @@ public sealed class MainWindowViewModel : ObservableObject
             var selected = Math.Clamp(value, 0, _volume.Channels - 1);
             if (!SetProperty(ref _channelIndex, selected)) return;
             _volume = _volume with { SelectedChannel = selected };
+            if (_workingProcessingSteps.Count == 0 && _rootVolume is not null)
+                _rootVolume = _rootVolume with { SelectedChannel = selected };
             RefreshImages();
             OnPropertyChanged(nameof(VolumeSummary));
         }
@@ -681,6 +689,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public bool IsIdle => !IsBusy;
     public bool HasVolume => _volume is not null;
     public bool HasResult => _lastResult is not null && _lastParameters is not null;
+    public bool CanUseResultAsInput => _lastResult is
+        { OutputKind: OutputKind.VolumeFloat32, FloatData: not null } && _lastParameters is not null;
+    public int ProcessingStepCount => _workingProcessingSteps.Count;
+    public string ProcessingChainSummary => _workingProcessingSteps.Count == 0
+        ? "Working input is the loaded source volume."
+        : $"{_workingProcessingSteps.Count} applied step(s): " +
+          string.Join(" → ", _workingProcessingSteps.Select(step => step.Operation.Operation));
     public bool CanEdit => _editingSession is not null;
     public bool HasSelection => SelectedLabelCount > 0;
     public int SelectedLabelCount => _editingSession?.Selection.Count ?? 0;
@@ -722,6 +737,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public AsyncRelayCommand EstimateCommand { get; }
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand RunCommand { get; }
+    public RelayCommand UseResultAsInputCommand { get; }
+    public RelayCommand ResetProcessingChainCommand { get; }
     public RelayCommand CancelCommand { get; }
     public RelayCommand SelectAtCursorCommand { get; }
     public RelayCommand<OrthogonalPointerPosition> SelectPlanePointCommand { get; }
@@ -793,6 +810,11 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             ProcessingLabelState? labelState = null;
             var previousEditingSession = IsWatershed ? _editingSession : null;
+            var previousParameters = IsWatershed ? _lastParameters : null;
+            var previousResult = IsWatershed ? _lastResult : null;
+            var previousResultSteps = IsWatershed
+                ? _lastResultProcessingSteps.ToArray()
+                : [];
             if (IsWatershed)
             {
                 if (_editingSession is null || _editingSession.Selection.Count == 0)
@@ -872,10 +894,17 @@ public sealed class MainWindowViewModel : ObservableObject
             }
             if (IsWatershed && previousEditingSession is not null && result.Labels is not null)
             {
+                if (previousParameters is null || previousResult?.Labels is null)
+                    throw new InvalidOperationException("Watershed requires a reproducible prior label result.");
                 previousEditingSession.ReplaceLabels(result.Labels);
                 _editingSession = previousEditingSession;
                 result = result with { Labels = previousEditingSession.Labels.ToArray() };
                 _editHistory.Add("watershed");
+                _lastResultProcessingSteps =
+                [
+                    .. previousResultSteps,
+                    ProcessingStepProvenance.Create(previousParameters, previousResult),
+                ];
             }
             else
             {
@@ -883,6 +912,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 _editingSession = result.Labels is null
                     ? null
                     : new LabelEditingSession(result.Width, result.Height, result.Depth, result.Labels);
+                _lastResultProcessingSteps = _workingProcessingSteps.ToArray();
             }
             _lastResult = result;
             _lastParameters = parameters.Operation == ProcessingOperation.ZGradient
@@ -904,6 +934,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 : $"Completed on {result.UsedBackend} · {result.ComponentCount} components";
             Progress = 100;
             OnPropertyChanged(nameof(HasResult));
+            OnPropertyChanged(nameof(CanUseResultAsInput));
             OnPropertyChanged(nameof(ResultGeometrySummary));
         }
         catch (OperationCanceledException)
@@ -925,7 +956,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async Task SaveAsync()
     {
-        if (_volume is null || _lastResult is null || _lastParameters is null) return;
+        if (_rootVolume is null || _volume is null || _lastResult is null || _lastParameters is null) return;
         var basePath = _files.ChooseExportBasePath();
         if (basePath is null) return;
         IsBusy = true;
@@ -933,13 +964,15 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             await ResultPackageWriter.WriteAsync(
                 basePath,
-                _volume,
+                _rootVolume,
                 _lastParameters,
                 _lastResult,
                 editHistory: _editHistory,
                 outputOriginX: ResultOriginX,
                 outputOriginY: ResultOriginY,
-                outputOriginZ: ResultOriginZ);
+                outputOriginZ: ResultOriginZ,
+                processingSteps: _lastResultProcessingSteps,
+                outputCalibration: ResolveResultCalibration(_volume, _lastParameters));
             SelectedStage = WorkflowStage.Export;
             Status = $"Result package exported: {basePath}.json";
         }
@@ -1005,7 +1038,53 @@ public sealed class MainWindowViewModel : ObservableObject
             : ProcessingProvenance.ComputeLabelSha256(labelState.Labels),
         SelectedSeedLabels: labelState?.SelectedLabels);
 
+    private void UseResultAsInput()
+    {
+        if (_volume is null || _lastResult?.FloatData is null || _lastParameters is null ||
+            _lastResult.OutputKind != OutputKind.VolumeFloat32)
+            return;
+        var calibration = _lastParameters.Operation is
+            ProcessingOperation.ResampleZArea or ProcessingOperation.ResampleZLanczos
+            ? _volume.Calibration with { SpacingZ = _lastParameters.TargetSpacingZ }
+            : _volume.Calibration;
+        var replacement = new VolumeData(
+            _lastResult.Width,
+            _lastResult.Height,
+            _lastResult.Depth,
+            1,
+            0,
+            calibration,
+            _lastResult.FloatData.ToArray());
+        replacement.Validate();
+        _workingProcessingSteps.Clear();
+        _workingProcessingSteps.AddRange(_lastResultProcessingSteps);
+        _workingProcessingSteps.Add(ProcessingStepProvenance.Create(_lastParameters, _lastResult));
+        InstallWorkingVolume(
+            replacement,
+            $"Applied {_lastParameters.Operation} as working input · {_workingProcessingSteps.Count} step(s)");
+    }
+
+    private static Calibration ResolveResultCalibration(VolumeData input, OperationParameters operation) =>
+        operation.Operation is ProcessingOperation.ResampleZArea or ProcessingOperation.ResampleZLanczos
+            ? input.Calibration with { SpacingZ = operation.TargetSpacingZ }
+            : input.Calibration;
+
+    private void ResetProcessingChain()
+    {
+        if (_rootVolume is null) return;
+        _workingProcessingSteps.Clear();
+        InstallWorkingVolume(_rootVolume, "Restored the loaded source volume and cleared the processing chain.");
+    }
+
     private void ReplaceVolume(VolumeData replacement, string status)
+    {
+        replacement.Validate();
+        _rootVolume = replacement;
+        _workingProcessingSteps.Clear();
+        InstallWorkingVolume(replacement, status);
+    }
+
+    private void InstallWorkingVolume(VolumeData replacement, string status)
     {
         replacement.Validate();
         _volume = replacement;
@@ -1025,6 +1104,7 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(TargetSpacingZ));
         _lastResult = null;
         _lastParameters = null;
+        _lastResultProcessingSteps = [];
         _lastDepthColorPixels = null;
         _editingSession = null;
         _editHistory.Clear();
@@ -1050,6 +1130,9 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(VolumeSummary));
         OnPropertyChanged(nameof(HasVolume));
         OnPropertyChanged(nameof(HasResult));
+        OnPropertyChanged(nameof(CanUseResultAsInput));
+        OnPropertyChanged(nameof(ProcessingStepCount));
+        OnPropertyChanged(nameof(ProcessingChainSummary));
         OnPropertyChanged(nameof(ResultGeometrySummary));
         NotifyCommandStates();
     }
@@ -1345,6 +1428,8 @@ public sealed class MainWindowViewModel : ObservableObject
         EstimateCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
         RunCommand.NotifyCanExecuteChanged();
+        UseResultAsInputCommand.NotifyCanExecuteChanged();
+        ResetProcessingChainCommand.NotifyCanExecuteChanged();
         SelectAtCursorCommand.NotifyCanExecuteChanged();
         SelectPlanePointCommand.NotifyCanExecuteChanged();
         ZoomInCommand.NotifyCanExecuteChanged();

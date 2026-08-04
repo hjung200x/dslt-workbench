@@ -22,6 +22,7 @@ public static class ResultPackageWriter
         int outputOriginY = 0,
         int outputOriginZ = 0,
         IReadOnlyList<ProcessingStepProvenance>? processingSteps = null,
+        Calibration? outputCalibration = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
@@ -62,7 +63,7 @@ public static class ResultPackageWriter
                 result.Height,
                 result.Depth,
                 result.Labels,
-                input.Calibration,
+                outputCalibration ?? input.Calibration,
                 encoding);
             labelTiffEncoding = encoding.ToString();
             if (encoding == LabelTiffEncoding.SignedInt32)
@@ -78,7 +79,8 @@ public static class ResultPackageWriter
             outputOriginX,
             outputOriginY,
             outputOriginZ,
-            processingSteps);
+            processingSteps,
+            outputCalibration);
         await using var stream = File.Create(metadataPath);
         await JsonSerializer.SerializeAsync(stream, provenance, JsonOptions, cancellationToken).ConfigureAwait(false);
     }
