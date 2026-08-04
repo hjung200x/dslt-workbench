@@ -278,6 +278,16 @@ public sealed class MainWindowViewModel : ObservableObject
     }
 
     public int MaximumChannelIndex => Math.Max(0, (_volume?.Channels ?? 1) - 1);
+    public IReadOnlyList<string> ChannelLabels
+    {
+        get
+        {
+            var count = _volume?.Channels ?? 1;
+            return Enumerable.Range(0, count)
+                .Select(index => $"{index + 1}: {ResolveChannelName(_volume, index)}")
+                .ToArray();
+        }
+    }
     public int MaximumXIndex => Math.Max(0, (_volume?.Width ?? 1) - 1);
     public int MaximumYIndex => Math.Max(0, (_volume?.Height ?? 1) - 1);
     public int MaximumZIndex => Math.Max(0, (_volume?.Depth ?? 1) - 1);
@@ -596,7 +606,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public string VolumeSummary => _volume is null
         ? "No volume"
-        : $"{_volume.Width} × {_volume.Height} × {_volume.Depth} · channel {ChannelIndex + 1}/{_volume.Channels} · Z spacing {_volume.Calibration.SpacingZ.ToString("0.###", CultureInfo.InvariantCulture)} {_volume.Calibration.UnitName}";
+        : $"{_volume.Width} × {_volume.Height} × {_volume.Depth} · channel {ChannelIndex + 1}/{_volume.Channels} ({ResolveChannelName(_volume, ChannelIndex)}) · Z spacing {_volume.Calibration.SpacingZ.ToString("0.###", CultureInfo.InvariantCulture)} {_volume.Calibration.UnitName}";
 
     public string BackendSummary => _engine.Backend.CudaAvailable
         ? $"CPU + CUDA · {_engine.Backend.DeviceName}"
@@ -853,6 +863,7 @@ public sealed class MainWindowViewModel : ObservableObject
         SelectedStage = WorkflowStage.Inspect;
         RefreshImages();
         OnPropertyChanged(nameof(ChannelIndex));
+        OnPropertyChanged(nameof(ChannelLabels));
         OnPropertyChanged(nameof(XIndex));
         OnPropertyChanged(nameof(YIndex));
         OnPropertyChanged(nameof(ZIndex));
@@ -1100,6 +1111,15 @@ public sealed class MainWindowViewModel : ObservableObject
         $"{estimate.DirectionCount:N0} directions · {estimate.LineSamplesPerVoxel:N0} samples/voxel · " +
         $"{estimate.DirectionalWorkItems:N0} directional samples · {estimate.EstimatedHostBytes / (1024.0 * 1024.0):N1} MiB host · " +
         $"{estimate.SweepPasses:N0} pass(es) · {(estimate.WithinLimits ? "within limits" : "over limit")}";
+
+    private static string ResolveChannelName(VolumeData? volume, int channel)
+    {
+        if (volume?.Source?.ChannelMetadata is { } metadata &&
+            metadata.Count == volume.Channels &&
+            channel >= 0 && channel < metadata.Count)
+            return metadata[channel].Name;
+        return $"Channel {channel + 1}";
+    }
 
     private static ReadOnlySpan<float> SelectedChannelSamples(VolumeData volume)
     {

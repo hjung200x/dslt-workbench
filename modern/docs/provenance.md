@@ -18,3 +18,8 @@ manifests repeat the same commit as `candidateSourceCommit`; the validator
 rejects sidecars from any other build. Development builds without injected
 source identity record `unavailable` and cannot satisfy the v1 source-locked
 gate.
+
+Schema 1.8 also carries the additive optional fields `inputChannelMetadata`
+(channel name and RGBA display color) and `inputTimeStampsSeconds` when the
+source container provides them. Empty arrays preserve compatibility for TIFFs
+and synthetic volumes without those metadata blocks.
