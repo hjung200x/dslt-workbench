@@ -72,6 +72,43 @@ internal static class RealDataManifestAssemblerTests
             if (firstReport.Cases.Count != 1 || !firstReport.Cases[0].Passed || firstReport.Coverage.Passed)
                 throw new InvalidOperationException("Assembled case is not structurally compatible with the release validator.");
 
+            var watershedProvenancePath = Path.Combine(dataDirectory, "watershed-candidate.json");
+            await WriteProvenanceAsync(
+                watershedProvenancePath,
+                labels,
+                calibration,
+                ProcessingProvenance.ComputeLabelSha256(labels),
+                watershed: true);
+            var watershedManifestPath = Path.Combine(directory, "watershed.json");
+            var watershed = await RealDataManifestAssembler.AddCaseAsync(Request(
+                watershedManifestPath,
+                "watershed-01",
+                "watershed-acquisition-01",
+                inputPath,
+                referencePath,
+                candidatePath,
+                watershedProvenancePath));
+            if (watershed.CaseCount != 1)
+                throw new InvalidOperationException("A valid DSLT-to-Watershed candidate was not assembled.");
+
+            var invalidWatershedProvenancePath = Path.Combine(dataDirectory, "invalid-watershed-candidate.json");
+            await WriteProvenanceAsync(
+                invalidWatershedProvenancePath,
+                labels,
+                calibration,
+                ProcessingProvenance.ComputeLabelSha256(labels),
+                watershed: true,
+                includeSeedStep: false);
+            await ExpectFailureAsync<InvalidDataException>(() => RealDataManifestAssembler.AddCaseAsync(Request(
+                    Path.Combine(directory, "invalid-watershed.json"),
+                    "watershed-02",
+                    "watershed-acquisition-02",
+                    inputPath,
+                    referencePath,
+                    candidatePath,
+                    invalidWatershedProvenancePath)),
+                "A Watershed candidate without a hashed DSLT seed step was accepted.");
+
             await ExpectFailureAsync<IOException>(() => RealDataManifestAssembler.AddCaseAsync(Request(
                 manifestPath, "case-02", "acquisition-02", inputPath, referencePath, candidatePath, provenancePath)),
                 "Existing manifest was changed without --append.");
@@ -138,10 +175,32 @@ internal static class RealDataManifestAssemblerTests
         string path,
         int[] labels,
         Calibration calibration,
-        string outputSha256)
+        string outputSha256,
+        bool watershed = false,
+        bool includeSeedStep = true)
     {
+        IReadOnlyList<ProcessingStepProvenance> processingSteps = watershed && includeSeedStep
+            ?
+            [
+                new ProcessingStepProvenance(
+                    new OperationParameters(ProcessingOperation.DsltSegmentation, ProcessingBackend.Cpu),
+                    ProcessingBackend.Cpu,
+                    OutputKind.LabelsInt32,
+                    4,
+                    3,
+                    2,
+                    outputSha256),
+            ]
+            : [];
+        var operation = watershed
+            ? new OperationParameters(
+                ProcessingOperation.Watershed,
+                ProcessingBackend.Cpu,
+                SeedLabelsSha256: outputSha256,
+                SelectedSeedLabels: [1, 2])
+            : new OperationParameters(ProcessingOperation.DsltSegmentation, ProcessingBackend.Cpu);
         var provenance = new ProcessingProvenance(
-            "1.8",
+            "1.9",
             "synthetic-data-validated",
             SourceCommit,
             DateTimeOffset.UtcNow,
@@ -155,7 +214,8 @@ internal static class RealDataManifestAssemblerTests
             [],
             [],
             calibration,
-            new OperationParameters(ProcessingOperation.DsltSegmentation, ProcessingBackend.Cpu),
+            processingSteps,
+            operation,
             ProcessingBackend.Cpu,
             OutputKind.LabelsInt32,
             4,

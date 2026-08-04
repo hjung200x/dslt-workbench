@@ -173,8 +173,8 @@ public static class RealDataManifestAssembler
 
     private static void ValidateProvenance(ProcessingProvenance provenance, string expectedCommit)
     {
-        if (provenance.SchemaVersion != "1.8")
-            throw new InvalidDataException("Candidate provenance schemaVersion must be 1.8.");
+        if (provenance.SchemaVersion != "1.9")
+            throw new InvalidDataException("Candidate provenance schemaVersion must be 1.9.");
         if (provenance.ValidationLevel != "synthetic-data-validated")
             throw new InvalidDataException("Candidate provenance validationLevel is invalid.");
         if (!string.Equals(provenance.SourceCommit, expectedCommit, StringComparison.OrdinalIgnoreCase))
@@ -190,14 +190,48 @@ public static class RealDataManifestAssembler
         if (provenance.Calibration is null || !double.IsFinite(provenance.Calibration.SpacingZ) ||
             provenance.Calibration.SpacingZ <= 0)
             throw new InvalidDataException("Candidate provenance Z spacing must be finite and positive.");
-        if (provenance.Operation is null || provenance.Operation.Operation != ProcessingOperation.DsltSegmentation)
-            throw new InvalidDataException("Candidate provenance operation must be DsltSegmentation.");
+        if (provenance.Operation is null || provenance.Operation.Operation is not
+            (ProcessingOperation.DsltSegmentation or ProcessingOperation.Watershed))
+            throw new InvalidDataException("Candidate provenance operation must be DsltSegmentation or Watershed.");
         if (provenance.UsedBackend is not (ProcessingBackend.Cpu or ProcessingBackend.Cuda))
             throw new InvalidDataException("Candidate provenance usedBackend must be CPU or CUDA.");
         if (provenance.OutputKind != OutputKind.LabelsInt32)
             throw new InvalidDataException("Candidate provenance outputKind must be LabelsInt32.");
         if (!IsSha256(provenance.OutputSha256))
             throw new InvalidDataException("Candidate provenance outputSha256 is invalid.");
+        if (provenance.ProcessingSteps is null || provenance.ProcessingSteps.Any(step =>
+                step is null || step.Operation is null ||
+                step.Operation.Operation == ProcessingOperation.Watershed ||
+                step.UsedBackend is not (ProcessingBackend.Cpu or ProcessingBackend.Cuda) ||
+                step.Operation.Operation == ProcessingOperation.DsltSegmentation &&
+                    step.OutputKind != OutputKind.LabelsInt32 ||
+                step.Operation.Operation != ProcessingOperation.DsltSegmentation &&
+                    step.OutputKind != OutputKind.VolumeFloat32 ||
+                step.OutputWidth <= 0 || step.OutputHeight <= 0 || step.OutputDepth <= 0 ||
+                !IsSha256(step.OutputSha256)))
+            throw new InvalidDataException("Candidate provenance processingSteps is invalid.");
+        var finalInput = provenance.ProcessingSteps.LastOrDefault();
+        var finalInputWidth = finalInput?.OutputWidth ?? provenance.InputWidth;
+        var finalInputHeight = finalInput?.OutputHeight ?? provenance.InputHeight;
+        var finalInputDepth = finalInput?.OutputDepth ?? provenance.InputDepth;
+        if (finalInputWidth != provenance.OutputWidth ||
+            finalInputHeight != provenance.OutputHeight ||
+            finalInputDepth != provenance.OutputDepth)
+            throw new InvalidDataException(
+                "Candidate provenance final segmentation dimensions must match its immediately preceding input or processing step.");
+        if (provenance.Operation.Operation == ProcessingOperation.Watershed)
+        {
+            var seedStep = provenance.ProcessingSteps.LastOrDefault();
+            if (seedStep?.Operation.Operation != ProcessingOperation.DsltSegmentation ||
+                seedStep.OutputKind != OutputKind.LabelsInt32 ||
+                !string.Equals(
+                    provenance.Operation.SeedLabelsSha256,
+                    seedStep.OutputSha256,
+                    StringComparison.OrdinalIgnoreCase) ||
+                provenance.Operation.SelectedSeedLabels is not { Length: > 0 })
+                throw new InvalidDataException(
+                    "A Watershed candidate requires a matching prior DsltSegmentation seed step.");
+        }
     }
 
     private static void ValidateLabels(

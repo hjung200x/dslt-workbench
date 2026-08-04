@@ -25,11 +25,13 @@ must confirm `dataClassification: representative-real` and the stated
 7. Set `container` to `tiff` or `lsm`; it must agree with provenance
    `inputContainer`.
 
-Schema-2 v1 evidence requires candidate provenance schema 1.8. The validator
+Schema-2 v1 evidence requires candidate provenance schema 1.9. The validator
 cross-checks its source commit, input voxel type, container, channels, Z
-spacing, DSLT segmentation operation, actual CPU/CUDA backend, label output
-kind, and output dimensions instead of trusting the manifest coverage fields
-alone. It also recomputes the canonical little-endian int32 label payload
+spacing, final DSLT or Watershed operation, actual CPU/CUDA backend, label
+output kind, and output dimensions instead of trusting the manifest coverage
+fields alone. A Watershed result is accepted only when its final prior step is
+a hashed DSLT label result and the Watershed seed hash matches that output. The
+validator also recomputes the canonical little-endian int32 label payload
 SHA-256 and requires it to match provenance `outputSha256`, cryptographically
 linking the sidecar to the candidate labels.
 
@@ -73,6 +75,22 @@ interoperability. It must not be described as a native multichannel
 acquisition. Source HDF5 files and converted volumes remain ignored local
 data; commit only the lock, scripts, path-independent manifests, and reports.
 
+For parameter exploration, create an aligned physical crop from the same locked
+HDF5 raw/reference pair. A crop is not a substitute for the final full-volume
+gate:
+
+```powershell
+dotnet run --project modern\tools\Dslt.Validation.Prepare --configuration Release -- `
+  import-plantseg-hdf5 `
+  --input modern\validation\data\public-plantseg-hdf5\Movie3_T00002_crop_gt.h5 `
+  --output-volume modern\validation\data\public-plantseg-hdf5\crops\Movie3_256x256x64.input.tif `
+  --output-labels modern\validation\data\public-plantseg-hdf5\crops\Movie3_256x256x64.reference.tif `
+  --spacing-x 0.1625 --spacing-y 0.1625 --spacing-z 0.25 --unit um `
+  --voxel-type uint8 --channels 1 `
+  --crop-x 400 --crop-y 52 --crop-z 63 `
+  --crop-width 256 --crop-height 256 --crop-depth 64
+```
+
 ### Generate a production DSLT candidate without the UI
 
 `Dslt.Validation.Candidate` loads the same TIFF path as the WPF application and
@@ -82,24 +100,27 @@ starting segmentation:
 
 ```powershell
 dotnet run --project modern\tools\Dslt.Validation.Candidate --configuration Release -- `
-  --input modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_crop_gt.input.uint8.1c.tif `
+  --input modern\validation\data\public-plantseg-hdf5\crops\Movie3_256x256x64.input.tif `
   --native-directory modern\native\out\build\windows-cuda\Release `
-  --backend cuda --radius 1 --direction-level 1 --estimate-only
+  --backend cuda --estimate-only
 ```
 
 Run the candidate with an aligned reference and an ignored output base to save
-the int32 payload, signed label TIFF, and provenance 1.8 sidecar before metric
+the int32 payload, signed label TIFF, and provenance 1.9 sidecar before metric
 evaluation:
 
 ```powershell
 dotnet run --project modern\tools\Dslt.Validation.Candidate --configuration Release -- `
-  --input modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_crop_gt.input.uint8.1c.tif `
-  --reference modern\validation\data\public-plantseg-hdf5\converted\Movie3_T00002_crop_gt.reference.signed.tif `
-  --output-base modern\validation\data\public-plantseg-hdf5\candidates\Movie3_T00002_dl1_c0 `
+  --input modern\validation\data\public-plantseg-hdf5\crops\Movie3_256x256x64.input.tif `
+  --reference modern\validation\data\public-plantseg-hdf5\crops\Movie3_256x256x64.reference.tif `
+  --output-base modern\validation\data\public-plantseg-hdf5\candidates\Movie3_manual-preset `
   --native-directory modern\native\out\build\windows-cuda\Release `
-  --backend cuda --radius 1 --direction-level 1 `
-  --minimum-c 0 --maximum-c 0 --c-interval 0.002 `
-  --closing-radius 2 --minimum-invalid-structure-area 500 `
+  --backend cuda --gaussian-smoothing-radius 2 --apply-z-gradient `
+  --z-gradient-coefficient 10 --z-gradient-exponent 1 `
+  --radius 14 --direction-level 2 --kernel gaussian `
+  --minimum-c -0.020 --maximum-c -0.008 --c-interval 0.002 `
+  --closing-radius 2 --minimum-invalid-structure-area 800 `
+  --apply-watershed --watershed-connectivity 6 `
   --reference-background 0 --candidate-background -1
 ```
 
@@ -111,6 +132,25 @@ failed the v1 thresholds, and `2` means preflight or execution failed. A
 release-evidence candidate must be built with the exact 40-hex
 `SourceRevisionId`; exploratory local output with an unavailable source identity
 cannot be admitted to a schema-2 v1 manifest.
+
+The default DSLT values match the preserved version 1.11 manual preset. Enabled
+Gaussian smoothing and Z-gradient correction execute through the same native
+engine before segmentation. Provenance 1.9 records each preprocessing
+operation, parameters, actual backend, dimensions, and output hash in order.
+With `--apply-watershed`, the DSLT label output is hashed as the last prior
+processing step, every extracted label is selected as a marker, and Watershed
+fills the remaining boundary voxels as the separate final operation described
+by the paper and version 1.11 manual.
+
+An exploratory CUDA run on the documented Movie3 crop used the same
+preprocessing and segmentation settings except for a single-value DSLT sweep
+of `minimum-c = maximum-c = -0.036`. It produced 26/26 foreground objects,
+Dice `0.9996525032`, volume difference `0.0001531063`, and HD95 `0` voxels.
+This crop was also used to choose the parameter, its development provenance has
+no release source identity, and it is therefore tuning evidence only—not an
+independent test result or v1.0 release evidence. The released manual preset
+remains the UI default; dataset-specific parameters belong in each candidate's
+provenance.
 
 ### Normalize an external reference mask
 
@@ -140,7 +180,7 @@ the v1.0 gate without curator confirmation.
 
 ### Assemble a source-locked manifest
 
-After Workbench has written the candidate label TIFF and provenance 1.8
+After Workbench has written the candidate label TIFF and provenance 1.9
 sidecar, create the first schema-2 case without copying metadata by hand:
 
 ```powershell

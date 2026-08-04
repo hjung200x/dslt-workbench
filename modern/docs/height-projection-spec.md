@@ -66,7 +66,7 @@ legacy truncating float-to-byte conversion. A thresholded scalar value of zero
 therefore remains black regardless of hue.
 
 `depthColorEnabled` and `depthColorRange` are serialized with the ordinary
-operation parameters in provenance schema 1.8. The exported processing payload
+operation parameters in provenance schema 1.9. The exported processing payload
 remains the scalar Float32 projection, so enabling the presentation feature
 does not change C ABI output or quantitative processing results.
 

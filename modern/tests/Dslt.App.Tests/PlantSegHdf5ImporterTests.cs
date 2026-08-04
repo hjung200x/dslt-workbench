@@ -23,6 +23,7 @@ internal static class PlantSegHdf5ImporterTests
             VerifyEncoding(directory, source, calibration, VolumeVoxelType.UnsignedInt8, 1);
             VerifyEncoding(directory, source, calibration, VolumeVoxelType.UnsignedInt16, 2);
             VerifyEncoding(directory, source, calibration, VolumeVoxelType.Float32, 1);
+            VerifyCrop(directory, source, calibration);
 
             var existingInput = Path.Combine(directory, "protected-input.tif");
             var existingReference = Path.Combine(directory, "protected-reference.tif");
@@ -55,11 +56,58 @@ internal static class PlantSegHdf5ImporterTests
                 Path.Combine(directory, "invalid-input.tif"),
                 Path.Combine(directory, "invalid-reference.tif"),
                 new PlantSegHdf5ImportOptions(calibration, VolumeVoxelType.UnsignedInt8, 1)));
+
+            try
+            {
+                PlantSegHdf5Importer.Import(
+                    source,
+                    Path.Combine(directory, "invalid-crop-input.tif"),
+                    Path.Combine(directory, "invalid-crop-reference.tif"),
+                    new PlantSegHdf5ImportOptions(
+                        calibration,
+                        VolumeVoxelType.UnsignedInt8,
+                        1,
+                        new PlantSegCrop(2, 0, 0, 2, 1, 1)));
+                throw new InvalidOperationException("An out-of-bounds PlantSeg crop was accepted.");
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Expected.
+            }
         }
         finally
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static void VerifyCrop(
+        string directory,
+        string source,
+        Calibration calibration)
+    {
+        var input = Path.Combine(directory, "crop-input.tif");
+        var reference = Path.Combine(directory, "crop-reference.tif");
+        var result = PlantSegHdf5Importer.Import(
+            source,
+            input,
+            reference,
+            new PlantSegHdf5ImportOptions(
+                calibration,
+                VolumeVoxelType.UnsignedInt8,
+                1,
+                new PlantSegCrop(1, 0, 1, 2, 2, 1)));
+        if (result.Width != 2 || result.Height != 2 || result.Depth != 1 ||
+            result.OriginX != 1 || result.OriginY != 0 || result.OriginZ != 1 ||
+            result.DistinctLabelCount != 3)
+            throw new InvalidOperationException("PlantSeg crop geometry evidence is incorrect.");
+        var labels = LabelTiffCodec.Read(reference);
+        if (!labels.Labels.SequenceEqual(new[] { 5, 5, 7, 0 }))
+            throw new InvalidOperationException("PlantSeg crop labels do not preserve XYZ order.");
+        var volume = WpfWorkspaceFileService.ReadStack(input, CancellationToken.None);
+        if (volume.Source is null ||
+            !volume.Source.ChannelPlanarRawSamples.SequenceEqual(new byte[] { 7, 8, 10, 11 }))
+            throw new InvalidOperationException("PlantSeg crop intensities do not preserve XYZ order.");
     }
 
     private static void VerifyEncoding(

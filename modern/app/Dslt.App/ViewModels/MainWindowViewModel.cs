@@ -42,7 +42,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _minimumComponentSize;
     private int _thresholdSweepMinimumComponentSize;
     private int _directionLevel = 2;
-    private DsltKernelType _dsltKernel = DsltKernelType.Mean;
+    private DsltKernelType _dsltKernel = DsltKernelType.Gaussian;
     private DsltKernelType _adaptiveThresholdKernel = DsltKernelType.Mean;
     private float _adaptiveThresholdOffset = 20;
     private float _hMinimaHeight = 0.1F;
@@ -65,14 +65,14 @@ public sealed class MainWindowViewModel : ObservableObject
     private int _lanczosOrder = 2;
     private float _previewOffset = 20;
     private float _zCorrectionFactor = 0.2F;
-    private float _minimumC;
-    private float _maximumC;
+    private float _minimumC = -0.020F;
+    private float _maximumC = -0.008F;
     private float _cInterval = 0.002F;
     private float _minimumThreshold;
     private float _maximumThreshold = 1.0F;
     private float _thresholdInterval = 0.02F;
     private int _closingRadius = 2;
-    private int _minimumInvalidStructureArea = 500;
+    private int _minimumInvalidStructureArea = 800;
     private int _thresholdSweepMinimumInvalidStructureArea = 100;
     private ProcessingBackend _backend = ProcessingBackend.Auto;
     private OperationOption _selectedOperation;

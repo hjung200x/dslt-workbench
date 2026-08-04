@@ -289,16 +289,18 @@ public static class RealDataValidationRunner
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
             var root = document.RootElement;
             if (!TryGetString(root, "schemaVersion", out var schemaVersion) ||
-                (schemaVersion != "1.5" && schemaVersion != "1.6" && schemaVersion != "1.7" && schemaVersion != "1.8"))
-                failures.Add("Candidate provenance schemaVersion must be 1.5, 1.6, 1.7, or 1.8.");
+                (schemaVersion != "1.5" && schemaVersion != "1.6" && schemaVersion != "1.7" &&
+                 schemaVersion != "1.8" && schemaVersion != "1.9"))
+                failures.Add("Candidate provenance schemaVersion must be 1.5, 1.6, 1.7, 1.8, or 1.9.");
             if (!string.IsNullOrWhiteSpace(candidateSourceCommit))
             {
-                if (schemaVersion != "1.8")
-                    failures.Add("A source-locked manifest requires candidate provenance schemaVersion 1.8.");
+                if (schemaVersion != "1.9")
+                    failures.Add("A source-locked manifest requires candidate provenance schemaVersion 1.9.");
                 if (!TryGetString(root, "sourceCommit", out var sourceCommit) ||
                     !sourceCommit.Equals(candidateSourceCommit, StringComparison.OrdinalIgnoreCase))
                     failures.Add("Candidate provenance sourceCommit does not match candidateSourceCommit.");
             }
+            if (schemaVersion == "1.9") ValidateProcessingSteps(root, failures);
             if (!TryGetString(root, "validationLevel", out var validationLevel) ||
                 validationLevel != "synthetic-data-validated")
                 failures.Add("Candidate provenance validationLevel is missing or invalid.");
@@ -320,8 +322,10 @@ public static class RealDataValidationRunner
                 failures.Add("Candidate provenance calibration.spacingZ does not match the manifest.");
             if (!root.TryGetProperty("operation", out var operation) ||
                 !TryGetEnum(operation, "operation", out ProcessingOperation operationValue) ||
-                operationValue != ProcessingOperation.DsltSegmentation)
-                failures.Add("Candidate provenance operation must be DsltSegmentation.");
+                operationValue is not (ProcessingOperation.DsltSegmentation or ProcessingOperation.Watershed))
+                failures.Add("Candidate provenance operation must be DsltSegmentation or Watershed.");
+            else
+                ValidateSegmentationChain(root, operation, operationValue, failures);
             if (!TryGetEnum(root, "usedBackend", out ProcessingBackend usedBackend) ||
                 usedBackend is not (ProcessingBackend.Cpu or ProcessingBackend.Cuda))
                 failures.Add("Candidate provenance usedBackend must be CPU or CUDA.");
@@ -342,6 +346,88 @@ public static class RealDataValidationRunner
         {
             failures.Add($"Candidate provenance could not be read: {exception.Message}");
         }
+    }
+
+    private static void ValidateProcessingSteps(JsonElement root, List<string> failures)
+    {
+        if (!root.TryGetProperty("processingSteps", out var steps) || steps.ValueKind != JsonValueKind.Array)
+        {
+            failures.Add("Candidate provenance processingSteps must be an array.");
+            return;
+        }
+        var index = 0;
+        foreach (var step in steps.EnumerateArray())
+        {
+            var prefix = $"Candidate provenance processingSteps[{index}]";
+            var operationValue = default(ProcessingOperation);
+            if (step.ValueKind != JsonValueKind.Object ||
+                !step.TryGetProperty("operation", out var operation) ||
+                !TryGetEnum(operation, "operation", out operationValue) ||
+                operationValue == ProcessingOperation.Watershed)
+                failures.Add($"{prefix}.operation is missing or invalid.");
+            if (!TryGetEnum(step, "usedBackend", out ProcessingBackend backend) ||
+                backend is not (ProcessingBackend.Cpu or ProcessingBackend.Cuda))
+                failures.Add($"{prefix}.usedBackend must be CPU or CUDA.");
+            if (!TryGetEnum(step, "outputKind", out OutputKind outputKind) ||
+                operationValue == ProcessingOperation.DsltSegmentation && outputKind != OutputKind.LabelsInt32 ||
+                operationValue != ProcessingOperation.DsltSegmentation && outputKind != OutputKind.VolumeFloat32)
+                failures.Add($"{prefix}.outputKind does not match its operation.");
+            if (!TryGetInt32(step, "outputWidth", out var width) || width <= 0 ||
+                !TryGetInt32(step, "outputHeight", out var height) || height <= 0 ||
+                !TryGetInt32(step, "outputDepth", out var depth) || depth <= 0)
+                failures.Add($"{prefix} output dimensions must be positive.");
+            if (!TryGetString(step, "outputSha256", out var hash) || !IsSha256(hash))
+                failures.Add($"{prefix}.outputSha256 is invalid.");
+            index++;
+        }
+    }
+
+    private static void ValidateSegmentationChain(
+        JsonElement root,
+        JsonElement finalOperation,
+        ProcessingOperation finalOperationValue,
+        List<string> failures)
+    {
+        JsonElement? lastStep = null;
+        if (root.TryGetProperty("processingSteps", out var availableSteps) &&
+            availableSteps.ValueKind == JsonValueKind.Array && availableSteps.GetArrayLength() > 0)
+            lastStep = availableSteps[availableSteps.GetArrayLength() - 1];
+
+        var dimensionsSource = lastStep ?? root;
+        var dimensionsPrefix = lastStep is null ? "input" : "output";
+        if (!TryGetInt32(dimensionsSource, $"{dimensionsPrefix}Width", out var expectedWidth) ||
+            !TryGetInt32(dimensionsSource, $"{dimensionsPrefix}Height", out var expectedHeight) ||
+            !TryGetInt32(dimensionsSource, $"{dimensionsPrefix}Depth", out var expectedDepth) ||
+            !TryGetInt32(root, "outputWidth", out var outputWidth) ||
+            !TryGetInt32(root, "outputHeight", out var outputHeight) ||
+            !TryGetInt32(root, "outputDepth", out var outputDepth) ||
+            expectedWidth != outputWidth || expectedHeight != outputHeight || expectedDepth != outputDepth)
+            failures.Add(
+                "Candidate provenance final segmentation dimensions must match its immediately preceding input or processing step.");
+
+        if (finalOperationValue != ProcessingOperation.Watershed) return;
+        if (lastStep is null)
+        {
+            failures.Add("A Watershed candidate requires a prior DsltSegmentation processing step.");
+            return;
+        }
+        var seedStep = lastStep.Value;
+        if (!seedStep.TryGetProperty("operation", out var seedOperation) ||
+            !TryGetEnum(seedOperation, "operation", out ProcessingOperation seedOperationValue) ||
+            seedOperationValue != ProcessingOperation.DsltSegmentation ||
+            !TryGetEnum(seedStep, "outputKind", out OutputKind seedOutputKind) ||
+            seedOutputKind != OutputKind.LabelsInt32 ||
+            !TryGetString(seedStep, "outputSha256", out var seedHash) || !IsSha256(seedHash))
+        {
+            failures.Add("The final processing step before Watershed must be a hashed DsltSegmentation label result.");
+            return;
+        }
+        if (!TryGetString(finalOperation, "seedLabelsSha256", out var requestedSeedHash) ||
+            !HashEquals(requestedSeedHash, seedHash))
+            failures.Add("Watershed seedLabelsSha256 does not match the prior DsltSegmentation output.");
+        if (!finalOperation.TryGetProperty("selectedSeedLabels", out var selected) ||
+            selected.ValueKind != JsonValueKind.Array || selected.GetArrayLength() == 0)
+            failures.Add("Watershed selectedSeedLabels must contain at least one DSLT seed label.");
     }
 
     private static string? ResolvePath(string baseDirectory, string path, string field, List<string> failures)

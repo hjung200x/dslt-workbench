@@ -7,10 +7,13 @@ using PureHDF;
 
 namespace Dslt.Validation.Prepare;
 
+public sealed record PlantSegCrop(int X, int Y, int Z, int Width, int Height, int Depth);
+
 public sealed record PlantSegHdf5ImportOptions(
     Calibration Calibration,
     VolumeVoxelType VoxelType,
-    int Channels);
+    int Channels,
+    PlantSegCrop? Crop = null);
 
 public sealed record PlantSegHdf5ImportResult(
     string SourcePath,
@@ -19,6 +22,9 @@ public sealed record PlantSegHdf5ImportResult(
     int Width,
     int Height,
     int Depth,
+    int OriginX,
+    int OriginY,
+    int OriginZ,
     int Channels,
     VolumeVoxelType VoxelType,
     int DistinctLabelCount,
@@ -68,12 +74,23 @@ public static class PlantSegHdf5Importer
         var voxelCount = checked(rawDimensions[0] * rawDimensions[1] * rawDimensions[2]);
         if (raw.Length != voxelCount || sourceLabels.Length != voxelCount)
             throw new InvalidDataException("PlantSeg dataset element count does not match its declared dimensions.");
+
+        var sourceDepth = rawDimensions[0];
+        var sourceHeight = rawDimensions[1];
+        var sourceWidth = rawDimensions[2];
+        var crop = options.Crop ?? new PlantSegCrop(0, 0, 0, sourceWidth, sourceHeight, sourceDepth);
+        ValidateCrop(crop, sourceWidth, sourceHeight, sourceDepth);
+        if (options.Crop is not null)
+        {
+            raw = Crop(raw, sourceWidth, sourceHeight, sourceDepth, crop);
+            sourceLabels = Crop(sourceLabels, sourceWidth, sourceHeight, sourceDepth, crop);
+        }
         var labels = new int[sourceLabels.Length];
         for (var index = 0; index < sourceLabels.Length; index++) labels[index] = sourceLabels[index];
 
-        var depth = rawDimensions[0];
-        var height = rawDimensions[1];
-        var width = rawDimensions[2];
+        var depth = crop.Depth;
+        var height = crop.Height;
+        var width = crop.Width;
         var inputTemp = TemporarySibling(input);
         var referenceTemp = TemporarySibling(reference);
         try
@@ -104,12 +121,48 @@ public static class PlantSegHdf5Importer
             width,
             height,
             depth,
+            crop.X,
+            crop.Y,
+            crop.Z,
             options.Channels,
             options.VoxelType,
             labels.Distinct().Count(),
             Sha256File(source),
             Sha256File(input),
             Sha256File(reference));
+    }
+
+    private static void ValidateCrop(PlantSegCrop crop, int width, int height, int depth)
+    {
+        if (crop.X < 0 || crop.Y < 0 || crop.Z < 0 ||
+            crop.Width <= 0 || crop.Height <= 0 || crop.Depth <= 0)
+            throw new ArgumentOutOfRangeException(nameof(crop), "PlantSeg crop origin must be non-negative and size positive.");
+        if (checked((long)crop.X + crop.Width) > width ||
+            checked((long)crop.Y + crop.Height) > height ||
+            checked((long)crop.Z + crop.Depth) > depth)
+            throw new ArgumentOutOfRangeException(nameof(crop), "PlantSeg crop exceeds the source volume.");
+        _ = checked(crop.Width * crop.Height * crop.Depth);
+    }
+
+    private static T[] Crop<T>(
+        T[] source,
+        int sourceWidth,
+        int sourceHeight,
+        int sourceDepth,
+        PlantSegCrop crop)
+    {
+        _ = sourceDepth;
+        var result = new T[checked(crop.Width * crop.Height * crop.Depth)];
+        var sourceSlice = checked(sourceWidth * sourceHeight);
+        var targetSlice = checked(crop.Width * crop.Height);
+        for (var z = 0; z < crop.Depth; z++)
+            for (var y = 0; y < crop.Height; y++)
+            {
+                var sourceOffset = checked((crop.Z + z) * sourceSlice + (crop.Y + y) * sourceWidth + crop.X);
+                var targetOffset = checked(z * targetSlice + y * crop.Width);
+                Array.Copy(source, sourceOffset, result, targetOffset, crop.Width);
+            }
+        return result;
     }
 
     private static int[] ValidateDimensions(ulong[] dimensions, string datasetName)
