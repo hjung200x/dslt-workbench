@@ -33,6 +33,8 @@ explicitly confirm whole-volume 3D coverage, representative-leaf
 classification, and the boundary representation used by the binary-foreground
 Dice/HD95 contract. Missing, future-dated, partial-volume, hash-mismatched, or
 unreviewed records fail before metrics run.
+The complete review sequence and fixed protocol ID are defined in
+[`reference-review-protocol.md`](reference-review-protocol.md).
 
 Schema-2 v1 evidence requires candidate provenance schema 1.10. The validator
 cross-checks its source commit, input voxel type, container, channels, selected
@@ -282,7 +284,7 @@ dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepar
   --output modern\validation\data\acquisition-01.reference.acceptance.json `
   --acquisition-id microscope-run-01 --reference-kind expert `
   --accepted-by "reviewer identity" --accepted-at-utc 2026-08-04T12:00:00Z `
-  --protocol-id leaf-3d-review-v1 `
+  --protocol-id dslt-full-volume-reference-review-v1 `
   --whole-volume-3d-coverage-confirmed `
   --representative-leaf-confirmed `
   --boundary-representation-reviewed

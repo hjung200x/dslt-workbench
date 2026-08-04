@@ -36,6 +36,10 @@ The project must not claim level 2 or 3 while only level 1 evidence exists.
 - Equal object count and total segmented volume difference <= 0.5%.
 - 95th-percentile Hausdorff distance <= 1 voxel.
 
+Every schema-2 case also requires an acceptance record produced only after the
+full procedure in `reference-review-protocol.md`. Automated metric success does
+not replace expert/legacy reference custody or biological review.
+
 `Dslt.Validation` enforces these metrics and the cohort coverage rules from a
 SHA-256-locked manifest. Metric definitions, evidence requirements, and the
 five-case template are documented in `real-data-validation.md`.

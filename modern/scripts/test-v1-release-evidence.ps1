@@ -153,7 +153,7 @@ try {
         'functional-spec.md', 'h-minima-spec.md', 'height-map-spec.md',
         'height-projection-spec.md', 'real-data-manifest.example.json',
         'legacy-assets.md', 'legacy-manual-audit.md', 'provenance.md',
-        'real-data-validation.md', 'release-policy.md', 'tiff-io-spec.md',
+        'real-data-validation.md', 'reference-review-protocol.md', 'release-policy.md', 'tiff-io-spec.md',
         'v1-release-evidence.md', 'windows-manual-observation.example.json',
         'ui-workflow.md', 'validation-policy.md', 'watershed-spec.md')
     foreach ($doc in $requiredDocs) {
