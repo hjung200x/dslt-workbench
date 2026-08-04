@@ -76,6 +76,10 @@ equivalence; that remains gated by representative datasets.
     property on a one-way binding, and gives every slider, combo box, text box,
     list, progress indicator, and scrollable view an explicit UI Automation
     name.
+14. a 512 x 512 x 64 float volume publishes all navigation bounds, updates the
+    active Z plane without a two-second caller stall, exposes cancellation while
+    work is in flight, returns from the cancel command within one second, and
+    preserves the source view and last valid result state.
 
 The same test executable retains the bit-exact TIFF type, ImageJ page-order,
 calibration, and metadata fixtures.
@@ -96,4 +100,5 @@ gate.
 - Recover and add the remaining legacy editing shortcuts. `Ctrl+Z` is currently
   bound to undo; shortcut behavior without source evidence is not guessed.
 - Perform the remaining interactive cancellation, recovery, non-100%-DPI, and
-  large-volume responsiveness checks on Windows 10 22H2 and Windows 11.
+  representative file-backed large-volume checks on Windows 10 22H2 and
+  Windows 11.
