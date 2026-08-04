@@ -1,6 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "datasetName": "replace-with-validation-cohort-name",
+  "candidateSourceCommit": "replace-with-40-hex-release-candidate-commit",
   "cases": [
     {
       "id": "single-channel-uint8",

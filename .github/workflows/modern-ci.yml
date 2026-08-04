@@ -25,10 +25,16 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build WPF application
         run: dotnet build modern/app/Dslt.App/Dslt.App.csproj --configuration Release
-      - name: Run managed contract tests
-        run: dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release
+      - name: Run managed contract tests with source identity
+        shell: pwsh
+        env:
+          DSLT_EXPECT_SOURCE_COMMIT: ${{ github.sha }}
+        run: dotnet run --project modern/tests/Dslt.Managed.Tests/Dslt.Managed.Tests.csproj --configuration Release -p:SourceRevisionId=${{ github.sha }}
       - name: Build real-data validation tool
         run: dotnet build modern/tools/Dslt.Validation/Dslt.Validation.csproj --configuration Release
+      - name: Test fail-closed v1 release evidence gate
+        shell: pwsh
+        run: ./modern/scripts/test-v1-release-evidence.ps1
       - name: Run WPF I/O and workflow tests
         run: dotnet run --project modern/tests/Dslt.App.Tests/Dslt.App.Tests.csproj --configuration Release
 

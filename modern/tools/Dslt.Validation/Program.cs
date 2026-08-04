@@ -26,6 +26,7 @@ try
     Directory.CreateDirectory(directory);
     await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, options));
 
+    Console.WriteLine($"Candidate source: {report.CandidateSourceCommit}");
     Console.WriteLine($"Dataset: {report.DatasetName}");
     foreach (var item in report.Cases)
     {

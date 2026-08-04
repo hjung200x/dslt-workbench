@@ -77,3 +77,10 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass
           -File modern/scripts/run-cuda-artifact-tests.ps1
           -ArtifactDirectory .run/cuda-artifact
+          -EvidencePath .run/cuda-evidence/cuda-parity.json
+      - name: Upload CUDA parity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: dslt-cuda-evidence-win-x64-${{ github.sha }}
+          path: .run/cuda-evidence/*
+          if-no-files-found: error
