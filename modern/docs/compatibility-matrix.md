@@ -31,13 +31,11 @@ Status values: `implemented`, `scaffolded`, `pending-reference`, and `excluded`.
 | Legacy keyboard/mouse gestures | Ctrl+O/Ctrl+S, Shift-click zoom, middle-click selection, Alt+J/Alt+S, Ctrl+Z, Alt+A/Alt+D | implemented | Commands are bound; uniform-image letterbox/pixel mapping and ViewModel selection fixtures pass |
 | Mean-intensity segment auto-selection | Active-channel mean threshold with select/deselect mode | implemented | Source-coordinate/cropped-label mapping, strict threshold, select-all, selection and deselection ViewModel fixtures pass |
 | Segment erosion clamp | Preserve image-edge voxels when clamp is enabled | implemented | Clamped and unclamped edge-volume fixtures pass; WPF defaults clamp on as in the manual example |
-| Depth-dependent Z-gradient display adjustment | `coefficient * z^exp * intensity` before per-channel smoothing | pending-reference | Version 1.11 manual formula/default example is documented; implementation and oracle are pending |
+| Depth-dependent Z-gradient correction | `ZGradient`: `(1 + coefficient * max(0, z - surface) / depth)^exponent * intensity`, then range adjustment | scaffolded | Source-derived CPU and CUDA paths, optional filtered height surface, defaults, ABI/P/Invoke mapping, cancellation, provenance, WPF orchestration, and synthetic formula/parity fixtures implemented; archived-runtime comparison pending |
 | Segment TIFF load/save | Signed 16-bit compatibility + signed 32-bit extended | implemented | Bit-exact multi-page round trip, calibration, and overflow warning fixtures |
 | Optional CUDA backend | `Auto`, `CPU`, `CUDA` execution policy | scaffolded | Every public C ABI v1 operation has a CUDA path; hosted CUDA 13.2 NVCC/MSVC build plus registered RTX 4060 self-hosted runtime parity covers exact masks/labels, float tolerances, cancellation, validation, and mixed-operation memory fixtures; broader GPU-fleet and legacy-runtime comparison pending |
 | Win32/x86 build | None | excluded | Windows x64 policy |
 
-`pending-reference` algorithms are not exposed as completed UI actions. This
-prevents an approximation from being mistaken for preserved legacy behavior.
 Display-only RGB depth coloring remains a deterministic presentation layer over
 the scaffolded scalar projection, height-map, and depth-map contracts; it does
 not change the versioned C ABI payload.

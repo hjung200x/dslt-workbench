@@ -23,6 +23,7 @@ All public C ABI v1 operations are now ported. The groups are:
 - area-average and Lanczos 2/3 Z resampling; and
 - XY, YZ, and ZX orthogonal-view extraction;
 - filtered height maps and normal/Z height projection; and
+- depth-dependent Z-gradient correction with an optional filtered height surface; and
 - 3D depth maps derived from the filtered height surface; and
 - 6/18/26-connected component labeling with minimum-size filtering; and
 - H-minima reconstruction with exact fixed-point detection; and
@@ -74,6 +75,12 @@ volume and plane buffers in the VRAM preflight estimate. Optional RGB depth
 coloring requests the same CUDA height surface, depth volume, and scalar Z
 projection sequentially; deterministic HSV-to-RGB byte composition occurs in
 the WPF presentation layer and does not introduce a separate CUDA result kind.
+
+Z-gradient correction applies the source-derived pointwise power gain using the
+voxel's Z distance from zero or from the optional filtered height surface. The
+surface buffer is included in VRAM preflight, copied on the request-owned
+stream, and released with the operation. CPU/CUDA float parity uses the common
+absolute and relative tolerances.
 
 Connected components propagate the minimum linear voxel index through each
 foreground component, then compact accepted roots in ascending index order.

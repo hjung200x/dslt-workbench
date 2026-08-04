@@ -206,6 +206,32 @@ internal static class WorkflowViewModelTests
             }, "Height-map UI parameters were not preserved in the processing request.");
 
         target.SelectedOperation = target.Operations.Single(option =>
+            option.Operation == ProcessingOperation.ZGradient);
+        Assert(target.IsZGradient && target.IsHeightSurfaceOperation &&
+               Math.Abs(target.ZGradientCoefficient - 10.0F) < 1e-6F &&
+               Math.Abs(target.ZGradientExponent - 1.0F) < 1e-6F &&
+               !target.ZGradientUseHeightMap,
+            "Z-gradient legacy defaults were not exposed by the UI.");
+        target.ZGradientCoefficient = 3.5F;
+        target.ZGradientExponent = 2.0F;
+        target.ZGradientUseHeightMap = true;
+        engine.RunOperations.Clear();
+        await target.RunCommand.ExecuteAsync();
+        Assert(engine.RunOperations.SequenceEqual(new[]
+            {
+                ProcessingOperation.HeightMap,
+                ProcessingOperation.ZGradient,
+            }), "Z-gradient height-map mode did not generate the surface before correction.");
+        Assert(target.LastParameters is
+            {
+                Operation: ProcessingOperation.ZGradient,
+                ZGradientCoefficient: 3.5F,
+                ZGradientExponent: 2.0F,
+                ZGradientUseHeightMap: true,
+                CropHeightMap: null,
+            }, "Z-gradient parameters were not preserved without embedding the derived height map.");
+
+        target.SelectedOperation = target.Operations.Single(option =>
             option.Operation == ProcessingOperation.HeightProjection);
         Assert(target.IsHeightSurfaceOperation && target.IsHeightProjection &&
                target.ProjectionMode == HeightProjectionMode.Z && target.CanUseDepthColoring &&

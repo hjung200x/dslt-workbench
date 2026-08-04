@@ -120,6 +120,30 @@ __global__ void threshold_kernel(
     }
 }
 
+__global__ void z_gradient_kernel(
+    const float* source,
+    const float* height_map,
+    float* output,
+    std::size_t count,
+    std::size_t plane,
+    float depth,
+    float coefficient,
+    float exponent,
+    float minimum,
+    float scale) {
+    const auto stride = static_cast<std::size_t>(blockDim.x) * gridDim.x;
+    for (auto index = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+         index < count;
+         index += stride) {
+        const auto plane_index = index % plane;
+        const auto z = static_cast<float>(index / plane);
+        const auto surface = height_map == nullptr ? 0.0F : height_map[plane_index];
+        const auto distance = fmaxf(0.0F, z - surface);
+        const auto gain = powf(1.0F + coefficient * distance / depth, exponent);
+        output[index] = fminf(1.0F, fmaxf(0.0F, (source[index] * gain - minimum) * scale));
+    }
+}
+
 __global__ void adaptive_threshold_kernel(
     const float* source,
     const float* local,
@@ -1221,6 +1245,7 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_HEIGHT_MAP ||
         operation == DSLT_OP_DEPTH_MAP ||
         operation == DSLT_OP_HEIGHT_PROJECTION ||
+        operation == DSLT_OP_Z_GRADIENT ||
         operation == DSLT_OP_CONNECTED_COMPONENTS ||
         operation == DSLT_OP_H_MINIMA ||
         operation == DSLT_OP_WATERSHED ||
@@ -1264,6 +1289,7 @@ CudaRunResult run_cuda_operation(
     const auto h_minima = request.operation == DSLT_OP_H_MINIMA;
     const auto dslt_threshold_operation = request.operation == DSLT_OP_DSLT_THRESHOLD;
     const auto dslt_response_operation = dslt_threshold_operation || dslt_segmentation;
+    const auto z_gradient = request.operation == DSLT_OP_Z_GRADIENT;
     if (smoothing && (request.radius < 0 || request.radius > 64)) {
         return {CudaRunStatus::invalid_argument, {}, "smoothing radius must be between 0 and 64"};
     }
@@ -1322,6 +1348,19 @@ CudaRunResult run_cuda_operation(
          !std::isfinite(request.window_max))) {
         return {CudaRunStatus::invalid_argument, {},
             "height projection parameters must be finite"};
+    }
+    if (z_gradient && (!std::isfinite(request.constant_c) || request.constant_c < 0.0F)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "Z-gradient coefficient must be finite and non-negative"};
+    }
+    if (z_gradient && (!std::isfinite(request.threshold) || request.threshold <= 0.0F)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "Z-gradient exponent must be finite and positive"};
+    }
+    if (z_gradient && (!std::isfinite(request.window_min) ||
+        !std::isfinite(request.window_max) || request.window_max <= request.window_min)) {
+        return {CudaRunStatus::invalid_argument, {},
+            "Z-gradient intensity maximum must exceed the minimum"};
     }
     if (connected_components &&
         request.connectivity != 6 && request.connectivity != 18 && request.connectivity != 26) {
@@ -1452,20 +1491,21 @@ CudaRunResult run_cuda_operation(
          crop_state.options.border_xy < 0)) {
         return {CudaRunStatus::invalid_argument, {}, "crop bounds are invalid"};
     }
-    const auto crop_height_map_count = crop_operation &&
-        crop_state.options.enabled != 0 && crop_state.options.use_height_map != 0
+    const auto crop_height_map_count =
+        ((crop_operation && crop_state.options.enabled != 0) || z_gradient) &&
+        crop_state.options.use_height_map != 0
         ? plane_count
         : 0;
-    if (crop_operation && crop_height_map_count != 0 &&
+    if (crop_height_map_count != 0 &&
         crop_state.height_map.size() != plane_count) {
         return {CudaRunStatus::invalid_argument, {},
-            "crop height map dimensions do not match"};
+            "height map dimensions do not match the volume"};
     }
-    if (crop_operation && crop_height_map_count != 0 &&
+    if (crop_height_map_count != 0 &&
         !std::all_of(crop_state.height_map.begin(), crop_state.height_map.end(),
             [](float value) { return std::isfinite(value); })) {
         return {CudaRunStatus::invalid_argument, {},
-            "crop height map must contain only finite values"};
+            "height map must contain only finite values"};
     }
     if (watershed && std::any_of(
             state.selected_labels.begin(), state.selected_labels.end(),
@@ -1788,6 +1828,21 @@ CudaRunResult run_cuda_operation(
                 device_source.get(), device_output.get(), source.size(),
                 request.window_min, 1.0F / (request.window_max - request.window_min));
             check_cuda(cudaGetLastError(), "launching CUDA window-level kernel");
+            break;
+        case DSLT_OP_Z_GRADIENT:
+            if (device_crop_height_map) {
+                check_cuda(cudaMemcpyAsync(
+                    device_crop_height_map->get(), crop_state.height_map.data(),
+                    crop_height_map_count * sizeof(float), cudaMemcpyHostToDevice, stream.get()),
+                    "copying CUDA Z-gradient height map");
+            }
+            z_gradient_kernel<<<blocks, threads, 0, stream.get()>>>(
+                device_source.get(),
+                device_crop_height_map ? device_crop_height_map->get() : nullptr,
+                device_output.get(), source.size(), plane_count, static_cast<float>(depth),
+                request.constant_c, request.threshold, request.window_min,
+                1.0F / (request.window_max - request.window_min));
+            check_cuda(cudaGetLastError(), "launching CUDA Z-gradient kernel");
             break;
         case DSLT_OP_THRESHOLD_2D:
         case DSLT_OP_THRESHOLD_3D:

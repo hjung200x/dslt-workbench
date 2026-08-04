@@ -118,6 +118,7 @@ semantics, threshold behavior, and Z-only RGB depth-color presentation are
 defined in `docs/height-projection-spec.md`.
 
 The WPF operation selector exposes 2D/3D thresholding, cube/sphere morphology,
+depth-dependent Z-gradient correction with an optional filtered height surface,
 and calibrated Z area-average or Lanczos 2/3 resampling. Z resampling defaults
 to the input X spacing and rejects unaddressable output depth before allocation.
 

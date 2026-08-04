@@ -164,6 +164,35 @@ void cuda_pointwise_parity_test() {
     require(dslt_set_volume_f32(
         handle, &filter_desc, filter_source.data(), filter_source.size()));
 
+    dslt_crop_options z_gradient_surface_options{};
+    z_gradient_surface_options.use_height_map = 1;
+    std::vector<float> z_gradient_surface(
+        static_cast<std::size_t>(filter_desc.width) * filter_desc.height, 1.25F);
+    require(dslt_set_crop(
+        handle, &z_gradient_surface_options,
+        z_gradient_surface.data(), z_gradient_surface.size()));
+    dslt_operation_request z_gradient_request{};
+    z_gradient_request.operation = DSLT_OP_Z_GRADIENT;
+    z_gradient_request.constant_c = 2.0F;
+    z_gradient_request.threshold = 1.5F;
+    z_gradient_request.window_min = -0.5F;
+    z_gradient_request.window_max = 2.0F;
+    z_gradient_request.backend = DSLT_BACKEND_CPU;
+    const auto cpu_z_gradient = run_float_operation(
+        handle, z_gradient_request, DSLT_BACKEND_CPU);
+    z_gradient_request.backend = DSLT_BACKEND_CUDA;
+    const auto cuda_z_gradient = run_float_operation(
+        handle, z_gradient_request, DSLT_BACKEND_CUDA);
+    assert(cpu_z_gradient.size() == cuda_z_gradient.size());
+    for (std::size_t index = 0; index < cpu_z_gradient.size(); ++index) {
+        const auto difference = std::abs(cpu_z_gradient[index] - cuda_z_gradient[index]);
+        const auto tolerance = 1.0e-5F + 1.0e-4F * std::abs(cpu_z_gradient[index]);
+        assert(difference <= tolerance);
+    }
+
+    z_gradient_surface_options = {};
+    require(dslt_set_crop(handle, &z_gradient_surface_options, nullptr, 0));
+
     for (const auto operation : {
              DSLT_OP_SMOOTH_MEAN,
              DSLT_OP_SMOOTH_GAUSSIAN,
@@ -1455,6 +1484,33 @@ int main() {
     assert(projection_result.size() == 1 && std::abs(projection_result[0] - 0.8F) < 1.0e-6F);
 
     request.target_spacing_z = 2.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
+
+    const std::vector<float> z_gradient_source{0.1F, 0.1F, 0.1F, 0.1F};
+    require(dslt_set_volume_f32(
+        handle, &projection_desc, z_gradient_source.data(), z_gradient_source.size()));
+    dslt_crop_options z_gradient_crop{};
+    z_gradient_crop.use_height_map = 1;
+    const std::vector<float> z_gradient_height_map{1.0F};
+    require(dslt_set_crop(
+        handle, &z_gradient_crop, z_gradient_height_map.data(), z_gradient_height_map.size()));
+    request = {};
+    request.operation = DSLT_OP_Z_GRADIENT;
+    request.backend = DSLT_BACKEND_CPU;
+    request.constant_c = 2.0F;
+    request.threshold = 1.0F;
+    request.window_min = 0.0F;
+    request.window_max = 1.0F;
+    require(dslt_run_operation(handle, &request, nullptr, nullptr, &result));
+    assert(result.output_kind == DSLT_OUTPUT_VOLUME_FLOAT32 && result.element_count == 4);
+    std::vector<float> z_gradient_result(result.element_count);
+    require(dslt_copy_output_f32(
+        handle, z_gradient_result.data(), z_gradient_result.size()));
+    assert(std::abs(z_gradient_result[0] - 0.1F) < 1.0e-6F);
+    assert(std::abs(z_gradient_result[2] - 0.15F) < 1.0e-6F);
+    assert(std::abs(z_gradient_result[3] - 0.2F) < 1.0e-6F);
+
+    request.constant_c = -1.0F;
     require(dslt_run_operation(handle, &request, nullptr, nullptr, &result), DSLT_INVALID_ARGUMENT);
 
     auto depth_desc = descriptor(3, 1, 3);

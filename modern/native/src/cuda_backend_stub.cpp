@@ -27,6 +27,7 @@ bool cuda_supports_operation(dslt_operation operation) noexcept {
         operation == DSLT_OP_HEIGHT_MAP ||
         operation == DSLT_OP_DEPTH_MAP ||
         operation == DSLT_OP_HEIGHT_PROJECTION ||
+        operation == DSLT_OP_Z_GRADIENT ||
         operation == DSLT_OP_CONNECTED_COMPONENTS ||
         operation == DSLT_OP_H_MINIMA ||
         operation == DSLT_OP_WATERSHED ||

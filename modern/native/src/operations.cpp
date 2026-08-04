@@ -1652,6 +1652,56 @@ std::uint32_t resample_output_depth(
     return std::max<std::uint32_t>(1, static_cast<std::uint32_t>(rounded_depth));
 }
 
+std::vector<float> z_gradient(
+    const Volume& volume,
+    float coefficient,
+    float exponent,
+    float minimum,
+    float maximum,
+    std::span<const float> height_map,
+    const Engine::Progress& progress) {
+    if (!std::isfinite(coefficient) || coefficient < 0.0F) {
+        throw std::invalid_argument("Z-gradient coefficient must be finite and non-negative");
+    }
+    if (!std::isfinite(exponent) || exponent <= 0.0F) {
+        throw std::invalid_argument("Z-gradient exponent must be finite and positive");
+    }
+    if (!std::isfinite(minimum) || !std::isfinite(maximum) || maximum <= minimum) {
+        throw std::invalid_argument("Z-gradient intensity maximum must exceed the minimum");
+    }
+
+    const auto& descriptor = volume.descriptor();
+    const auto plane = static_cast<std::size_t>(descriptor.width) * descriptor.height;
+    if (!height_map.empty()) {
+        if (height_map.size() != plane) {
+            throw std::invalid_argument("Z-gradient height map dimensions do not match the volume");
+        }
+        if (!std::all_of(height_map.begin(), height_map.end(), [](float value) {
+                return std::isfinite(value);
+            })) {
+            throw std::invalid_argument("Z-gradient height map must contain only finite values");
+        }
+    }
+
+    const auto source = selected_channel(volume);
+    std::vector<float> result(source.size());
+    const auto scale = 1.0F / (maximum - minimum);
+    const auto depth = static_cast<float>(descriptor.depth);
+    for (std::size_t z = 0; z < descriptor.depth; ++z) {
+        for (std::size_t index = 0; index < plane; ++index) {
+            const auto surface = height_map.empty() ? 0.0F : height_map[index];
+            const auto distance = std::max(0.0F, static_cast<float>(z) - surface);
+            const auto gain = std::pow(1.0F + coefficient * distance / depth, exponent);
+            result[z * plane + index] = std::clamp(
+                (source[z * plane + index] * gain - minimum) * scale,
+                0.0F,
+                1.0F);
+        }
+        report(progress, z + 1, descriptor.depth);
+    }
+    return result;
+}
+
 std::vector<float> resample_z(
     const Volume& volume,
     float target_spacing,

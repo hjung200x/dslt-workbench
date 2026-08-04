@@ -656,6 +656,50 @@ void height_projection_and_depth_fixture() {
     assert(cancelled);
 }
 
+void z_gradient_fixture() {
+    const auto value_desc = descriptor(2, 1, 4);
+    const dslt::Volume value_volume(
+        value_desc,
+        std::vector<float>{
+            0.1F, 0.1F,
+            0.1F, 0.1F,
+            0.1F, 0.1F,
+            0.1F, 0.1F,
+        });
+
+    const auto without_surface = dslt::ops::z_gradient(
+        value_volume, 2.0F, 1.0F, 0.0F, 1.0F, {}, {});
+    assert(close(without_surface[offset(0, 0, 0, value_desc)], 0.1F));
+    assert(close(without_surface[offset(0, 0, 2, value_desc)], 0.2F));
+    assert(close(without_surface[offset(0, 0, 3, value_desc)], 0.25F));
+
+    const std::vector<float> surface{1.0F, 2.0F};
+    const auto with_surface = dslt::ops::z_gradient(
+        value_volume, 2.0F, 2.0F, 0.05F, 0.5F, surface, {});
+    assert(close(with_surface[offset(0, 0, 1, value_desc)], (0.1F - 0.05F) / 0.45F));
+    assert(close(with_surface[offset(0, 0, 3, value_desc)], (0.4F - 0.05F) / 0.45F));
+    assert(close(with_surface[offset(1, 0, 3, value_desc)], (0.225F - 0.05F) / 0.45F));
+
+    bool rejected = false;
+    try {
+        static_cast<void>(dslt::ops::z_gradient(
+            value_volume, -1.0F, 1.0F, 0.0F, 1.0F, {}, {}));
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    bool cancelled = false;
+    try {
+        static_cast<void>(dslt::ops::z_gradient(
+            value_volume, 2.0F, 1.0F, 0.0F, 1.0F, {},
+            [](float value) { return value < 0.5F; }));
+    } catch (const std::runtime_error& error) {
+        cancelled = std::string_view(error.what()) == "cancelled";
+    }
+    assert(cancelled);
+}
+
 void resample_dimension_fixture() {
     auto value = descriptor(3, 2, 4);
     value.calibration.spacing_z = 2.0;
@@ -707,6 +751,7 @@ int main() {
     watershed_fixture();
     filtered_height_map_fixture();
     height_projection_and_depth_fixture();
+    z_gradient_fixture();
     resample_dimension_fixture();
     return 0;
 }

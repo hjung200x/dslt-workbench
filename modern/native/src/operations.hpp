@@ -117,6 +117,14 @@ std::vector<float> apply_dslt_threshold(
     float z_correction_factor,
     const Engine::Progress& progress);
 std::vector<float> window_level(const Volume& volume, float minimum, float maximum, const Engine::Progress& progress);
+std::vector<float> z_gradient(
+    const Volume& volume,
+    float coefficient,
+    float exponent,
+    float minimum,
+    float maximum,
+    std::span<const float> height_map,
+    const Engine::Progress& progress);
 std::vector<float> threshold(const Volume& volume, float value, const Engine::Progress& progress);
 std::vector<float> adaptive_threshold(
     const Volume& volume,
