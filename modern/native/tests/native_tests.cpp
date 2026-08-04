@@ -250,8 +250,9 @@ void cuda_pointwise_parity_test() {
     excessive_resample.operation = DSLT_OP_RESAMPLE_Z_AREA;
     excessive_resample.target_spacing_z = std::numeric_limits<float>::min();
     excessive_resample.backend = DSLT_BACKEND_CUDA;
+    dslt_operation_result excessive_result{};
     require(dslt_run_operation(
-        handle, &excessive_resample, nullptr, nullptr, &result), DSLT_RESOURCE_LIMIT);
+        handle, &excessive_resample, nullptr, nullptr, &excessive_result), DSLT_RESOURCE_LIMIT);
 
     for (const auto view : {
              std::pair{DSLT_OP_EXTRACT_XY, 2},
