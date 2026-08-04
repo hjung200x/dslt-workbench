@@ -121,8 +121,9 @@ try {
         throw 'Preview package validation level is missing or invalid.'
     }
     if ($buildInfo.sourceCommit -notmatch '^[0-9a-f]{40}$' -or
+        $buildInfo.nativeSourceCommit -notmatch '^[0-9a-f]{40}$' -or
         $buildInfo.legacyBaselineCommit -ne 'aae2b3e5310fcaad4151a878ad65ed2a3fa29146') {
-        throw 'BUILD-INFO.json source or legacy commit is invalid.'
+        throw 'BUILD-INFO.json managed/native source or legacy commit is invalid.'
     }
 
     function Get-PeMachine([string]$Path) {

@@ -174,6 +174,7 @@ try {
         selfContained = $true
         backend = 'cuda'
         sourceCommit = $sourceCommit
+        nativeSourceCommit = $sourceCommit
         legacyBaselineCommit = $legacyCommit
         validationLevel = 'synthetic-data-validated'
     })

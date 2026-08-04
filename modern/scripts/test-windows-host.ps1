@@ -44,8 +44,9 @@ $buildInfo = Get-Content -LiteralPath $buildInfoPath -Raw | ConvertFrom-Json
 if ($buildInfo.runtimeIdentifier -ne 'win-x64' -or $buildInfo.selfContained -ne $true) {
     throw 'Host validation requires a self-contained win-x64 package.'
 }
-if ($buildInfo.sourceCommit -notmatch '^[0-9a-f]{40}$') {
-    throw 'BUILD-INFO.json does not contain a full lowercase source commit.'
+if ($buildInfo.sourceCommit -notmatch '^[0-9a-f]{40}$' -or
+    $buildInfo.nativeSourceCommit -notmatch '^[0-9a-f]{40}$') {
+    throw 'BUILD-INFO.json does not contain full lowercase managed/native source commits.'
 }
 
 $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
@@ -70,6 +71,7 @@ $evidence = [ordered]@{
         runtimeIdentifier = $buildInfo.runtimeIdentifier
         selfContained = $buildInfo.selfContained
         sourceCommit = $buildInfo.sourceCommit
+        nativeSourceCommit = $buildInfo.nativeSourceCommit
         validationLevel = $buildInfo.validationLevel
         applicationSha256 = (Get-FileHash -LiteralPath $applicationPath -Algorithm SHA256).Hash.ToLowerInvariant()
         nativeSha256 = (Get-FileHash -LiteralPath $nativePath -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -4,6 +4,8 @@ param(
     [string]$Version = '0.1.0-preview',
     [switch]$Cuda,
     [switch]$SkipNativeBuild,
+    [string]$PrebuiltCudaArtifactDirectory,
+    [string]$PrebuiltCudaSourceCommit,
     [switch]$ReleaseCandidate
 )
 
@@ -42,6 +44,34 @@ $workingTreeState = @(git -C $repoRoot status --porcelain=v1 --untracked-files=a
 if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect the Git working tree.' }
 if ($workingTreeState.Count -ne 0) {
     throw 'Refusing to package an uncommitted working tree. Commit all source and release metadata first.'
+}
+$hasPrebuiltDirectory = -not [string]::IsNullOrWhiteSpace($PrebuiltCudaArtifactDirectory)
+$hasPrebuiltCommit = -not [string]::IsNullOrWhiteSpace($PrebuiltCudaSourceCommit)
+if ($hasPrebuiltDirectory -ne $hasPrebuiltCommit) {
+    throw '-PrebuiltCudaArtifactDirectory and -PrebuiltCudaSourceCommit must be supplied together.'
+}
+if ($hasPrebuiltDirectory -and (-not $Cuda -or -not $SkipNativeBuild)) {
+    throw 'A prebuilt CUDA artifact requires both -Cuda and -SkipNativeBuild.'
+}
+$resolvedPrebuiltDirectory = $null
+$nativeSourceCommit = $commit
+if ($hasPrebuiltDirectory) {
+    if ($PrebuiltCudaSourceCommit -notmatch '^[0-9a-f]{40}$') {
+        throw '-PrebuiltCudaSourceCommit must be a full lowercase Git commit.'
+    }
+    git -C $repoRoot cat-file -e "$PrebuiltCudaSourceCommit^{commit}"
+    if ($LASTEXITCODE -ne 0) { throw 'The prebuilt CUDA source commit is not available in this repository.' }
+    git -C $repoRoot merge-base --is-ancestor $PrebuiltCudaSourceCommit $commit
+    if ($LASTEXITCODE -ne 0) { throw 'The prebuilt CUDA source commit must be an ancestor of the package commit.' }
+    git -C $repoRoot diff --quiet "$PrebuiltCudaSourceCommit..$commit" -- modern/native
+    if ($LASTEXITCODE -eq 1) {
+        throw 'Native sources changed after the prebuilt CUDA artifact source commit.'
+    }
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to compare prebuilt CUDA and package native sources.' }
+    $resolvedPrebuiltDirectory = (Resolve-Path -LiteralPath $PrebuiltCudaArtifactDirectory).Path
+    & (Join-Path $PSScriptRoot 'run-cuda-artifact-tests.ps1') -ArtifactDirectory $resolvedPrebuiltDirectory
+    if ($LASTEXITCODE -ne 0) { throw 'Prebuilt CUDA artifact runtime tests failed.' }
+    $nativeSourceCommit = $PrebuiltCudaSourceCommit
 }
 $resolvedBaseline = (git -C $repoRoot rev-parse "$legacyBaselineTag^{commit}").Trim()
 if ($LASTEXITCODE -ne 0 -or $resolvedBaseline -ne $legacyBaselineCommit) {
@@ -93,7 +123,11 @@ dotnet publish (Join-Path $modernRoot 'app\Dslt.App\Dslt.App.csproj') `
     -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) { throw 'Managed publish failed.' }
 
-$nativeDll = Join-Path $modernRoot "native\out\build\$preset\Release\dslt_core.dll"
+$nativeDll = if ($null -ne $resolvedPrebuiltDirectory) {
+    Join-Path $resolvedPrebuiltDirectory 'dslt_core.dll'
+} else {
+    Join-Path $modernRoot "native\out\build\$preset\Release\dslt_core.dll"
+}
 if (-not (Test-Path -LiteralPath $nativeDll)) { throw "Native DLL was not found at $nativeDll" }
 Copy-Item -LiteralPath $nativeDll -Destination $publishRoot -Force
 
@@ -131,6 +165,7 @@ $buildInfo = [ordered]@{
     selfContained = $true
     backend = $backendName
     sourceCommit = $commit
+    nativeSourceCommit = $nativeSourceCommit
     upstreamRepository = 'https://github.com/takashi310/DSLT'
     legacyBaselineCommit = $legacyBaselineCommit
     legacyBaselineTag = $legacyBaselineTag
