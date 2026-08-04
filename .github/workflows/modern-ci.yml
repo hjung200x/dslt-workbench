@@ -88,6 +88,23 @@ jobs:
       - name: Build and verify self-contained preview package
         shell: pwsh
         run: ./modern/scripts/package-preview.ps1 -SkipNativeBuild -Version "0.1.0-preview.${{ github.run_number }}"
+      - name: Run packaged WPF host smoke test
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem -LiteralPath modern/artifacts/preview -Filter '*.zip')
+          if ($archives.Count -ne 1) {
+            throw "Expected exactly one preview ZIP, found $($archives.Count)."
+          }
+          $packageRoot = Join-Path `
+            $env:RUNNER_TEMP `
+            "dslt-packaged-host-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          if (Test-Path -LiteralPath $packageRoot) {
+            throw "Packaged host-smoke target already exists: $packageRoot"
+          }
+          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath $packageRoot
+          ./modern/scripts/test-windows-host.ps1 `
+            -PackageRoot $packageRoot `
+            -EvidencePath modern/artifacts/preview/windows-host-smoke.json
       - name: Upload verified preview package
         uses: actions/upload-artifact@v4
         with:

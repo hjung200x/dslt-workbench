@@ -51,6 +51,22 @@ The JSON and adjacent `.sha256` file are evidence for one package, machine, OS
 build, and scaling setting. They are not proof of real-data equivalence and do
 not themselves approve v1.0.
 
+## Continuous packaged-application smoke gate
+
+The Windows native CI job builds the self-contained CPU preview ZIP, verifies
+its checksum and contents, extracts that exact archive, and runs
+`test-windows-host.ps1` against the packaged `Dslt.App.exe`. The resulting
+`windows-host-smoke.json` and checksum are uploaded beside the preview archive.
+This catches missing runtime/native files, startup or normal-close failures,
+lost PerMonitorV2 awareness, inaccessible focusable controls, and primary
+commands that cannot be reached at the minimum window size.
+
+The hosted runner's actual DPI is recorded without an expected-DPI override.
+Consequently this continuous smoke result is useful regression evidence but is
+not accepted as either of the two release host records. The final gate still
+requires genuine Windows 10 22H2 at 150% and Windows 11 at 200% with CUDA,
+captured from the exact release-candidate package.
+
 ## Manual observations paired with each JSON
 
 Record these observations beside the evidence file:
