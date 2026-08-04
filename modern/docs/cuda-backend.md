@@ -140,6 +140,24 @@ hosted build gate without occupying the GPU host. Its native test suite checks:
 - 100 repeated operations without more than 1 MiB apparent free-memory drift
   after kernel warm-up.
 
+The first fully automated hosted-build/self-hosted-runtime chain passed on
+2026-08-04 (Asia/Seoul):
+
+| Evidence | Value |
+|---|---|
+| Source commit | `34f9f6ee3801acba889e06b1595eca91eed7c960` |
+| Workflow run | GitHub Actions run `30865538199` |
+| Hosted job | `cuda-build-only` passed |
+| GPU job | `cuda-runtime-parity` passed |
+| Runner | `SNUPCB-HJUNG-RTX4060-2` (`Windows`, `X64`, `NVIDIA`) |
+| GPU | NVIDIA GeForce RTX 4060, compute capability 8.9, 8188 MiB |
+| Driver | 591.86 |
+| Persistence | Current-user scheduled task `DSLT Workbench GitHub Runner` |
+
+The runner is repository-scoped. Its logon task starts the official GitHub
+Actions runner v2.336.0 with limited user rights; the CUDA workflow remains
+manual-dispatch-only so ordinary pushes cannot occupy the local GPU host.
+
 Pointwise float parity uses an absolute tolerance of `1e-6`, which is stricter
 than the project-wide float gate (`abs <= 1e-5` or `rel <= 1e-4`). Binary
 threshold results are therefore voxel-exact on the test fixture.
