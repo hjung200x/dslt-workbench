@@ -13,6 +13,10 @@ libCZI is LGPL-3.0-or-later; binary packages include the upstream
 `LIBCZI-COPYING.txt`, `LIBCZI-THIRD-PARTY-LICENSES.txt`, and exact dependency
 lock file. The unmodified corresponding source is available from
 <https://github.com/ZEISS/libczi> at that revision.
+The same package also includes `ZSTD-LICENSE.txt` and all upstream Eigen
+`COPYING.*` files used by the pinned libCZI build. zstd 1.5.7 is linked into
+libCZI statically; Eigen 3.4.0 headers are pinned by libCZI at commit
+`3147391d946bb4b6c68edd901f2add6ac1f31f8c`.
 
 Corresponding source and complete Git history are available at:
 

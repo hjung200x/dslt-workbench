@@ -134,6 +134,8 @@ $nativeBuildRoot = Join-Path $modernRoot "native\out\build\$preset"
 $cziAdapterDll = Join-Path $nativeBuildRoot 'Release\dslt_czi.dll'
 $libCziDll = Join-Path $nativeBuildRoot 'Release\libCZI.dll'
 $libCziSourceRoot = Join-Path $nativeBuildRoot '_deps\libczi-src'
+$zstdSourceRoot = Join-Path $nativeBuildRoot '_deps\zstd-src'
+$eigenSourceRoot = Join-Path $nativeBuildRoot 'vendor\eigen3\src\eigen_ext'
 foreach ($cziRuntime in @($cziAdapterDll, $libCziDll)) {
     if (-not (Test-Path -LiteralPath $cziRuntime)) {
         throw "CZI runtime DLL was not found at $cziRuntime"
@@ -155,6 +157,13 @@ $distributionFiles = [ordered]@{
     $dotnetNotices = 'DOTNET-THIRD-PARTY-NOTICES.txt'
     (Join-Path $libCziSourceRoot 'COPYING') = 'LIBCZI-COPYING.txt'
     (Join-Path $libCziSourceRoot 'THIRD_PARTY_LICENSES.txt') = 'LIBCZI-THIRD-PARTY-LICENSES.txt'
+    (Join-Path $zstdSourceRoot 'LICENSE') = 'ZSTD-LICENSE.txt'
+    (Join-Path $eigenSourceRoot 'COPYING.MPL2') = 'EIGEN-COPYING.MPL2.txt'
+    (Join-Path $eigenSourceRoot 'COPYING.BSD') = 'EIGEN-COPYING.BSD.txt'
+    (Join-Path $eigenSourceRoot 'COPYING.MINPACK') = 'EIGEN-COPYING.MINPACK.txt'
+    (Join-Path $eigenSourceRoot 'COPYING.APACHE') = 'EIGEN-COPYING.APACHE.txt'
+    (Join-Path $eigenSourceRoot 'COPYING.LGPL') = 'EIGEN-COPYING.LGPL.txt'
+    (Join-Path $eigenSourceRoot 'COPYING.GPL') = 'EIGEN-COPYING.GPL.txt'
     (Join-Path $modernRoot 'README.md') = 'README.md'
     (Join-Path $modernRoot 'legacy\DSLT_Demo_User_Manual_v1.11.pdf') = 'docs\DSLT_Demo_User_Manual_v1.11.pdf'
     (Join-Path $modernRoot 'legacy\README.md') = 'docs\legacy-assets.md'

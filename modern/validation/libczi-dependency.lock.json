@@ -13,5 +13,28 @@
   "experimentalChunkedCompression": false,
   "buildCziCommand": false,
   "buildUpstreamTests": false,
-  "buildUpstreamCapi": false
+  "buildUpstreamCapi": false,
+  "transitiveDependencies": [
+    {
+      "name": "zstd",
+      "version": "1.5.7",
+      "sourceTag": "v1.5.7",
+      "linkage": "static",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "name": "Eigen",
+      "version": "3.4.0",
+      "commit": "3147391d946bb4b6c68edd901f2add6ac1f31f8c",
+      "usage": "headers",
+      "licenseFiles": [
+        "COPYING.MPL2",
+        "COPYING.BSD",
+        "COPYING.MINPACK",
+        "COPYING.APACHE",
+        "COPYING.LGPL",
+        "COPYING.GPL"
+      ]
+    }
+  ]
 }

@@ -64,6 +64,13 @@ try {
         'DOTNET-THIRD-PARTY-NOTICES.txt',
         'LIBCZI-COPYING.txt',
         'LIBCZI-THIRD-PARTY-LICENSES.txt',
+        'ZSTD-LICENSE.txt',
+        'EIGEN-COPYING.MPL2.txt',
+        'EIGEN-COPYING.BSD.txt',
+        'EIGEN-COPYING.MINPACK.txt',
+        'EIGEN-COPYING.APACHE.txt',
+        'EIGEN-COPYING.LGPL.txt',
+        'EIGEN-COPYING.GPL.txt',
         'README.md',
         'docs\source-and-license.md',
         'docs\provenance.md',
@@ -110,8 +117,14 @@ try {
     if ($libCziCopying -notmatch 'GNU Lesser General Public License.*version 3 or later' -or
         $libCziNotices -notmatch 'For libCZI' -or
         $libCziNotices -notmatch 'jxrlib' -or
-        $libCziNotices -notmatch 'zstd') {
+        $libCziNotices -notmatch 'pugixml') {
         throw 'libCZI license or third-party notices are incomplete.'
+    }
+    $zstdLicense = Get-Content -LiteralPath (Join-Path $temporaryRoot 'ZSTD-LICENSE.txt') -Raw -Encoding utf8
+    $eigenLicense = Get-Content -LiteralPath (Join-Path $temporaryRoot 'EIGEN-COPYING.MPL2.txt') -Raw -Encoding utf8
+    if ($zstdLicense -notmatch 'BSD License' -or
+        $eigenLicense -notmatch 'Mozilla Public License Version 2.0') {
+        throw 'zstd or Eigen license text is incomplete.'
     }
     $provenance = Get-Content -LiteralPath (Join-Path $temporaryRoot 'docs\provenance.md') -Raw -Encoding utf8
     if ($provenance -notmatch 'takashi310/DSLT' -or
