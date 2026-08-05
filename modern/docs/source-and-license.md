@@ -7,6 +7,13 @@ notices retained from DSLT Demo are included as
 notices are included as `DOTNET-LICENSE.txt` and
 `DOTNET-THIRD-PARTY-NOTICES.txt`.
 
+Optional read-only CZI input uses ZEISS libCZI 0.69.1 at pinned revision
+`61f74ff097d6d0fbe6e36f204ff59d92e299d7cd` as a dynamically linked library.
+libCZI is LGPL-3.0-or-later; binary packages include the upstream
+`LIBCZI-COPYING.txt`, `LIBCZI-THIRD-PARTY-LICENSES.txt`, and exact dependency
+lock file. The unmodified corresponding source is available from
+<https://github.com/ZEISS/libczi> at that revision.
+
 Corresponding source and complete Git history are available at:
 
 - Workbench: <https://github.com/hjung200x/dslt-workbench>

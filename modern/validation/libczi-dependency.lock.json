@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "ZEISS libCZI",
+  "version": "0.69.1",
+  "repository": "https://github.com/ZEISS/libczi",
+  "commit": "61f74ff097d6d0fbe6e36f204ff59d92e299d7cd",
+  "commitDateUtc": "2026-07-13T11:19:02Z",
+  "sourceArchive": "https://github.com/ZEISS/libczi/archive/61f74ff097d6d0fbe6e36f204ff59d92e299d7cd.zip",
+  "sourceArchiveSha256": "fe8e9917903cfb5c716e0a0d2b7805cd298e2fb758b61f330c1bc5385a99ab5f",
+  "gitTree": "2f1c90a386057a63e68631b9f4874e34bec55a91",
+  "license": "LGPL-3.0-or-later",
+  "linkage": "dynamic",
+  "experimentalChunkedCompression": false,
+  "buildCziCommand": false,
+  "buildUpstreamTests": false,
+  "buildUpstreamCapi": false
+}

@@ -12,5 +12,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Dslt.Managed.Core\Dslt.Managed.Core.csproj" />
   </ItemGroup>
+  <ItemGroup Condition="Exists('..\..\native\out\build\windows-cpu\Release\dslt_czi.dll')">
+    <None Include="..\..\native\out\build\windows-cpu\Release\dslt_czi.dll" Link="dslt_czi.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\native\out\build\windows-cpu\Release\libCZI.dll" Link="libCZI.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
-

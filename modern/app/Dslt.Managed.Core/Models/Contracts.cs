@@ -77,13 +77,30 @@ public sealed record VolumeChannelInfo(
     byte Blue,
     byte Alpha);
 
+public sealed record VolumeImportIdentity(
+    string SourceFileName,
+    string ContainerSha256,
+    string DecodedSamplesSha256,
+    string Decoder,
+    string DecoderRevision,
+    int SceneIndex,
+    int SceneX,
+    int SceneY,
+    int SceneWidth,
+    int SceneHeight,
+    int TimeIndex,
+    IReadOnlyList<int> OriginalChannelIndices,
+    int PyramidLayer,
+    string? CalibrationWarning = null);
+
 public sealed record VolumeSourceInfo(
     VolumeVoxelType VoxelType,
     string Container,
     string? ImageDescription,
     byte[] ChannelPlanarRawSamples,
     IReadOnlyList<VolumeChannelInfo>? ChannelMetadata = null,
-    IReadOnlyList<double>? TimeStampsSeconds = null)
+    IReadOnlyList<double>? TimeStampsSeconds = null,
+    VolumeImportIdentity? ImportIdentity = null)
 {
     public int BytesPerSample => VoxelType switch
     {
@@ -159,6 +176,26 @@ public sealed record VolumeData(
                         "Source timestamps must be finite, non-negative, and nondecreasing.",
                         nameof(Source));
                 previousTimeStamp = timeStamp;
+            }
+
+            if (Source.ImportIdentity is { } identity)
+            {
+                if (string.IsNullOrWhiteSpace(identity.SourceFileName) ||
+                    Path.IsPathRooted(identity.SourceFileName) ||
+                    identity.ContainerSha256.Length != 64 ||
+                    !identity.ContainerSha256.All(Uri.IsHexDigit) ||
+                    identity.DecodedSamplesSha256.Length != 64 ||
+                    !identity.DecodedSamplesSha256.All(Uri.IsHexDigit) ||
+                    string.IsNullOrWhiteSpace(identity.Decoder) ||
+                    string.IsNullOrWhiteSpace(identity.DecoderRevision) ||
+                    identity.SceneWidth != Width ||
+                    identity.SceneHeight != Height ||
+                    identity.OriginalChannelIndices.Count != Channels ||
+                    identity.OriginalChannelIndices.Distinct().Count() != Channels ||
+                    identity.PyramidLayer != 0)
+                {
+                    throw new ArgumentException("Source import identity is incomplete or inconsistent.", nameof(Source));
+                }
             }
         }
     }

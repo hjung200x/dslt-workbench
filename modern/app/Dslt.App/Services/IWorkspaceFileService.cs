@@ -7,7 +7,7 @@ namespace Dslt.App.Services;
 
 public interface IWorkspaceFileService
 {
-    Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken);
+    Task<VolumeData?> OpenVolumeAsync(IProgress<double>? progress, CancellationToken cancellationToken);
     Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken);
     Task<LegacyHeightMap?> OpenHeightMapAsync(CancellationToken cancellationToken);
     Task<string?> SaveHeightMapAsync(LegacyHeightMap heightMap, CancellationToken cancellationToken);

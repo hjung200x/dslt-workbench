@@ -130,6 +130,16 @@ $nativeDll = if ($null -ne $resolvedPrebuiltDirectory) {
 }
 if (-not (Test-Path -LiteralPath $nativeDll)) { throw "Native DLL was not found at $nativeDll" }
 Copy-Item -LiteralPath $nativeDll -Destination $publishRoot -Force
+$nativeBuildRoot = Join-Path $modernRoot "native\out\build\$preset"
+$cziAdapterDll = Join-Path $nativeBuildRoot 'Release\dslt_czi.dll'
+$libCziDll = Join-Path $nativeBuildRoot 'Release\libCZI.dll'
+$libCziSourceRoot = Join-Path $nativeBuildRoot '_deps\libczi-src'
+foreach ($cziRuntime in @($cziAdapterDll, $libCziDll)) {
+    if (-not (Test-Path -LiteralPath $cziRuntime)) {
+        throw "CZI runtime DLL was not found at $cziRuntime"
+    }
+    Copy-Item -LiteralPath $cziRuntime -Destination $publishRoot -Force
+}
 
 $dotnetExecutable = (Get-Command dotnet -ErrorAction Stop).Source
 $dotnetRoot = Split-Path -Parent $dotnetExecutable
@@ -143,9 +153,12 @@ $distributionFiles = [ordered]@{
     (Join-Path $repoRoot 'license.txt') = 'LEGACY-THIRD-PARTY-NOTICES.txt'
     $dotnetLicense = 'DOTNET-LICENSE.txt'
     $dotnetNotices = 'DOTNET-THIRD-PARTY-NOTICES.txt'
+    (Join-Path $libCziSourceRoot 'COPYING') = 'LIBCZI-COPYING.txt'
+    (Join-Path $libCziSourceRoot 'THIRD_PARTY_LICENSES.txt') = 'LIBCZI-THIRD-PARTY-LICENSES.txt'
     (Join-Path $modernRoot 'README.md') = 'README.md'
     (Join-Path $modernRoot 'legacy\DSLT_Demo_User_Manual_v1.11.pdf') = 'docs\DSLT_Demo_User_Manual_v1.11.pdf'
     (Join-Path $modernRoot 'legacy\README.md') = 'docs\legacy-assets.md'
+    (Join-Path $modernRoot 'validation\libczi-dependency.lock.json') = 'docs\libczi-dependency.lock.json'
 }
 foreach ($entry in $distributionFiles.GetEnumerator()) {
     if (-not (Test-Path -LiteralPath $entry.Key)) { throw "Distribution file is missing: $($entry.Key)" }
@@ -169,6 +182,8 @@ $buildInfo = [ordered]@{
     upstreamRepository = 'https://github.com/takashi310/DSLT'
     legacyBaselineCommit = $legacyBaselineCommit
     legacyBaselineTag = $legacyBaselineTag
+    cziDecoder = 'ZEISS libCZI 0.69.1'
+    cziDecoderRevision = '61f74ff097d6d0fbe6e36f204ff59d92e299d7cd'
     validationLevel = 'synthetic-data-validated'
 }
 $buildInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $publishRoot 'BUILD-INFO.json') -Encoding utf8

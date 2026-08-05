@@ -59,6 +59,8 @@ public sealed record ProcessingProvenance(
     string? CompatibilityWarning,
     IReadOnlyList<string> EditHistory)
 {
+    public VolumeImportIdentity? InputImportIdentity { get; init; }
+
     public static ProcessingProvenance Create(
         VolumeData input,
         OperationParameters operation,
@@ -107,7 +109,10 @@ public sealed record ProcessingProvenance(
             result.ComponentCount,
             labelTiffEncoding,
             compatibilityWarning,
-            editHistory?.ToArray() ?? []);
+            editHistory?.ToArray() ?? [])
+        {
+            InputImportIdentity = input.Source?.ImportIdentity,
+        };
     }
 
     public static OperationParameters WithoutTransientArrays(OperationParameters operation) =>

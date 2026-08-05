@@ -53,6 +53,8 @@ try {
     $requiredFiles = @(
         'Dslt.App.exe',
         'dslt_core.dll',
+        'dslt_czi.dll',
+        'libCZI.dll',
         'coreclr.dll',
         'hostfxr.dll',
         'hostpolicy.dll',
@@ -60,15 +62,19 @@ try {
         'LEGACY-THIRD-PARTY-NOTICES.txt',
         'DOTNET-LICENSE.txt',
         'DOTNET-THIRD-PARTY-NOTICES.txt',
+        'LIBCZI-COPYING.txt',
+        'LIBCZI-THIRD-PARTY-LICENSES.txt',
         'README.md',
         'docs\source-and-license.md',
         'docs\provenance.md',
         'docs\compatibility-matrix.md',
+        'docs\czi-input-spec.md',
         'docs\adaptive-threshold-spec.md',
         'docs\dslt-algorithm-spec.md',
         'docs\functional-spec.md',
         'docs\legacy-assets.md',
         'docs\legacy-manual-audit.md',
+        'docs\libczi-dependency.lock.json',
         'docs\DSLT_Demo_User_Manual_v1.11.pdf',
         'docs\h-minima-spec.md',
         'docs\height-map-spec.md',
@@ -99,6 +105,14 @@ try {
         $gpl -notmatch 'END OF TERMS AND CONDITIONS') {
         throw 'COPYING.GPLv3 does not contain the complete GPLv3 markers.'
     }
+    $libCziCopying = Get-Content -LiteralPath (Join-Path $temporaryRoot 'LIBCZI-COPYING.txt') -Raw -Encoding utf8
+    $libCziNotices = Get-Content -LiteralPath (Join-Path $temporaryRoot 'LIBCZI-THIRD-PARTY-LICENSES.txt') -Raw -Encoding utf8
+    if ($libCziCopying -notmatch 'GNU Lesser General Public License.*version 3 or later' -or
+        $libCziNotices -notmatch 'For libCZI' -or
+        $libCziNotices -notmatch 'jxrlib' -or
+        $libCziNotices -notmatch 'zstd') {
+        throw 'libCZI license or third-party notices are incomplete.'
+    }
     $provenance = Get-Content -LiteralPath (Join-Path $temporaryRoot 'docs\provenance.md') -Raw -Encoding utf8
     if ($provenance -notmatch 'takashi310/DSLT' -or
         $provenance -notmatch 'aae2b3e5310fcaad4151a878ad65ed2a3fa29146') {
@@ -126,6 +140,16 @@ try {
         $buildInfo.legacyBaselineCommit -ne 'aae2b3e5310fcaad4151a878ad65ed2a3fa29146') {
         throw 'BUILD-INFO.json managed/native source or legacy commit is invalid.'
     }
+    if ($buildInfo.cziDecoder -ne 'ZEISS libCZI 0.69.1' -or
+        $buildInfo.cziDecoderRevision -ne '61f74ff097d6d0fbe6e36f204ff59d92e299d7cd') {
+        throw 'BUILD-INFO.json CZI decoder identity is missing or invalid.'
+    }
+    $libCziLock = Get-Content -LiteralPath (Join-Path $temporaryRoot 'docs\libczi-dependency.lock.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    if ($libCziLock.commit -ne $buildInfo.cziDecoderRevision -or
+        $libCziLock.license -ne 'LGPL-3.0-or-later' -or
+        $libCziLock.linkage -ne 'dynamic') {
+        throw 'Packaged libCZI dependency lock does not match BUILD-INFO.json.'
+    }
 
     function Get-PeMachine([string]$Path) {
         $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
@@ -144,7 +168,7 @@ try {
             $stream.Dispose()
         }
     }
-    foreach ($binary in @('Dslt.App.exe', 'dslt_core.dll')) {
+    foreach ($binary in @('Dslt.App.exe', 'dslt_core.dll', 'dslt_czi.dll', 'libCZI.dll')) {
         if ((Get-PeMachine (Join-Path $temporaryRoot $binary)) -ne 0x8664) {
             throw "$binary is not an x64 PE binary."
         }

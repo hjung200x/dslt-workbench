@@ -24,6 +24,7 @@ internal static class WorkflowViewModelTests
         RunScrollSyncOnSta();
         await RunOrthogonalViewExportTestsAsync();
         await RunHeightSurfaceAreaExportTestsAsync();
+        await RunOpenCancellationPreservationTestAsync();
         var engine = new FakeProcessingEngine();
         var files = new FakeWorkspaceFileService();
         using var viewModel = new ViewModelScope(new MainWindowViewModel(engine, files));
@@ -572,6 +573,25 @@ internal static class WorkflowViewModelTests
         await RunSegmentImportAndDisplayFilterTestsAsync();
         await RunLegacyHeightMapWorkflowTestsAsync();
         await RunLargeVolumeCancellationSmokeAsync();
+    }
+
+    private static async Task RunOpenCancellationPreservationTestAsync()
+    {
+        var files = new FakeWorkspaceFileService { WaitOnOpen = true };
+        using var viewModel = new ViewModelScope(new MainWindowViewModel(new FakeProcessingEngine(), files));
+        var target = viewModel.Value;
+        var originalImage = target.SourceImage;
+        var originalSummary = target.VolumeSummary;
+        var opening = target.OpenCommand.ExecuteAsync();
+        await files.OpenStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert(target.IsBusy && target.CancelCommand.CanExecute(null) && target.Progress >= 40,
+            "Volume open did not expose progress and cancellation.");
+        target.CancelCommand.Execute(null);
+        await opening.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert(!target.IsBusy && ReferenceEquals(originalImage, target.SourceImage) &&
+               target.VolumeSummary == originalSummary &&
+               target.Status.Contains("preserved", StringComparison.OrdinalIgnoreCase),
+            "Cancelled volume open did not preserve the previous workspace state.");
     }
 
     private static async Task RunSegmentImportAndDisplayFilterTestsAsync()
@@ -1398,8 +1418,19 @@ internal static class WorkflowViewModelTests
         public BitmapSource[]? LastOrthogonalViews { get; private set; }
         public Exception? OrthogonalViewFailure { get; set; }
         public Exception? HeightSurfaceAreaSaveFailure { get; set; }
-        public Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(NextVolume);
+        public bool WaitOnOpen { get; set; }
+        public TaskCompletionSource OpenStarted { get; private set; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task<VolumeData?> OpenVolumeAsync(
+            IProgress<double>? progress,
+            CancellationToken cancellationToken)
+        {
+            if (!WaitOnOpen) return NextVolume;
+            progress?.Report(0.5);
+            OpenStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return NextVolume;
+        }
         public Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken) =>
             Task.FromResult(NextLabels);
         public Task<LegacyHeightMap?> OpenHeightMapAsync(CancellationToken cancellationToken) =>

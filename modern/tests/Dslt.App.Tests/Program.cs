@@ -61,6 +61,7 @@ internal static class Program
             RunImageJHyperStackTest();
             RunMalformedImageJChannelMetadataTests();
             LsmMetadataTests.Run();
+            CziVolumeImporterTests.RunConfigured();
             ReferenceLabelImporterTests.Run();
             PlantSegHdf5ImporterTests.Run();
             ReferenceSuitabilityAuditorTests.Run();
@@ -199,7 +200,7 @@ internal static class Program
             throw new InvalidOperationException("The minimum-height layout did not expose vertical scrolling.");
 
         var open = FindLogicalChild<Button>(window, element =>
-            Equals(element.Content, "Open TIFF / LSM")) ??
+            Equals(element.Content, "Open TIFF / LSM / CZI")) ??
             throw new InvalidOperationException("The open command is missing from the minimum-size layout.");
         var run = FindLogicalChild<Button>(window, element => Equals(element.Content, "Run")) ??
             throw new InvalidOperationException("The run command is missing from the minimum-size layout.");

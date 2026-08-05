@@ -10,6 +10,7 @@
       "cacheVariables": {
         "CMAKE_CXX_STANDARD": "20",
         "DSLT_ENABLE_CUDA": "OFF",
+        "DSLT_ENABLE_CZI": "ON",
         "DSLT_BUILD_TESTS": "ON"
       }
     },

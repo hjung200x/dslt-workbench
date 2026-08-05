@@ -13,17 +13,29 @@ namespace Dslt.App.Services;
 
 public sealed class WpfWorkspaceFileService : IWorkspaceFileService
 {
-    public async Task<VolumeData?> OpenVolumeAsync(CancellationToken cancellationToken)
+    public async Task<VolumeData?> OpenVolumeAsync(IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var dialog = new OpenFileDialog
         {
             Title = "Open confocal stack",
-            Filter = "TIFF / LSM stack|*.tif;*.tiff;*.lsm|All files|*.*",
+            Filter = "Supported volume|*.tif;*.tiff;*.lsm;*.czi|CZI volume|*.czi|TIFF / LSM stack|*.tif;*.tiff;*.lsm|All files|*.*",
             CheckFileExists = true,
             Multiselect = false,
         };
         if (dialog.ShowDialog() != true) return null;
-        return await Task.Run(() => ReadStack(dialog.FileName, cancellationToken), cancellationToken);
+        if (Path.GetExtension(dialog.FileName).Equals(".czi", StringComparison.OrdinalIgnoreCase))
+        {
+            using var importer = await Task.Run(() => CziVolumeImporter.Open(dialog.FileName), cancellationToken);
+            var selection = CziImportSelectionDialog.Show(importer.Descriptor);
+            if (selection is null) return null;
+            return await Task.Run(
+                () => importer.Read(selection, progress, cancellationToken),
+                cancellationToken);
+        }
+        progress?.Report(0);
+        var volume = await Task.Run(() => ReadStack(dialog.FileName, cancellationToken), cancellationToken);
+        progress?.Report(1);
+        return volume;
     }
 
     public async Task<LabelTiffVolume?> OpenLabelsAsync(CancellationToken cancellationToken)

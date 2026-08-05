@@ -7,7 +7,7 @@ DSLT Demo while preserving its processing behavior. The original Visual Studio
 
 ## Architecture
 
-- `native/`: C++20 processing core and versioned C ABI (`dslt_core_v1`)
+- `native/`: C++20 processing core and versioned C ABIs (`dslt_core_v1`, `dslt_czi_v1`)
 - `app/`: .NET 10 WPF application using MVVM and P/Invoke
 - `tests/`: synthetic data and cross-layer smoke tests
 - `docs/`: compatibility matrix, validation policy, and provenance
@@ -17,6 +17,9 @@ The CPU backend is the reference implementation. CUDA is an optional backend.
 `Auto` selects CUDA for operations that have passed CPU parity validation and
 falls back to CPU when CUDA is unavailable or the operation is not yet ported.
 CUDA execution failures are reported instead of being silently retried on CPU.
+Read-only CZI input uses a pinned, dynamically linked ZEISS libCZI build and
+supports explicit scene, time-point, and grayscale channel selection. TIFF/LSM
+input remains available if the optional CZI runtime cannot be loaded.
 
 ## Build
 
@@ -134,8 +137,10 @@ remaining interactive checks are tracked in `docs/ui-workflow.md`. Repeatable
 Windows 10/11 package evidence is collected according to
 `docs/windows-host-validation.md`.
 
-Private CZI acquisitions can be converted outside the application into
-pixel-verified ImageJ HyperStacks with `scripts/convert-czi-cohort.py`. The
-five-acquisition Cortex input and performance preflight, its source locks, and
-the still-missing expert/legacy reference labels are documented in
-`docs/cortex-real-data-preflight.md`.
+The application can open phase-one CZI volumes directly; the exact supported
+geometry, sample types, selection rules, failure behavior, and decoder lock are
+defined in `docs/czi-input-spec.md`. The external
+`scripts/convert-czi-cohort.py` path remains available for independently
+pixel-verified ImageJ HyperStack conversion. The five-acquisition Cortex input
+and performance preflight, its source locks, and the still-missing expert or
+legacy reference labels are documented in `docs/cortex-real-data-preflight.md`.

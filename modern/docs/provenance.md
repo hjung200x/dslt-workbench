@@ -27,7 +27,13 @@ calibration is also written into exported label TIFF metadata.
 It also carries `inputChannelMetadata`
 (channel name and RGBA display color) and `inputTimeStampsSeconds` when the
 source container provides them. Empty arrays preserve compatibility for TIFFs
-and synthetic volumes without those metadata blocks. The always-present
+and synthetic volumes without those metadata blocks. The optional
+`inputImportIdentity` object is populated for direct CZI input. It
+records the portable source file name, container and canonical decoded-sample
+SHA-256 values, decoder name and pinned revision, scene rectangle, time point,
+original channel indices, pyramid layer, and any calibration warning. Absolute
+local paths are never exported. Existing non-CZI schema 1.10 sidecars retain a
+null value for this additive field. The always-present
 `processingSteps` array records each operation before the final operation,
 including its parameters, actual CPU/CUDA backend, output kind and dimensions,
 and canonical output SHA-256. An empty array means no prior processing was

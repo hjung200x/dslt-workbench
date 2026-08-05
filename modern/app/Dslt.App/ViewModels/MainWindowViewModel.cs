@@ -867,16 +867,41 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async Task OpenAsync()
     {
+        IsBusy = true;
+        _cancellation = new CancellationTokenSource();
+        CancelCommand.NotifyCanExecuteChanged();
+        Progress = 0;
+        Status = "Opening volume...";
         try
         {
-            var replacement = await _files.OpenVolumeAsync(CancellationToken.None);
-            if (replacement is null) return;
+            var progress = new Progress<double>(value => Progress = Math.Clamp(value * 100, 0, 100));
+            var replacement = await _files.OpenVolumeAsync(progress, _cancellation.Token);
+            if (replacement is null)
+            {
+                Status = "Open cancelled; the previous volume and result were preserved.";
+                return;
+            }
             replacement.Validate();
             ReplaceVolume(replacement, $"TIFF stack loaded · {_engine.Status}");
+            Status = $"{replacement.Source?.Container ?? "Volume"} loaded; {_engine.Status}";
+            if (replacement.Source?.ImportIdentity?.CalibrationWarning is { } warning)
+                Status += $" Warning: {warning}";
+            Progress = 100;
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Open cancelled; the previous volume and result were preserved.";
         }
         catch (Exception error)
         {
             Status = $"Open failed; the previous volume was preserved: {error.Message}";
+        }
+        finally
+        {
+            _cancellation.Dispose();
+            _cancellation = null;
+            CancelCommand.NotifyCanExecuteChanged();
+            IsBusy = false;
         }
     }
 
