@@ -142,7 +142,7 @@ function Assert-HostEvidence(
         $Evidence.ui.normalClose -ne $true) {
         throw "$Role evidence failed its DPI, accessibility, or normal-close contract."
     }
-    foreach ($command in @('Open TIFF / LSM', 'Run', 'Cancel', 'Export result + provenance')) {
+    foreach ($command in @('Open TIFF / LSM / CZI', 'Run', 'Cancel', 'Export result + provenance')) {
         $property = $Evidence.ui.primaryCommandsVisible.PSObject.Properties[$command]
         if ($null -eq $property -or $property.Value -ne $true) {
             throw "$Role evidence did not make '$command' reachable."

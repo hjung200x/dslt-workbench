@@ -100,7 +100,7 @@ function New-HostEvidence(
             perMonitorV2 = $true
             focusableWithoutNameCount = 0
             primaryCommandsVisible = [ordered]@{
-                'Open TIFF / LSM' = $true
+                'Open TIFF / LSM / CZI' = $true
                 'Run' = $true
                 'Cancel' = $true
                 'Export result + provenance' = $true
@@ -136,6 +136,8 @@ try {
     New-Item -ItemType Directory -Path $docsRoot -Force | Out-Null
     Write-FakeX64Pe (Join-Path $packageRoot 'Dslt.App.exe')
     Write-FakeX64Pe (Join-Path $packageRoot 'dslt_core.dll')
+    Write-FakeX64Pe (Join-Path $packageRoot 'dslt_czi.dll')
+    Write-FakeX64Pe (Join-Path $packageRoot 'libCZI.dll')
     foreach ($runtime in @('coreclr.dll', 'hostfxr.dll', 'hostpolicy.dll')) {
         Set-Content -LiteralPath (Join-Path $packageRoot $runtime) -Value 'fixture' -Encoding ascii
     }
@@ -148,6 +150,20 @@ try {
         'DOTNET-THIRD-PARTY-NOTICES.txt', 'README.md')) {
         Set-Content -LiteralPath (Join-Path $packageRoot $file) -Value 'fixture' -Encoding utf8
     }
+    Set-Content -LiteralPath (Join-Path $packageRoot 'LIBCZI-COPYING.txt') -Value `
+        'libCZI is licensed under the GNU Lesser General Public License (LGPL) version 3 or later.' -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $packageRoot 'LIBCZI-THIRD-PARTY-LICENSES.txt') -Value @(
+        'For libCZI',
+        'jxrlib',
+        'pugixml') -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $packageRoot 'ZSTD-LICENSE.txt') -Value 'BSD License' -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $packageRoot 'EIGEN-COPYING.MPL2.txt') `
+        -Value 'Mozilla Public License Version 2.0' -Encoding utf8
+    foreach ($file in @(
+        'EIGEN-COPYING.BSD.txt', 'EIGEN-COPYING.MINPACK.txt', 'EIGEN-COPYING.APACHE.txt',
+        'EIGEN-COPYING.LGPL.txt', 'EIGEN-COPYING.GPL.txt')) {
+        Set-Content -LiteralPath (Join-Path $packageRoot $file) -Value 'fixture license text' -Encoding utf8
+    }
     $requiredDocs = @(
         'adaptive-threshold-spec.md', 'compatibility-matrix.md', 'dslt-algorithm-spec.md',
         'functional-spec.md', 'h-minima-spec.md', 'height-map-spec.md',
@@ -155,7 +171,7 @@ try {
         'legacy-assets.md', 'legacy-manual-audit.md', 'provenance.md',
         'real-data-validation.md', 'reference-review-protocol.md', 'release-policy.md', 'tiff-io-spec.md',
         'v1-release-evidence.md', 'windows-manual-observation.example.json',
-        'ui-workflow.md', 'validation-policy.md', 'watershed-spec.md')
+        'ui-workflow.md', 'validation-policy.md', 'watershed-spec.md', 'czi-input-spec.md')
     foreach ($doc in $requiredDocs) {
         Set-Content -LiteralPath (Join-Path $docsRoot $doc) -Value 'fixture' -Encoding utf8
     }
@@ -165,6 +181,11 @@ try {
     Set-Content -LiteralPath (Join-Path $docsRoot 'provenance.md') -Value @(
         'https://github.com/takashi310/DSLT',
         $legacyCommit) -Encoding utf8
+    Write-Json (Join-Path $docsRoot 'libczi-dependency.lock.json') ([ordered]@{
+        commit = '61f74ff097d6d0fbe6e36f204ff59d92e299d7cd'
+        license = 'LGPL-3.0-or-later'
+        linkage = 'dynamic'
+    })
     Copy-Item -LiteralPath (Join-Path $modernRoot 'legacy\DSLT_Demo_User_Manual_v1.11.pdf') `
         -Destination (Join-Path $docsRoot 'DSLT_Demo_User_Manual_v1.11.pdf')
     Write-Json (Join-Path $packageRoot 'BUILD-INFO.json') ([ordered]@{
@@ -177,6 +198,8 @@ try {
         nativeSourceCommit = $sourceCommit
         legacyBaselineCommit = $legacyCommit
         validationLevel = 'synthetic-data-validated'
+        cziDecoder = 'ZEISS libCZI 0.69.1'
+        cziDecoderRevision = '61f74ff097d6d0fbe6e36f204ff59d92e299d7cd'
     })
 
     $archive = Join-Path $root 'dslt-workbench-1.0.0-win-x64-cuda.zip'

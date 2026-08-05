@@ -187,13 +187,13 @@ try {
     }
 
     $commandResults = [ordered]@{}
-    foreach ($commandName in @('Open TIFF / LSM', 'Run', 'Cancel', 'Export result + provenance')) {
-        $scrollName = if ($commandName -eq 'Open TIFF / LSM') {
+    foreach ($commandName in @('Open TIFF / LSM / CZI', 'Run', 'Cancel', 'Export result + provenance')) {
+        $scrollName = if ($commandName -eq 'Open TIFF / LSM / CZI') {
             'Navigation and volume controls'
         } else {
             'Processing and editing controls'
         }
-        $verticalPercent = if ($commandName -eq 'Open TIFF / LSM') { 0 } else { 100 }
+        $verticalPercent = if ($commandName -eq 'Open TIFF / LSM / CZI') { 0 } else { 100 }
         $scrollPatterns[$scrollName].SetScrollPercent(
             [System.Windows.Automation.ScrollPattern]::NoScroll,
             $verticalPercent)
