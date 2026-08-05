@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "auditedAtUtc": "2026-08-04T13:36:34Z",
+  "legacyBaseline": {
+    "repository": "https://github.com/takashi310/DSLT",
+    "historicalRepository": "https://github.com/nslab2000/DSLT",
+    "historicalRepositoryResolution": "GitHub redirects the historical repository API request to takashi310/DSLT.",
+    "commit": "aae2b3e5310fcaad4151a878ad65ed2a3fa29146",
+    "tag": "legacy-baseline-aae2b3e"
+  },
+  "historicalHost": {
+    "baseUrl": "http://dslt.bot.kyoto-u.ac.jp/",
+    "dnsStatus": "unresolvable",
+    "liveDownloadStatus": "unavailable"
+  },
+  "archiveAudit": {
+    "provider": "Internet Archive Wayback CDX",
+    "query": "https://web.archive.org/cdx/search/cdx?url=dslt.bot.kyoto-u.ac.jp/*&output=json&fl=timestamp,original,mimetype,statuscode,digest,length&filter=statuscode:200&collapse=digest&from=2013&to=2026",
+    "uniqueSuccessfulCaptureCount": 1,
+    "capturedUrl": "http://dslt.bot.kyoto-u.ac.jp/DSLT_manual_v111.pdf",
+    "captureTimestamp": "20210624202750",
+    "captureDigest": "3QNJZHZOJGKNP2E2XPSHRKVRU7UCGZZI",
+    "captureReplayStatus": "truncated-prefix",
+    "captureReplayBytes": 1048576,
+    "captureReplaySha256": "a617b85cc56dbffd8b94c2395e7cff9b632c5adddd7ae6e54e3b26f87234b89e",
+    "crawlerReportedOriginalBytes": 2192662,
+    "commonCrawlStatus": "indeterminate-gateway-timeout",
+    "notes": [
+      "The Wayback replay response declares that the crawler truncated the resource by length.",
+      "The replayed 1 MiB is byte-identical to the first 1 MiB of the preserved full publisher manual.",
+      "Common Crawl index requests returned HTTP 504 and are not treated as evidence that no capture exists."
+    ]
+  },
+  "preservedManual": {
+    "path": "modern/legacy/DSLT_Demo_User_Manual_v1.11.pdf",
+    "publisherAsset": "tpj12738-sup-0005-DocumentaionD1.pdf",
+    "articleDoi": "10.1111/tpj.12738",
+    "size": 2192662,
+    "sha256": "aa2c21a6fe3aafc7a431d117aed4ede66b6878f807304805d73ffea602392014",
+    "waybackPrefixBytes": 1048576,
+    "waybackPrefixSha256": "a617b85cc56dbffd8b94c2395e7cff9b632c5adddd7ae6e54e3b26f87234b89e"
+  },
+  "parameterEvidence": {
+    "sourceBaselineAvailable": true,
+    "manualAvailable": true,
+    "syntheticWorkbenchFixturesAvailable": true,
+    "legacyRuntimeCaptureAvailable": false,
+    "status": "source-manual-synthetic-only",
+    "statusDocument": "modern/docs/legacy-runtime-and-parameter-status.md"
+  },
+  "artifacts": [
+    {
+      "name": "DSLT_setup_x64_111.exe",
+      "kind": "installer-x64",
+      "version": "1.11",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/DSLT_setup_x64_111.exe",
+      "status": "not-recovered"
+    },
+    {
+      "name": "DSLT_setup_x86_111.exe",
+      "kind": "installer-x86",
+      "version": "1.11",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/DSLT_setup_x86_111.exe",
+      "status": "not-recovered"
+    },
+    {
+      "name": "DSLT_setup_x64_100.exe",
+      "kind": "installer-x64",
+      "version": "1.00",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/DSLT_setup_x64_100.exe",
+      "status": "not-recovered"
+    },
+    {
+      "name": "DSLT_setup_x86_100.exe",
+      "kind": "installer-x86",
+      "version": "1.00",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/DSLT_setup_x86_100.exe",
+      "status": "not-recovered"
+    },
+    {
+      "name": "DSLT_manual_v111.pdf",
+      "kind": "manual",
+      "version": "1.11",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/DSLT_manual_v111.pdf",
+      "status": "recovered-publisher-copy"
+    },
+    {
+      "name": "DSLT_manual_v100.pdf",
+      "kind": "manual",
+      "version": "1.00",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/DSLT_manual_v100.pdf",
+      "status": "not-recovered"
+    },
+    {
+      "name": "ST-ami 1st adaxial 2-1.tif",
+      "kind": "sample-tiff",
+      "acquisitionId": "ST-ami-1st-adaxial-2-1",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/ST-ami 1st adaxial 2-1.tif",
+      "status": "not-recovered"
+    },
+    {
+      "name": "ST-ami 1st adaxial 2-1 for x86.tif",
+      "kind": "sample-tiff-x86",
+      "acquisitionId": "ST-ami-1st-adaxial-2-1",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/ST-ami 1st adaxial 2-1 for x86.tif",
+      "status": "not-recovered"
+    },
+    {
+      "name": "CS60000 cauline abaxial 2-3.tif",
+      "kind": "sample-tiff",
+      "acquisitionId": "CS60000-cauline-abaxial-2-3",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/CS60000 cauline abaxial 2-3.tif",
+      "status": "not-recovered"
+    },
+    {
+      "name": "CS60000 cauline abaxial 2-3 for x86.tif",
+      "kind": "sample-tiff-x86",
+      "acquisitionId": "CS60000-cauline-abaxial-2-3",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/CS60000 cauline abaxial 2-3 for x86.tif",
+      "status": "not-recovered"
+    },
+    {
+      "name": "ST-ami 1st adaxial 2-1.lsm",
+      "kind": "sample-lsm",
+      "acquisitionId": "ST-ami-1st-adaxial-2-1",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/ST-ami 1st adaxial 2-1.lsm",
+      "status": "not-recovered"
+    },
+    {
+      "name": "CS60000 cauline abaxial 2-3.lsm",
+      "kind": "sample-lsm",
+      "acquisitionId": "CS60000-cauline-abaxial-2-3",
+      "sourceUrl": "http://dslt.bot.kyoto-u.ac.jp/CS60000 cauline abaxial 2-3.lsm",
+      "status": "not-recovered"
+    }
+  ],
+  "releaseEvidence": {
+    "recoveredInstallerCount": 0,
+    "recoveredSampleAcquisitionCount": 0,
+    "legacyRuntimeOracleAvailable": false,
+    "originalSampleLsmComparisonAvailable": false,
+    "v1ReleaseGateSatisfied": false
+  }
+}

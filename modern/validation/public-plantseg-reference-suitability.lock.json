@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "classification": "reference-structure-preflight",
+  "dataset": "PlantSeg core dataset crops",
+  "capturedAtUtc": "2026-08-04T14:31:45.1445033Z",
+  "auditCommand": "Dslt.Validation.Prepare audit-reference",
+  "metricContract": {
+    "dice": "binary foreground occupancy",
+    "objectCount": "same-label 26-connected components",
+    "hausdorff95": "binary foreground occupancy surfaces; positive-label transitions are ignored"
+  },
+  "cases": [
+    {
+      "id": "Movie1",
+      "file": "Movie1_256x256x64.reference.tif",
+      "sha256": "2734c5fa99a798fdd563e1b91d0f353b52b91c9a46c72f21367d0cba4ac8e22e",
+      "dimensions": { "width": 256, "height": 256, "depth": 64 },
+      "foregroundVoxelCount": 4194304,
+      "foregroundFraction": 1.0,
+      "distinctForegroundLabelCount": 6,
+      "backgroundVoxelCount": 0,
+      "exteriorConnectedBackgroundVoxelCount": 0,
+      "differentForegroundLabelFaceCount": 94746,
+      "differentForegroundLabelInterfaceVoxelCount": 132616,
+      "boundaryRepresentation": "TouchingInstances",
+      "requiresReferenceProtocolReview": true
+    },
+    {
+      "id": "Movie3",
+      "file": "Movie3_256x256x64.reference.tif",
+      "sha256": "be2b3de6b56be491a3718139d704475ec163f132f0b905c0c66515011c96effb",
+      "dimensions": { "width": 256, "height": 256, "depth": 64 },
+      "foregroundVoxelCount": 4193165,
+      "foregroundFraction": 0.9997284412384033,
+      "distinctForegroundLabelCount": 22,
+      "backgroundVoxelCount": 1139,
+      "exteriorConnectedBackgroundVoxelCount": 1139,
+      "differentForegroundLabelFaceCount": 206188,
+      "differentForegroundLabelInterfaceVoxelCount": 292014,
+      "boundaryRepresentation": "TouchingInstances",
+      "requiresReferenceProtocolReview": true
+    },
+    {
+      "id": "N405",
+      "file": "N405_256x256x64.reference.tif",
+      "sha256": "5310a6022920f1597eeaa2754465da4b0810af3c9dd544ddd5d66a9f53a87953",
+      "dimensions": { "width": 256, "height": 256, "depth": 64 },
+      "foregroundVoxelCount": 2639219,
+      "foregroundFraction": 0.6292388439178467,
+      "distinctForegroundLabelCount": 148,
+      "backgroundVoxelCount": 1555085,
+      "exteriorConnectedBackgroundVoxelCount": 1555085,
+      "differentForegroundLabelFaceCount": 326219,
+      "differentForegroundLabelInterfaceVoxelCount": 356414,
+      "boundaryRepresentation": "TouchingInstances",
+      "requiresReferenceProtocolReview": true
+    },
+    {
+      "id": "N422",
+      "file": "N422_256x256x64.reference.tif",
+      "sha256": "3f457fee380e4505019b7d75811e162303ec521803390641e05bd74f84fc898b",
+      "dimensions": { "width": 256, "height": 256, "depth": 64 },
+      "foregroundVoxelCount": 3354582,
+      "foregroundFraction": 0.7997946739196777,
+      "distinctForegroundLabelCount": 165,
+      "backgroundVoxelCount": 839722,
+      "exteriorConnectedBackgroundVoxelCount": 839722,
+      "differentForegroundLabelFaceCount": 407011,
+      "differentForegroundLabelInterfaceVoxelCount": 465871,
+      "boundaryRepresentation": "TouchingInstances",
+      "requiresReferenceProtocolReview": true
+    },
+    {
+      "id": "N449",
+      "file": "N449_256x256x64.reference.tif",
+      "sha256": "c27abee8bbc84ab9b655b86aefb418af71a4f84b1f342d89bf1583786640230c",
+      "dimensions": { "width": 256, "height": 256, "depth": 64 },
+      "foregroundVoxelCount": 2732286,
+      "foregroundFraction": 0.6514277458190918,
+      "distinctForegroundLabelCount": 159,
+      "backgroundVoxelCount": 1462018,
+      "exteriorConnectedBackgroundVoxelCount": 1462018,
+      "differentForegroundLabelFaceCount": 326531,
+      "differentForegroundLabelInterfaceVoxelCount": 394418,
+      "boundaryRepresentation": "TouchingInstances",
+      "requiresReferenceProtocolReview": true
+    }
+  ],
+  "releaseAdmission": {
+    "structurallyCompatibleWithoutProtocolReview": false,
+    "acceptedLegacyOrExpertLeafReferencesAvailable": false,
+    "v1GateCaseCount": 0,
+    "reason": "All five labels use touching positive instances whose internal transitions are invisible to the locked binary-foreground HD95 metric; the acquisitions are also lateral-root or ovule data, not accepted leaf cases."
+  }
+}

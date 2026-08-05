@@ -148,7 +148,7 @@ internal static class RawInt32TiffDecoder
             finally { stream.Position = previous; }
             var decoded = DecodeStrip(stored, compression, expectedBytes, cancellationToken);
             if (predictor == 2)
-                UndoHorizontalPredictor(decoded, width, stripRows, littleEndian);
+                UndoHorizontalPredictor(decoded, width, stripRows, sizeof(int), littleEndian);
 
             var destinationOffset = checked(row * width * sizeof(int));
             for (var sample = 0; sample < expectedBytes / sizeof(int); sample++)
@@ -174,7 +174,7 @@ internal static class RawInt32TiffDecoder
         return new RawInt32TiffPage(width, height, output);
     }
 
-    private static byte[] DecodeStrip(
+    internal static byte[] DecodeStrip(
         byte[] stored,
         uint compression,
         int expectedBytes,
@@ -382,23 +382,49 @@ internal static class RawInt32TiffDecoder
         return length;
     }
 
-    private static void UndoHorizontalPredictor(
+    internal static void UndoHorizontalPredictor(
         Span<byte> decoded,
         int width,
         int rows,
+        int bytesPerSample,
         bool littleEndian)
     {
-        var rowBytes = checked(width * sizeof(uint));
+        if (bytesPerSample is not (1 or 2 or 4))
+            throw new ArgumentOutOfRangeException(nameof(bytesPerSample));
+        var rowBytes = checked(width * bytesPerSample);
         for (var row = 0; row < rows; row++)
         {
             var currentRow = decoded.Slice(row * rowBytes, rowBytes);
-            var previous = ReadUInt32(currentRow[..sizeof(uint)], littleEndian);
-            for (var x = 1; x < width; x++)
+            if (bytesPerSample == 1)
             {
-                var sample = currentRow.Slice(x * sizeof(uint), sizeof(uint));
-                previous = unchecked(previous + ReadUInt32(sample, littleEndian));
-                if (littleEndian) BinaryPrimitives.WriteUInt32LittleEndian(sample, previous);
-                else BinaryPrimitives.WriteUInt32BigEndian(sample, previous);
+                var previous = currentRow[0];
+                for (var x = 1; x < width; x++)
+                {
+                    previous = unchecked((byte)(previous + currentRow[x]));
+                    currentRow[x] = previous;
+                }
+            }
+            else if (bytesPerSample == 2)
+            {
+                var previous = ReadUInt16(currentRow[..sizeof(ushort)], littleEndian);
+                for (var x = 1; x < width; x++)
+                {
+                    var sample = currentRow.Slice(x * sizeof(ushort), sizeof(ushort));
+                    previous = unchecked((ushort)(previous + ReadUInt16(sample, littleEndian)));
+                    if (littleEndian) BinaryPrimitives.WriteUInt16LittleEndian(sample, previous);
+                    else BinaryPrimitives.WriteUInt16BigEndian(sample, previous);
+                }
+            }
+            else
+            {
+                var previous = ReadUInt32(currentRow[..sizeof(uint)], littleEndian);
+                for (var x = 1; x < width; x++)
+                {
+                    var sample = currentRow.Slice(x * sizeof(uint), sizeof(uint));
+                    previous = unchecked(previous + ReadUInt32(sample, littleEndian));
+                    if (littleEndian) BinaryPrimitives.WriteUInt32LittleEndian(sample, previous);
+                    else BinaryPrimitives.WriteUInt32BigEndian(sample, previous);
+                }
             }
         }
     }

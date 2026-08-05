@@ -13,7 +13,8 @@ must confirm `dataClassification: representative-real` and the stated
    multi-channel inputs, `uint8`, `uint16`, and `float32`, and at least two Z
    spacings.
 3. For every acquisition, retain the original input, accepted reference label
-   TIFF, Workbench candidate label TIFF, and Workbench JSON provenance sidecar.
+   TIFF, hash-bound reference acceptance JSON, Workbench candidate label TIFF,
+   and Workbench JSON provenance sidecar.
 4. Set schema 2 `candidateSourceCommit` to the exact 40-hex `sourceCommit`
    from the release candidate's `BUILD-INFO.json`. Every candidate provenance
    sidecar must contain the same commit.
@@ -24,6 +25,16 @@ must confirm `dataClassification: representative-real` and the stated
    label values are foreground object identifiers.
 7. Set `container` to `tiff` or `lsm`; it must agree with provenance
    `inputContainer`.
+
+Schema-2 cases require a schema-1 reference acceptance record. It binds the
+exact reference TIFF SHA-256 to the acquisition ID, `legacy|expert` kind,
+reviewer identity, UTC acceptance time, and protocol ID. The reviewer must
+explicitly confirm whole-volume 3D coverage, representative-leaf
+classification, and the boundary representation used by the binary-foreground
+Dice/HD95 contract. Missing, future-dated, partial-volume, hash-mismatched, or
+unreviewed records fail before metrics run.
+The complete review sequence and fixed protocol ID are defined in
+[`reference-review-protocol.md`](reference-review-protocol.md).
 
 Schema-2 v1 evidence requires candidate provenance schema 1.10. The validator
 cross-checks its source commit, input voxel type, container, channels, selected
@@ -39,6 +50,28 @@ linking the sidecar to the candidate labels.
 
 Do not commit private microscopy data. `modern/validation/data/`, local
 manifests, and generated reports are ignored by Git.
+
+### Convert a private CZI input cohort
+
+The application intentionally preserves the legacy TIFF/LSM input contract,
+but private CZI acquisitions can be prepared as pixel-verified ImageJ
+HyperStacks for validation:
+
+```powershell
+python -m pip install -r modern/scripts/requirements-czi.txt
+python modern/scripts/convert-czi-cohort.py `
+  --source D:\private\czi-cohort `
+  --output modern\validation\data\private-czi
+```
+
+The optional tool uses the pinned `scripts/requirements-czi.txt` environment.
+It records source,
+decoded-pixel, and output hashes and refuses to publish a TIFF unless the
+read-back samples are identical. CZI channel names are stored as validated JSON
+in the ImageJ description and restored by the Workbench loader. Conversion
+provides neither reference labels nor biological classification. See
+[`cortex-real-data-preflight.md`](cortex-real-data-preflight.md) for the audited
+five-acquisition example and its remaining release gaps.
 
 ### Fetch and convert the public PlantSeg candidate cohort
 
@@ -99,7 +132,10 @@ dotnet run --project modern\tools\Dslt.Validation.Prepare --configuration Releas
 `Dslt.Validation.Candidate` loads the same TIFF path as the WPF application and
 executes the production `DsltSegmentation` operation through the native C ABI.
 Use `--estimate-only` first; it rejects an unsafe memory/work estimate without
-starting segmentation:
+starting segmentation. Its JSON also records the loader-observed voxel type,
+container, selected channel, calibration, channel metadata, and canonical
+decoded-input SHA-256 so a converted acquisition can be audited before an
+expensive run:
 
 ```powershell
 dotnet run --project modern\tools\Dslt.Validation.Candidate --configuration Release -- `
@@ -172,6 +208,43 @@ data have not been accepted as representative DSLT leaf evidence. The released
 manual preset remains the UI default, while dataset-specific parameters belong
 in each candidate's provenance.
 
+The fixed-parameter failures are not safely reducible to a `C` search. The
+`audit-reference` command found that all five PlantSeg reference crops encode
+instances as directly touching positive labels. Their positive-label face
+transition counts range from 94,746 to 407,011. The release HD95 contract
+intentionally merges every non-background label into one foreground occupancy
+mask, so those internal instance transitions are invisible in the reference,
+while the legacy-derived DSLT/Watershed result can retain explicit background
+walls. Movie1 is 100% foreground and Movie3 is 99.9728% foreground, making this
+representation mismatch especially pronounced.
+
+The exact file hashes, occupancy counts, label counts, interface counts, and
+fail-closed admission decision are locked in
+`modern/validation/public-plantseg-reference-suitability.lock.json`. Reproduce
+the audit locally with:
+
+```powershell
+./modern/scripts/verify-public-plantseg-reference-suitability.ps1
+```
+
+This structural finding does not authorize deriving a new reference from the
+candidate or changing the v1 metric after seeing results. These PlantSeg cases
+remain external-pipeline preflight with a v1 gate count of zero unless an
+independent curator approves a documented reference-conversion protocol.
+
+`audit-reference` can also be run on a prospective label stack before candidate
+generation:
+
+```powershell
+dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj -- `
+  audit-reference --input D:\cohort\reference.tif --background 0
+```
+
+It reports whether the reference is genuinely 3D, its foreground/background
+occupancy, exterior-connected background, and directly touching instance
+interfaces. The result is a structural preflight only; expert/legacy custody,
+leaf representativeness, and acquisition coverage still require curator review.
+
 ### Normalize an external reference mask
 
 Public and laboratory reference masks are often compressed unsigned or binary
@@ -200,6 +273,27 @@ the v1.0 gate without curator confirmation.
 
 ### Assemble a source-locked manifest
 
+After the reference has been reviewed, create its acceptance record. The three
+confirmation switches are deliberate human assertions and must not be supplied
+for an incomplete review:
+
+```powershell
+dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj -- `
+  create-reference-acceptance `
+  --reference-labels modern\validation\data\acquisition-01.reference.tif `
+  --output modern\validation\data\acquisition-01.reference.acceptance.json `
+  --acquisition-id microscope-run-01 --reference-kind expert `
+  --accepted-by "reviewer identity" --accepted-at-utc 2026-08-04T12:00:00Z `
+  --protocol-id dslt-full-volume-reference-review-v1 `
+  --whole-volume-3d-coverage-confirmed `
+  --representative-leaf-confirmed `
+  --boundary-representation-reviewed
+```
+
+The command refuses to overwrite an existing record unless `--force` is
+explicit. Changing the reference TIFF invalidates the acceptance record rather
+than silently updating it.
+
 After Workbench has written the candidate label TIFF and provenance 1.10
 sidecar, create the first schema-2 case without copying metadata by hand:
 
@@ -212,6 +306,7 @@ dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepar
   --reference-kind expert `
   --input-volume modern\validation\data\acquisition-01.tif `
   --reference-labels modern\validation\data\acquisition-01.reference.tif `
+  --reference-acceptance modern\validation\data\acquisition-01.reference.acceptance.json `
   --candidate-labels modern\validation\data\acquisition-01.candidate.labels.i16.tif `
   --candidate-provenance modern\validation\data\acquisition-01.candidate.json `
   --representative-real
@@ -220,8 +315,9 @@ dotnet run --project modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepar
 Use `--append` for every later case. The command derives voxel type, container,
 channel count, Z spacing, and decoded-input SHA-256 from the candidate
 provenance. It verifies provenance schema/source identity, candidate operation
-and backend, reference/candidate shape and calibration, decoded candidate-label
-SHA-256, and every file hash before atomically writing the manifest. Existing
+and backend, reference/candidate shape and calibration, reference acceptance,
+decoded candidate-label SHA-256, and every file hash before atomically writing
+the manifest. Existing
 manifests are not changed without `--append`, duplicate case IDs are rejected,
 and a failed append leaves the prior manifest intact.
 

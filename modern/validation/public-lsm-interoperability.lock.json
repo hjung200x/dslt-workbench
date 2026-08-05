@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "datasetName": "Public Zeiss LSM interoperability cohort",
+  "auditedAtUtc": "2026-08-04T14:10:00Z",
+  "purpose": "Pixel, calibration, channel metadata, and Z-stack interoperability evidence only; these files do not satisfy the representative leaf segmentation gate.",
+  "license": "CC BY 4.0",
+  "redistributionPolicy": "Download in place from Zenodo and retain record attribution; large binaries are not committed to this repository.",
+  "independentDecoder": {
+    "name": "tifffile",
+    "version": "2026.5.15",
+    "canonicalAxes": "CZYX",
+    "byteOrder": "little-endian"
+  },
+  "items": [
+    {
+      "caseId": "zenodo-5781661-uint16-single",
+      "recordId": 5781661,
+      "recordUrl": "https://zenodo.org/records/5781661",
+      "recordTitle": "Expression and function of Twitch-2B in the granulosa cells of mouse ovarian follicles",
+      "license": "CC BY 4.0",
+      "name": "180829-3_z0.7_st_1321.lsm",
+      "relativePath": "180829-3_z0.7_st_1321.lsm",
+      "downloadUrl": "https://zenodo.org/api/records/5781661/files/180829-3_z0.7_st_1321.lsm/content",
+      "size": 644884,
+      "md5": "94690fd2513152a571e7c94bce9d09c7",
+      "sha256": "5d6ec5d284799b69f58a2f1ef4a207c568c829124f9023b2a912819a96c38256",
+      "tifffileAxes": "YX",
+      "tifffileShape": [512, 512],
+      "canonicalShapeCzyx": [1, 1, 512, 512],
+      "voxelType": "uint16",
+      "decodedSha256": "5e9339c872847206d56b84a0f040672ee0323a772de4e42039f8c61502835795",
+      "calibrationUm": { "x": 0.6214805864803327, "y": 0.6214805864803327, "z": 1e-13 },
+      "channelMetadata": [
+        { "name": "ChD", "red": 255, "green": 255, "blue": 255, "alpha": 0 }
+      ],
+      "timeStampsSeconds": [11181.995901277778]
+    },
+    {
+      "caseId": "zenodo-4633301-uint8-three-channel",
+      "recordId": 4633301,
+      "recordUrl": "https://zenodo.org/records/4633301",
+      "recordTitle": "Dataset of ARP-T1 ciliogenesis microscopy",
+      "license": "CC BY 4.0",
+      "name": "Fig 3d Sep2 ARPT1.lsm",
+      "relativePath": "candidates/Fig 3d Sep2 ARPT1.lsm",
+      "downloadUrl": "https://zenodo.org/api/records/4633301/files/Fig%203d%20Sep2%20ARPT1.lsm/content",
+      "size": 987720,
+      "md5": "dca7aefce95167aaf8f769b71e1d04b5",
+      "sha256": "b0ae270e16610fe73f8bf7843004066d5a02f61cf95606bac6c854674b5f3577",
+      "tifffileAxes": "CYX",
+      "tifffileShape": [3, 512, 512],
+      "canonicalShapeCzyx": [3, 1, 512, 512],
+      "voxelType": "uint8",
+      "decodedSha256": "8817c6f1dea1082ee4d06c95a7a980c726e12dd144b181114ec2feb4177c4fc0",
+      "calibrationUm": { "x": 0.1956843380872711, "y": 0.1956843380872711, "z": 1e-13 },
+      "channelMetadata": [
+        { "name": "Ch2-T1", "red": 0, "green": 0, "blue": 255, "alpha": 0 },
+        { "name": "Ch2-T2", "red": 0, "green": 255, "blue": 0, "alpha": 0 },
+        { "name": "Ch2-T3", "red": 255, "green": 0, "blue": 0, "alpha": 0 }
+      ],
+      "timeStampsSeconds": [13383.2492625]
+    },
+    {
+      "caseId": "zenodo-3594412-uint8-two-channel-z57",
+      "recordId": 3594412,
+      "recordUrl": "https://zenodo.org/records/3594412",
+      "recordTitle": "C. elegans HSP-17 translational reporter LSM z-stacks",
+      "license": "CC BY 4.0",
+      "name": "hsp-17 translational body z-stack raw.lsm",
+      "relativePath": "hsp-17 translational body z-stack raw.lsm",
+      "downloadUrl": "https://zenodo.org/api/records/3594412/files/hsp-17%20translational%20body%20z-stack%20raw.lsm/content",
+      "size": 122466019,
+      "md5": "784b51fe244d788a078eda6d78b853ac",
+      "sha256": "b90dfb779043e5294c43df4f212cd26ef879b827cdc24a46e87c18fb64041157",
+      "tifffileAxes": "ZCYX",
+      "tifffileShape": [57, 2, 1024, 1024],
+      "canonicalShapeCzyx": [2, 57, 1024, 1024],
+      "voxelType": "uint8",
+      "decodedSha256": "58a123292eb0951d1846f32e5120d759c89200572deff6b1ad5ae5763a57e9c7",
+      "calibrationUm": { "x": 0.3459440920682663, "y": 0.3459440920682663, "z": 1.024800765572339 },
+      "channelMetadata": [
+        { "name": "Ch1", "red": 255, "green": 0, "blue": 0, "alpha": 0 },
+        { "name": "T PMT", "red": 255, "green": 255, "blue": 255, "alpha": 0 }
+      ],
+      "timeStampsSeconds": [25909.692309454545]
+    }
+  ]
+}

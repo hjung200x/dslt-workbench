@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Dslt.Managed.Core.IO;
@@ -239,16 +240,24 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
     internal static VolumeData ReadStack(string path, CancellationToken cancellationToken)
     {
         var metadata = TiffMetadataReader.Read(path);
-        if (metadata.SamplesPerPixel != 1)
+        var lsm = metadata.LsmInfo;
+        var packedPlanarLsm = lsm is not null &&
+                              metadata.SamplesPerPixel > 1 &&
+                              metadata.SamplesPerPixel == lsm.DimensionChannels;
+        if (metadata.SamplesPerPixel != 1 && !packedPlanarLsm)
             throw new NotSupportedException("Only grayscale TIFF directories with one sample per pixel are supported.");
-        if (metadata.Photometric is not (0 or 1))
+        if (!packedPlanarLsm && metadata.Photometric is not (0 or 1))
             throw new NotSupportedException("Only grayscale TIFF photometric interpretation is supported.");
 
         var voxelType = ResolveVoxelType(metadata);
-        var rawInt32Pages = voxelType is VolumeVoxelType.UnsignedInt32 or VolumeVoxelType.SignedInt32
+        var rawPlanarLsmPages = packedPlanarLsm
+            ? RawPlanarLsmDecoder.Read(path, voxelType, lsm!.DimensionChannels, cancellationToken)
+            : null;
+        var rawInt32Pages = rawPlanarLsmPages is null &&
+                            voxelType is VolumeVoxelType.UnsignedInt32 or VolumeVoxelType.SignedInt32
             ? RawInt32TiffDecoder.Read(path, voxelType, cancellationToken)
             : null;
-        using var stream = rawInt32Pages is null
+        using var stream = rawPlanarLsmPages is null && rawInt32Pages is null
             ? File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read)
             : null;
         var decoder = stream is null
@@ -269,13 +278,14 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
                         $"TIFF metadata contains {metadata.Directories.Count} directories ({fullDirectoryIndices.Length} full resolution), but the Windows codec exposed {decoder.Frames.Count} frames.");
         if (rawInt32Pages is not null && rawInt32Pages.Count != fullDirectoryIndices.Length)
             throw new InvalidDataException("Raw TIFF page count does not match its full-resolution directories.");
-        var frameCount = rawInt32Pages?.Count ?? decoderFrameIndices.Length;
+        if (rawPlanarLsmPages is not null && rawPlanarLsmPages.Count != fullDirectoryIndices.Length)
+            throw new InvalidDataException("Packed planar LSM page count does not match its full-resolution directories.");
+        var frameCount = rawPlanarLsmPages?.Count ?? rawInt32Pages?.Count ?? decoderFrameIndices.Length;
         if (frameCount == 0) throw new InvalidDataException("TIFF stack contains no frames.");
         var firstFrameIndex = decoderFrameIndices.Length == 0 ? 0 : decoderFrameIndices[0];
-        var width = rawInt32Pages?[0].Width ?? decoder!.Frames[firstFrameIndex].PixelWidth;
-        var height = rawInt32Pages?[0].Height ?? decoder!.Frames[firstFrameIndex].PixelHeight;
+        var width = rawPlanarLsmPages?[0].Width ?? rawInt32Pages?[0].Width ?? decoder!.Frames[firstFrameIndex].PixelWidth;
+        var height = rawPlanarLsmPages?[0].Height ?? rawInt32Pages?[0].Height ?? decoder!.Frames[firstFrameIndex].PixelHeight;
         var imageJ = ParseImageJDescription(metadata.ImageDescription);
-        var lsm = metadata.LsmInfo;
         if (lsm is not null && (lsm.DimensionX != width || lsm.DimensionY != height))
             throw new InvalidDataException(
                 $"CZ_LSMINFO declares {lsm.DimensionX} x {lsm.DimensionY}, but the full-resolution TIFF frame is {width} x {height}.");
@@ -283,16 +293,19 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         var timeFrames = lsm?.DimensionTime ?? ReadPositiveImageJInteger(imageJ, "frames", 1);
         if (timeFrames != 1)
             throw new NotSupportedException("Time-series TIFF/LSM stacks are not supported; select or export one time point.");
-        var declaredImages = lsm is null
+        var declaredDirectories = lsm is null
             ? ReadPositiveImageJInteger(imageJ, "images", frameCount)
-            : checked(lsm.DimensionChannels * lsm.DimensionZ * lsm.DimensionTime);
-        if (declaredImages != frameCount)
+            : packedPlanarLsm
+                ? checked(lsm.DimensionZ * lsm.DimensionTime)
+                : checked(lsm.DimensionChannels * lsm.DimensionZ * lsm.DimensionTime);
+        if (declaredDirectories != frameCount)
             throw new InvalidDataException(
-                $"ImageJ metadata declares {declaredImages} images, but TIFF contains {frameCount} directories.");
+                $"Image metadata declares {declaredDirectories} full-resolution directories, but TIFF contains {frameCount}.");
         var depth = lsm?.DimensionZ ?? ReadPositiveImageJInteger(imageJ, "slices", frameCount / channels);
-        if (checked(channels * depth) != frameCount)
+        var expectedDirectories = packedPlanarLsm ? depth : checked(channels * depth);
+        if (expectedDirectories != frameCount)
             throw new InvalidDataException(
-                $"ImageJ metadata declares {channels} channels and {depth} slices, but TIFF contains {frameCount} directories.");
+                $"Image metadata declares {channels} channels and {depth} slices, but TIFF contains {frameCount} full-resolution directories.");
 
         var sliceLength = checked(width * height);
         var voxelCount = checked(sliceLength * depth);
@@ -309,6 +322,29 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
         for (var page = 0; page < frameCount; page++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (rawPlanarLsmPages is not null)
+            {
+                var rawPage = rawPlanarLsmPages[page];
+                if (rawPage.Width != width || rawPage.Height != height || rawPage.Channels != channels)
+                    throw new InvalidDataException("All packed planar LSM pages must have the same dimensions and channels.");
+                for (var packedChannel = 0; packedChannel < channels; packedChannel++)
+                {
+                    var sourceByte = checked(packedChannel * pageBytes.Length);
+                    var packedDestinationSample = checked(packedChannel * voxelCount + page * sliceLength);
+                    var packedDestinationByte = checked(packedDestinationSample * bytesPerSample);
+                    Buffer.BlockCopy(
+                        rawPage.ChannelPlanarLittleEndianSamples,
+                        sourceByte,
+                        rawSamples,
+                        packedDestinationByte,
+                        pageBytes.Length);
+                    ConvertSamples(
+                        rawPage.ChannelPlanarLittleEndianSamples.AsSpan(sourceByte, pageBytes.Length),
+                        samples.AsSpan(packedDestinationSample, sliceLength),
+                        voxelType);
+                }
+                continue;
+            }
             if (rawInt32Pages is not null)
             {
                 var rawPage = rawInt32Pages[page];
@@ -335,6 +371,9 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
 
         NormalizeChannels(samples, voxelCount, channels);
         var calibration = ResolveCalibration(metadata, imageJ);
+        var imageJChannelMetadata = lsm is null
+            ? ParseImageJChannelMetadata(imageJ, channels)
+            : null;
         var container = metadata.HasLsmInfo || Path.GetExtension(path).Equals(".lsm", StringComparison.OrdinalIgnoreCase)
             ? "LSM"
             : "TIFF";
@@ -351,7 +390,7 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
                 container,
                 metadata.ImageDescription,
                 rawSamples,
-                lsm?.ChannelMetadata.ToArray(),
+                lsm?.ChannelMetadata.ToArray() ?? imageJChannelMetadata,
                 lsm?.TimeStampsSeconds.ToArray()));
     }
 
@@ -465,6 +504,26 @@ public sealed class WpfWorkspaceFileService : IWorkspaceFileService
             values[line[..separator].Trim()] = line[(separator + 1)..].Trim();
         }
         return values;
+    }
+
+    private static VolumeChannelInfo[]? ParseImageJChannelMetadata(
+        Dictionary<string, string> values,
+        int channelCount)
+    {
+        if (!values.TryGetValue("channel_names", out var json)) return null;
+        string[]? names;
+        try
+        {
+            names = JsonSerializer.Deserialize<string[]>(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("ImageJ channel_names metadata is not valid JSON.", exception);
+        }
+        if (names is null || names.Length != channelCount || names.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException(
+                $"ImageJ channel_names must contain exactly {channelCount} non-empty names.");
+        return names.Select(name => new VolumeChannelInfo(name, 255, 255, 255, 255)).ToArray();
     }
 
     private static int ReadPositiveImageJInteger(Dictionary<string, string> values, string key, int defaultValue) =>

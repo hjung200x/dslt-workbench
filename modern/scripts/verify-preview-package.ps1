@@ -75,6 +75,7 @@ try {
         'docs\height-projection-spec.md',
         'docs\real-data-manifest.example.json',
         'docs\real-data-validation.md',
+        'docs\reference-review-protocol.md',
         'docs\release-policy.md',
         'docs\tiff-io-spec.md',
         'docs\ui-workflow.md',

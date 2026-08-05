@@ -49,6 +49,9 @@ assumptions inferred from malformed legacy slider declarations:
 These are manual examples and observed UI values, not universal recommended
 settings. Conflicts with source control ranges or code-behind sign conversion
 remain `capture-required` until the archived executable can be observed.
+The resolved mappings and the exact boundary between source evidence and
+unavailable runtime evidence are summarized in
+[`legacy-runtime-and-parameter-status.md`](legacy-runtime-and-parameter-status.md).
 
 ## Source-only command audit
 
@@ -69,5 +72,6 @@ behavior.
 The audit prevents implemented algorithms from being mistaken for complete
 legacy interaction equivalence. Before a v1.0 claim, the Workbench still needs:
 
-1. a real or archived-runtime oracle for ambiguous parameter mappings;
+1. a real or archived-runtime oracle for the explicitly `capture-required`
+   parameter mappings;
 2. representative original or expert-labelled microscopy data.

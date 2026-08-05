@@ -20,6 +20,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -36,6 +38,18 @@ jobs:
         run: dotnet build modern/tools/Dslt.Validation.Prepare/Dslt.Validation.Prepare.csproj --configuration Release
       - name: Build headless real-data candidate tool
         run: dotnet build modern/tools/Dslt.Validation.Candidate/Dslt.Validation.Candidate.csproj --configuration Release
+      - name: Verify preserved legacy distribution evidence
+        shell: pwsh
+        run: ./modern/scripts/verify-legacy-distribution.ps1
+      - name: Verify public LSM interoperability lock
+        shell: pwsh
+        run: ./modern/scripts/verify-public-lsm-interoperability.ps1 -LockOnly
+      - name: Verify public leaf input preflight lock
+        shell: pwsh
+        run: ./modern/scripts/verify-public-clsm-leaf-preflight.ps1 -LockOnly
+      - name: Verify PlantSeg reference suitability lock
+        shell: pwsh
+        run: ./modern/scripts/verify-public-plantseg-reference-suitability.ps1 -LockOnly
       - name: Test fail-closed v1 release evidence gate
         shell: pwsh
         run: ./modern/scripts/test-v1-release-evidence.ps1

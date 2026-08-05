@@ -25,6 +25,7 @@ internal static class RealDataValidationTests
         {
             var cases = new List<RealDataValidationCase>();
             var candidatePaths = new List<string>();
+            var acceptancePaths = new List<string>();
             for (var index = 0; index < 5; index++)
             {
                 var inputPath = Path.Combine(root, $"input-{index}.tif");
@@ -38,6 +39,25 @@ internal static class RealDataValidationTests
                 LabelTiffCodec.Write(referencePath, 4, 3, 2, labels, calibration);
                 LabelTiffCodec.Write(candidatePath, 4, 3, 2, labels, calibration);
                 candidatePaths.Add(candidatePath);
+                var referenceHash = await Sha256FileAsync(referencePath);
+                var referenceKind = index % 2 == 0 ? "legacy" : "expert";
+                var acceptancePath = Path.Combine(root, $"reference-{index}.acceptance.json");
+                await File.WriteAllTextAsync(acceptancePath, JsonSerializer.Serialize(
+                    new ReferenceAcceptanceRecord
+                    {
+                        SchemaVersion = 1,
+                        AcquisitionId = $"acquisition-{index}",
+                        ReferenceKind = referenceKind,
+                        ReferenceLabelsSha256 = referenceHash,
+                        AcceptedBy = "fixture reviewer",
+                        AcceptedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+                        ProtocolId = "fixture-protocol-v1",
+                        WholeVolume3dCoverageConfirmed = true,
+                        RepresentativeLeafConfirmed = true,
+                        BoundaryRepresentationReviewed = true,
+                        Notes = "Real-data validator fixture.",
+                    }, JsonOptions));
+                acceptancePaths.Add(acceptancePath);
 
                 var decodedHash = Sha256(Encoding.UTF8.GetBytes($"decoded-input-{index}"));
                 var outputHash = ProcessingProvenance.ComputeLabelSha256(labels);
@@ -103,12 +123,14 @@ internal static class RealDataValidationTests
                     Id = $"case-{index}",
                     AcquisitionId = $"acquisition-{index}",
                     DataClassification = "representative-real",
-                    ReferenceKind = index % 2 == 0 ? "legacy" : "expert",
+                    ReferenceKind = referenceKind,
                     InputPath = Path.GetFileName(inputPath),
                     InputFileSha256 = await Sha256FileAsync(inputPath),
                     InputDecodedSha256 = decodedHash,
                     ReferenceLabelsPath = Path.GetFileName(referencePath),
-                    ReferenceLabelsSha256 = await Sha256FileAsync(referencePath),
+                    ReferenceLabelsSha256 = referenceHash,
+                    ReferenceAcceptancePath = Path.GetFileName(acceptancePath),
+                    ReferenceAcceptanceSha256 = await Sha256FileAsync(acceptancePath),
                     CandidateLabelsPath = Path.GetFileName(candidatePath),
                     CandidateLabelsSha256 = await Sha256FileAsync(candidatePath),
                     CandidateProvenancePath = Path.GetFileName(provenancePath),
@@ -131,6 +153,36 @@ internal static class RealDataValidationTests
             Equal(3, passed.Coverage.CoveredVoxelTypes.Count, "Voxel type coverage");
             Equal("tiff", passed.Coverage.CoveredContainers.Single(), "Container evidence");
             Equal(2, passed.Coverage.DistinctZSpacingCount, "Z spacing coverage");
+            cases[0] = cases[0] with { AcquisitionId = string.Empty };
+            await WriteManifestAsync(manifestPath, cases);
+            var missingAcquisition = await RealDataValidationRunner.EvaluateAsync(manifestPath);
+            Assert(!missingAcquisition.ReleaseGatePassed,
+                "A missing acquisition identity must fail without aborting the validation report.");
+            Assert(missingAcquisition.Cases[0].Failures.Any(
+                value => value.Contains("Acquisition id is required", StringComparison.Ordinal)),
+                "Missing acquisition failure should remain explicit.");
+            cases[0] = cases[0] with { AcquisitionId = "acquisition-0" };
+            var acceptanceNode = JsonNode.Parse(await File.ReadAllTextAsync(acceptancePaths[0]))!.AsObject();
+            acceptanceNode["boundaryRepresentationReviewed"] = false;
+            await File.WriteAllTextAsync(acceptancePaths[0], acceptanceNode.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                ReferenceAcceptanceSha256 = await Sha256FileAsync(acceptancePaths[0]),
+            };
+            await WriteManifestAsync(manifestPath, cases);
+            var acceptanceFailure = await RealDataValidationRunner.EvaluateAsync(manifestPath);
+            Assert(!acceptanceFailure.ReleaseGatePassed,
+                "An unreviewed reference boundary representation must fail the release gate.");
+            Assert(acceptanceFailure.Cases[0].Failures.Any(
+                value => value.Contains("boundary-representation", StringComparison.Ordinal)),
+                "Reference acceptance failure should identify boundary representation review.");
+
+            acceptanceNode["boundaryRepresentationReviewed"] = true;
+            await File.WriteAllTextAsync(acceptancePaths[0], acceptanceNode.ToJsonString(JsonOptions));
+            cases[0] = cases[0] with
+            {
+                ReferenceAcceptanceSha256 = await Sha256FileAsync(acceptancePaths[0]),
+            };
             var sourceLockedProvenancePath = Path.Combine(root, "candidate-0.json");
             var sourceLockedProvenance = JsonNode.Parse(
                 await File.ReadAllTextAsync(sourceLockedProvenancePath))!.AsObject();

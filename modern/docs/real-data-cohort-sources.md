@@ -19,9 +19,58 @@ download host is no longer resolvable as of 2026-08-04. A recovered copy must be
 hashed and its provenance recorded before use. TIFF and LSM versions of the
 same acquisition count once, so these files alone cannot meet the five-unique-
 acquisition release rule. The source list also provides no accepted label
-output; legacy output or expert review is still required.
+output; legacy output or expert review is still required. The exhaustive named
+asset inventory, archive result, and offline verification contract are recorded
+in [`legacy-distribution-audit.md`](legacy-distribution-audit.md) and
+[`legacy-distribution.lock.json`](../validation/legacy-distribution.lock.json).
 
-## Priority 2: public plant-cell volumetric references
+## Priority 2: local Cortex five-acquisition candidate
+
+Five private Cortex CZI acquisitions have been audited as distinct 3D,
+three-channel, anisotropic plant-cell volumes. Pixel-exact conversion to ImageJ
+HyperStack, Workbench loading, calibration, and resource preflight pass. The
+source/output hashes and limitations are locked in
+[`cortex-stg1-cohort.lock.json`](../validation/cortex-stg1-cohort.lock.json),
+and the procedure and admission decision are recorded in
+[`cortex-real-data-preflight.md`](cortex-real-data-preflight.md).
+
+They are strong input and performance candidates, but they currently provide
+no accepted full-volume 3D labels. All five are native three-channel uint8 at
+the same Z spacing, so additional native single-channel, uint16, float32, and
+different-spacing acquisitions are still required. Curator confirmation is
+also required before `representative-real` release classification.
+
+## File-format interoperability cohort (not a segmentation gate)
+
+Three public CC BY 4.0 Zeiss LSM files from Zenodo cover real uint16
+single-channel, uint8 three-channel planar, and uint8 two-channel 57-Z layouts.
+Workbench pixels and metadata match independent `tifffile 2026.5.15` decoding
+exactly. The locked hashes, download-in-place command, and scope boundary are in
+[`public-lsm-interoperability.md`](public-lsm-interoperability.md).
+
+These microscopy files have no accepted DSLT leaf labels and are not
+representative leaf acquisitions. They validate the LSM input implementation
+only and contribute zero cases to the v1.0 segmentation metric gate.
+
+## Public Arabidopsis leaf input preflight
+
+The local public-data audit also found one `Col0_07_T1` uint16 ImageJ TIFF:
+`512 x 512 x 223`, one channel, with `0.758317 x 0.758317 x 0.599862 um`
+spacing. Workbench loads it and preserves its decoded pixels and calibration.
+The [MorphoGraphX data page](https://morphographx.org/data/) publishes an
+Arabidopsis leaf bundle with raw confocal data and meshes, but the retained
+local files contain no download metadata that conclusively binds this pair to
+that bundle. The source identity therefore remains curator-confirmation
+required.
+
+Its companion `.mgxm` begins with `MGXM 2.0` and follows the MorphoGraphX
+vertex/cell mesh serialization. It is not a voxel-aligned 3D label volume and
+cannot be passed to the current Dice/object-count/volume/HD95 validator. Exact
+hashes and the fail-closed admission result are recorded in
+[`public-clsm-leaf-preflight.json`](../validation/public-clsm-leaf-preflight.json).
+This is a useful leaf input case but contributes zero approved v1.0 cases.
+
+## Priority 3: public plant-cell volumetric references
 
 The PlantSeg paper's public core datasets contain real 3D plant microscopy
 volumes and voxel-aligned instance labels. The Workbench source lock is
@@ -46,7 +95,7 @@ classification for the intended DSLT leaf workflow.
 - [PlantSeg core dataset project](https://osf.io/uzq3w/)
 - [PlantSeg paper](https://doi.org/10.7554/eLife.57613)
 
-## Priority 3: public pipeline preflight
+## Priority 4: public pipeline preflight
 
 The [Broad Bioimage Benchmark Collection](https://bbbc.broadinstitute.org/)
 provides real microscopy data and ground truth with explicit licensing. These

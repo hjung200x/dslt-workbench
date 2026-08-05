@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "datasetName": "Cortex Col-0 stg1",
+  "sourceFormat": "czi",
+  "sourceCustody": "local-private",
+  "dataClassification": "representative-real-candidate",
+  "releaseEligible": false,
+  "curatorApproval": false,
+  "referenceLabels": "missing",
+  "conversionTool": "modern/scripts/convert-czi-cohort.py",
+  "conversionEnvironment": {
+    "platform": "Windows x64",
+    "python": "3.13.5",
+    "numpy": "2.4.4",
+    "czifile": "2026.6.6",
+    "tifffile": "2026.5.15"
+  },
+  "coverage": {
+    "distinctAcquisitions": 5,
+    "nativeChannelCounts": [3],
+    "nativeVoxelTypes": ["uint8"],
+    "nativeZSpacingsUm": [0.46]
+  },
+  "limitations": [
+    "No accepted full-volume legacy or expert 3D labels are available.",
+    "All five acquisitions are native three-channel uint8 with the same calibration.",
+    "The cohort does not cover a native single-channel, uint16, float32, or second Z-spacing acquisition.",
+    "Source redistribution and biological representativeness require curator confirmation."
+  ],
+  "cases": [
+    {
+      "id": "sample-1",
+      "sourceFile": "Sample 1.czi",
+      "sourceFileSha256": "5855b193d83fca370ad8f7d57e552e2816972aa2838ffff584b8e6500a6bb548",
+      "inputTiff": "Sample_1.imagej.tif",
+      "inputFileSha256": "0bee7229395eba1ba22703a7a200af01277c07e291183920878275fac1155072",
+      "decodedCzyxSha256": "caca91708d9188433501aafa4cba936e2db35146cd72c9c1e268d8d10ace16b8",
+      "width": 1024,
+      "height": 1024,
+      "depth": 74,
+      "channelCount": 3,
+      "channels": ["CW2MR", "mCher", "T-PMT"],
+      "voxelType": "uint8",
+      "spacingUm": { "x": 0.311962890625, "y": 0.311962890625, "z": 0.46 },
+      "cw2mrSaturatedFraction": 0.1229697563
+    },
+    {
+      "id": "sample-2",
+      "sourceFile": "Sample 2.czi",
+      "sourceFileSha256": "0bfcafec5a221860b2d76380650b6324fc90914c9997cf1371b81af9d5abb9b5",
+      "inputTiff": "Sample_2.imagej.tif",
+      "inputFileSha256": "24aaff6d94356ca1829dafa206f1ae6f8e36b19475764c9b147bf6e373b7b693",
+      "decodedCzyxSha256": "55e2db541644b2e6c64e2b3be9a282b13e6d79f77d980087ba2b5bc0386309d4",
+      "width": 1024,
+      "height": 1024,
+      "depth": 28,
+      "channelCount": 3,
+      "channels": ["CW2MR", "mCher", "T-PMT"],
+      "voxelType": "uint8",
+      "spacingUm": { "x": 0.311962890625, "y": 0.311962890625, "z": 0.46 },
+      "cw2mrSaturatedFraction": 0.04162188939
+    },
+    {
+      "id": "sample-3",
+      "sourceFile": "Sample 3.czi",
+      "sourceFileSha256": "258dd51f6984c2194c74c750c8ffe5bd7fa10933dae6a5e04537be04e1a58dfd",
+      "inputTiff": "Sample_3.imagej.tif",
+      "inputFileSha256": "819c892058d056c619a0492a578bcde2179e3e6ef9e1d8a19de7cb4dfeda60ae",
+      "decodedCzyxSha256": "4a15663fa6a6a07cdd208c15feef4411d48423212ac82390895a545a47b56daa",
+      "width": 1024,
+      "height": 1024,
+      "depth": 39,
+      "channelCount": 3,
+      "channels": ["CW2MR", "mCher", "T-PMT"],
+      "voxelType": "uint8",
+      "spacingUm": { "x": 0.311962890625, "y": 0.311962890625, "z": 0.46 },
+      "cw2mrSaturatedFraction": 0.00004797715407
+    },
+    {
+      "id": "sample-4",
+      "sourceFile": "Sample 4.czi",
+      "sourceFileSha256": "88b157f67f4769d2847600fdf4c97563379bbdd86521ecae1b41168cfbcf0cfd",
+      "inputTiff": "Sample_4.imagej.tif",
+      "inputFileSha256": "a98782c3072e328d74621d1ce6b021012b1489afd6044581705b1103765734c1",
+      "decodedCzyxSha256": "95947e6ef50714d6e3df3826ea11365ea56f3d5eebb6e8d518995695498999b5",
+      "width": 1024,
+      "height": 1024,
+      "depth": 33,
+      "channelCount": 3,
+      "channels": ["CW2MR", "mCher", "T-PMT"],
+      "voxelType": "uint8",
+      "spacingUm": { "x": 0.311962890625, "y": 0.311962890625, "z": 0.46 },
+      "cw2mrSaturatedFraction": 0.00000118486809
+    },
+    {
+      "id": "sample-5",
+      "sourceFile": "Sample 5.czi",
+      "sourceFileSha256": "0a81f19ca23e2d737b1700989708a9bd2337a2b8c157a6565b6aaa8eb3309172",
+      "inputTiff": "Sample_5.imagej.tif",
+      "inputFileSha256": "70cef3d1c6e19090dc3f4ea6327eaa62e8ace800b87c7f6d55d727ada015ed7b",
+      "decodedCzyxSha256": "58d1aa1d8bb09c08236a7159173d0c9d53052b67264c26b7accf25511799ebc9",
+      "width": 1024,
+      "height": 1024,
+      "depth": 35,
+      "channelCount": 3,
+      "channels": ["CW2MR", "mCher", "T-PMT"],
+      "voxelType": "uint8",
+      "spacingUm": { "x": 0.311962890625, "y": 0.311962890625, "z": 0.46 },
+      "cw2mrSaturatedFraction": 0.0007400785174
+    }
+  ]
+}

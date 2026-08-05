@@ -24,6 +24,9 @@ static async Task<int> RunAsync(string[] args)
         {
             "normalize-reference" => RunNormalizeReference(commandArgs),
             "import-plantseg-hdf5" => RunImportPlantSegHdf5(commandArgs),
+            "inspect-volume" => RunInspectVolume(commandArgs),
+            "audit-reference" => RunAuditReference(commandArgs),
+            "create-reference-acceptance" => await RunCreateReferenceAcceptanceAsync(commandArgs).ConfigureAwait(false),
             "add-case" => await RunAddCaseAsync(commandArgs).ConfigureAwait(false),
             _ => throw new ArgumentException($"Unknown command: {args[0]}"),
         };
@@ -34,6 +37,43 @@ static async Task<int> RunAsync(string[] args)
         Console.Error.WriteLine($"Validation preparation failed: {exception.Message}");
         return 2;
     }
+}
+
+static int RunInspectVolume(string[] args)
+{
+    var options = Parse(args, IsInspectOption, IsCommonFlag);
+    WriteJson(VolumeInspector.Inspect(Require(options, "--input"), CancellationToken.None));
+    return 0;
+}
+
+static int RunAuditReference(string[] args)
+{
+    var options = Parse(args, IsAuditReferenceOption, IsCommonFlag);
+    WriteJson(ReferenceSuitabilityAuditor.AuditFile(
+        Require(options, "--input"),
+        ParseInt32(options, "--background", 0),
+        CancellationToken.None));
+    return 0;
+}
+
+static async Task<int> RunCreateReferenceAcceptanceAsync(string[] args)
+{
+    var options = Parse(args, IsReferenceAcceptanceOption, IsCommonFlag);
+    var result = await ReferenceAcceptanceWriter.WriteAsync(new ReferenceAcceptanceRequest(
+        Require(options, "--reference-labels"),
+        Require(options, "--output"),
+        Require(options, "--acquisition-id"),
+        Require(options, "--reference-kind"),
+        Require(options, "--accepted-by"),
+        ParseUtcDateTimeOffset(options, "--accepted-at-utc"),
+        Require(options, "--protocol-id"),
+        options.ContainsKey("--whole-volume-3d-coverage-confirmed"),
+        options.ContainsKey("--representative-leaf-confirmed"),
+        options.ContainsKey("--boundary-representation-reviewed"),
+        options.TryGetValue("--notes", out var notes) ? notes ?? string.Empty : string.Empty,
+        options.ContainsKey("--force"))).ConfigureAwait(false);
+    WriteJson(result);
+    return 0;
 }
 
 static int RunImportPlantSegHdf5(string[] args)
@@ -117,6 +157,7 @@ static async Task<int> RunAddCaseAsync(string[] args)
         Require(options, "--reference-kind"),
         Require(options, "--input-volume"),
         Require(options, "--reference-labels"),
+        Require(options, "--reference-acceptance"),
         Require(options, "--candidate-labels"),
         Require(options, "--candidate-provenance"),
         ParseInt32(options, "--reference-background", 0),
@@ -171,6 +212,15 @@ static int ParseInt32(IReadOnlyDictionary<string, string?> options, string key, 
     return value;
 }
 
+static DateTimeOffset ParseUtcDateTimeOffset(IReadOnlyDictionary<string, string?> options, string key)
+{
+    var text = Require(options, key);
+    if (!DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var value) ||
+        value.Offset != TimeSpan.Zero)
+        throw new ArgumentException($"{key} must be an ISO-8601 UTC timestamp.");
+    return value;
+}
+
 static void WriteJson<T>(T value)
 {
     var options = new JsonSerializerOptions
@@ -199,11 +249,25 @@ static void PrintUsage()
             --reference-kind <legacy|expert>
             --input-volume <input.tif|input.lsm>
             --reference-labels <reference.tif>
+            --reference-acceptance <acceptance.json>
             --candidate-labels <candidate.tif>
             --candidate-provenance <candidate.json>
             --representative-real
             [--reference-background <label>] [--candidate-background <label>]
             [--connectivity <6|18|26>] [--append]
+
+          Dslt.Validation.Prepare inspect-volume --input <input.tif|input.lsm>
+
+          Dslt.Validation.Prepare audit-reference
+            --input <reference.tif> [--background <label>]
+
+          Dslt.Validation.Prepare create-reference-acceptance
+            --reference-labels <reference.tif> --output <acceptance.json>
+            --acquisition-id <id> --reference-kind <legacy|expert>
+            --accepted-by <reviewer> --accepted-at-utc <ISO-8601-UTC>
+            --protocol-id <id> --whole-volume-3d-coverage-confirmed
+            --representative-leaf-confirmed --boundary-representation-reviewed
+            [--notes <text>] [--force]
 
           Dslt.Validation.Prepare import-plantseg-hdf5
             --input <plantseg.h5>
@@ -226,11 +290,23 @@ static void PrintUsage()
         XYZ voxel coordinates and are recorded in the command result. Both outputs are
         staged before commit.
 
-        add-case derives voxel type, container, channels, Z spacing, and decoded input
-        hash and selected input channel from provenance 1.10. It verifies the candidate decoded-label hash and both
-        label volumes before atomically creating or extending a schema-2 manifest.
+        add-case derives voxel type, container, channels, Z spacing, decoded input
+        hash, and selected input channel from provenance 1.10. It verifies the
+        candidate decoded-label hash, both label volumes, and the hash-bound reference
+        acceptance record before atomically creating or extending a schema-2 manifest.
         Existing manifests require --append. Classification requires the explicit
         --representative-real acknowledgement.
+
+        inspect-volume decodes an input through the Workbench loader and emits file,
+        canonical CZYX pixel, calibration, channel, and timestamp evidence as JSON.
+
+        audit-reference reports reference dimensionality, foreground/background
+        occupancy, touching positive-label interfaces, and the binary-foreground HD95
+        semantics. It is a structural preflight, not curator acceptance of a v1.0 case.
+
+        create-reference-acceptance binds an explicit reviewer/protocol assertion to
+        the exact reference-label TIFF SHA-256. All three confirmation flags are
+        required; existing output is preserved unless --force is explicit.
         """);
 }
 
@@ -241,7 +317,7 @@ static bool IsNormalizeOption(string key) => key.ToLowerInvariant() is
 static bool IsAddCaseOption(string key) => key.ToLowerInvariant() is
     "--manifest" or "--dataset-name" or "--candidate-source-commit" or "--id" or "--acquisition-id" or
     "--reference-kind" or "--input-volume" or "--reference-labels" or "--candidate-labels" or
-    "--candidate-provenance" or "--representative-real" or "--reference-background" or
+    "--reference-acceptance" or "--candidate-provenance" or "--representative-real" or "--reference-background" or
     "--candidate-background" or "--connectivity" or "--append";
 
 static bool IsPlantSegOption(string key) => key.ToLowerInvariant() is
@@ -249,5 +325,17 @@ static bool IsPlantSegOption(string key) => key.ToLowerInvariant() is
     "--spacing-z" or "--unit" or "--voxel-type" or "--channels" or "--force" or
     "--crop-x" or "--crop-y" or "--crop-z" or "--crop-width" or "--crop-height" or "--crop-depth";
 
+static bool IsInspectOption(string key) => key.Equals("--input", StringComparison.OrdinalIgnoreCase);
+
+static bool IsAuditReferenceOption(string key) => key.ToLowerInvariant() is "--input" or "--background";
+
+static bool IsReferenceAcceptanceOption(string key) => key.ToLowerInvariant() is
+    "--reference-labels" or "--output" or "--acquisition-id" or "--reference-kind" or
+    "--accepted-by" or "--accepted-at-utc" or "--protocol-id" or "--notes" or
+    "--whole-volume-3d-coverage-confirmed" or "--representative-leaf-confirmed" or
+    "--boundary-representation-reviewed" or "--force";
+
 static bool IsCommonFlag(string key) => key.ToLowerInvariant() is
-    "--binary" or "--force" or "--representative-real" or "--append";
+    "--binary" or "--force" or "--representative-real" or "--append" or
+    "--whole-volume-3d-coverage-confirmed" or "--representative-leaf-confirmed" or
+    "--boundary-representation-reviewed";

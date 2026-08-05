@@ -19,6 +19,8 @@ modern/validation/data/
 modern/validation/reports/
 modern/validation/*.local.json
 .run/
+__pycache__/
+*.py[cod]
 
 # Enable "build/" folder in the NuGet Packages folder since NuGet packages use it for MSBuild targets
 !packages/*/build/

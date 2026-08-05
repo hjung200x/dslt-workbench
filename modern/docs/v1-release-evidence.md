@@ -30,7 +30,8 @@ written:
 - the `1.0.0` self-contained `win-x64-cuda` ZIP and checksum;
 - the schema-2 representative-real manifest whose `candidateSourceCommit`
   equals the package commit, a passing source-locked `Dslt.Validation` report,
-  and a checksum for that report;
+  and a checksum for that report; every case must include a SHA-256-locked
+  reference acceptance record with reviewer and protocol identity;
 - the CUDA parity JSON and checksum uploaded by the manually dispatched
   `modern-cuda.yml` self-hosted NVIDIA job;
 - Windows 10 22H2 build 19045 evidence at 150% scaling and its checksum;

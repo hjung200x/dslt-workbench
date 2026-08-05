@@ -17,6 +17,7 @@ public sealed record RealDataManifestCaseRequest(
     string ReferenceKind,
     string InputPath,
     string ReferenceLabelsPath,
+    string ReferenceAcceptancePath,
     string CandidateLabelsPath,
     string CandidateProvenancePath,
     int ReferenceBackgroundLabel,
@@ -57,6 +58,7 @@ public static class RealDataManifestAssembler
             ?? throw new ArgumentException("Manifest path has no parent directory.", nameof(request));
         var inputPath = RequireFile(request.InputPath, "Input volume");
         var referencePath = RequireFile(request.ReferenceLabelsPath, "Reference labels");
+        var acceptancePath = RequireFile(request.ReferenceAcceptancePath, "Reference acceptance");
         var candidatePath = RequireFile(request.CandidateLabelsPath, "Candidate labels");
         var provenancePath = RequireFile(request.CandidateProvenancePath, "Candidate provenance");
 
@@ -68,6 +70,13 @@ public static class RealDataManifestAssembler
         var reference = LabelTiffCodec.Read(referencePath);
         var candidate = LabelTiffCodec.Read(candidatePath);
         ValidateLabels(reference, candidate, provenance);
+        var referenceHash = await Sha256FileAsync(referencePath, cancellationToken).ConfigureAwait(false);
+        var acceptance = await ReferenceAcceptanceValidator.ReadAndValidateAsync(
+            acceptancePath,
+            request.AcquisitionId,
+            request.ReferenceKind,
+            referenceHash,
+            cancellationToken).ConfigureAwait(false);
 
         var manifestExists = File.Exists(manifestPath);
         if (manifestExists && !request.Append)
@@ -114,7 +123,9 @@ public static class RealDataManifestAssembler
             InputFileSha256 = await Sha256FileAsync(inputPath, cancellationToken).ConfigureAwait(false),
             InputDecodedSha256 = provenance.InputSha256.ToLowerInvariant(),
             ReferenceLabelsPath = PortablePath(manifestDirectory, referencePath),
-            ReferenceLabelsSha256 = await Sha256FileAsync(referencePath, cancellationToken).ConfigureAwait(false),
+            ReferenceLabelsSha256 = referenceHash,
+            ReferenceAcceptancePath = PortablePath(manifestDirectory, acceptancePath),
+            ReferenceAcceptanceSha256 = acceptance.FileSha256,
             CandidateLabelsPath = PortablePath(manifestDirectory, candidatePath),
             CandidateLabelsSha256 = await Sha256FileAsync(candidatePath, cancellationToken).ConfigureAwait(false),
             CandidateProvenancePath = PortablePath(manifestDirectory, provenancePath),
@@ -159,6 +170,7 @@ public static class RealDataManifestAssembler
         RequireText(request.AcquisitionId, nameof(request.AcquisitionId));
         RequireText(request.InputPath, nameof(request.InputPath));
         RequireText(request.ReferenceLabelsPath, nameof(request.ReferenceLabelsPath));
+        RequireText(request.ReferenceAcceptancePath, nameof(request.ReferenceAcceptancePath));
         RequireText(request.CandidateLabelsPath, nameof(request.CandidateLabelsPath));
         RequireText(request.CandidateProvenancePath, nameof(request.CandidateProvenancePath));
         if (!IsGitCommit(request.CandidateSourceCommit))

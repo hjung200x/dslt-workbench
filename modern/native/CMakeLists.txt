@@ -13,6 +13,20 @@ function(dslt_enable_address_sanitizer target_name)
     if(MSVC)
         target_compile_options(${target_name} PRIVATE /fsanitize=address /Zi)
         target_link_options(${target_name} PRIVATE /INCREMENTAL:NO /DEBUG)
+        get_filename_component(dslt_msvc_compiler_directory "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        foreach(dslt_asan_runtime IN ITEMS
+                clang_rt.asan_dynamic-x86_64.dll
+                clang_rt.asan_dbg_dynamic-x86_64.dll)
+            set(dslt_asan_runtime_path "${dslt_msvc_compiler_directory}/${dslt_asan_runtime}")
+            if(EXISTS "${dslt_asan_runtime_path}")
+                add_custom_command(TARGET ${target_name} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${dslt_asan_runtime_path}"
+                        "$<TARGET_FILE_DIR:${target_name}>"
+                    VERBATIM
+                )
+            endif()
+        endforeach()
     else()
         target_compile_options(${target_name} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
         target_link_options(${target_name} PRIVATE -fsanitize=address)

@@ -25,6 +25,8 @@ public sealed record RealDataValidationCase
     public string InputDecodedSha256 { get; init; } = string.Empty;
     public string ReferenceLabelsPath { get; init; } = string.Empty;
     public string ReferenceLabelsSha256 { get; init; } = string.Empty;
+    public string ReferenceAcceptancePath { get; init; } = string.Empty;
+    public string ReferenceAcceptanceSha256 { get; init; } = string.Empty;
     public string CandidateLabelsPath { get; init; } = string.Empty;
     public string CandidateLabelsSha256 { get; init; } = string.Empty;
     public string CandidateProvenancePath { get; init; } = string.Empty;
@@ -54,6 +56,9 @@ public sealed record RealDataCaseValidationResult(
     string Id,
     string AcquisitionId,
     string ReferenceKind,
+    string ReferenceAcceptanceSha256,
+    string ReferenceAcceptedBy,
+    string ReferenceProtocolId,
     string VoxelType,
     string Container,
     int Channels,
@@ -114,7 +119,13 @@ public static class RealDataValidationRunner
         {
             cancellationToken.ThrowIfCancellationRequested();
             results.Add(await EvaluateCaseAsync(
-                item, baseDirectory, manifest.CandidateSourceCommit, thresholds, duplicateIds.Contains(item.Id), cancellationToken)
+                item,
+                baseDirectory,
+                manifest.SchemaVersion,
+                manifest.CandidateSourceCommit,
+                thresholds,
+                duplicateIds.Contains(item.Id),
+                cancellationToken)
                 .ConfigureAwait(false));
         }
 
@@ -134,6 +145,7 @@ public static class RealDataValidationRunner
     private static async Task<RealDataCaseValidationResult> EvaluateCaseAsync(
         RealDataValidationCase item,
         string baseDirectory,
+        int manifestSchemaVersion,
         string candidateSourceCommit,
         SegmentationValidationThresholds thresholds,
         bool duplicateId,
@@ -161,11 +173,21 @@ public static class RealDataValidationRunner
 
         var inputPath = ResolvePath(baseDirectory, item.InputPath, "inputPath", failures);
         var referencePath = ResolvePath(baseDirectory, item.ReferenceLabelsPath, "referenceLabelsPath", failures);
+        var acceptancePath = manifestSchemaVersion >= 2
+            ? ResolvePath(baseDirectory, item.ReferenceAcceptancePath, "referenceAcceptancePath", failures)
+            : null;
         var candidatePath = ResolvePath(baseDirectory, item.CandidateLabelsPath, "candidateLabelsPath", failures);
         var provenancePath = ResolvePath(baseDirectory, item.CandidateProvenancePath, "candidateProvenancePath", failures);
         await VerifyFileAsync(inputPath, item.InputFileSha256, "input", failures, cancellationToken).ConfigureAwait(false);
         await VerifyFileAsync(referencePath, item.ReferenceLabelsSha256, "reference labels", failures, cancellationToken)
             .ConfigureAwait(false);
+        if (manifestSchemaVersion >= 2)
+            await VerifyFileAsync(
+                acceptancePath,
+                item.ReferenceAcceptanceSha256,
+                "reference acceptance",
+                failures,
+                cancellationToken).ConfigureAwait(false);
         await VerifyFileAsync(candidatePath, item.CandidateLabelsSha256, "candidate labels", failures, cancellationToken)
             .ConfigureAwait(false);
         await VerifyFileAsync(provenancePath, item.CandidateProvenanceSha256, "candidate provenance", failures, cancellationToken)
@@ -173,6 +195,7 @@ public static class RealDataValidationRunner
 
         LabelTiffVolume? reference = null;
         LabelTiffVolume? candidate = null;
+        ValidatedReferenceAcceptance? acceptance = null;
         if (referencePath is not null && File.Exists(referencePath))
         {
             try { reference = LabelTiffCodec.Read(referencePath); }
@@ -187,6 +210,22 @@ public static class RealDataValidationRunner
             catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException or OverflowException)
             {
                 failures.Add($"Candidate label TIFF could not be read: {exception.Message}");
+            }
+        }
+        if (manifestSchemaVersion >= 2 && acceptancePath is not null && File.Exists(acceptancePath))
+        {
+            try
+            {
+                acceptance = await ReferenceAcceptanceValidator.ReadAndValidateAsync(
+                    acceptancePath,
+                    item.AcquisitionId ?? string.Empty,
+                    item.ReferenceKind ?? string.Empty,
+                    item.ReferenceLabelsSha256 ?? string.Empty,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is ArgumentException or IOException or InvalidDataException or NotSupportedException)
+            {
+                failures.Add($"Reference acceptance could not be validated: {exception.Message}");
             }
         }
 
@@ -225,6 +264,9 @@ public static class RealDataValidationRunner
             item.Id ?? string.Empty,
             item.AcquisitionId ?? string.Empty,
             item.ReferenceKind ?? string.Empty,
+            acceptance?.FileSha256 ?? string.Empty,
+            acceptance?.Record.AcceptedBy ?? string.Empty,
+            acceptance?.Record.ProtocolId ?? string.Empty,
             item.VoxelType ?? string.Empty,
             item.Container ?? string.Empty,
             item.Channels,

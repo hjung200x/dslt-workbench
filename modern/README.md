@@ -133,3 +133,9 @@ The current WPF workflow, state-preservation guarantees, responsive layout, and
 remaining interactive checks are tracked in `docs/ui-workflow.md`. Repeatable
 Windows 10/11 package evidence is collected according to
 `docs/windows-host-validation.md`.
+
+Private CZI acquisitions can be converted outside the application into
+pixel-verified ImageJ HyperStacks with `scripts/convert-czi-cohort.py`. The
+five-acquisition Cortex input and performance preflight, its source locks, and
+the still-missing expert/legacy reference labels are documented in
+`docs/cortex-real-data-preflight.md`.
